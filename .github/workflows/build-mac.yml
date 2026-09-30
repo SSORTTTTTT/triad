@@ -1,0 +1,90 @@
+name: Build macOS installer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build, package and validate (Apple Silicon)
+    runs-on: macos-14            # Apple Silicon runner
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build AU + VST3 and create the .pkg (Build-Mac.command)
+        run: bash Build-Mac.command
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Triad-macOS-AppleSilicon-pkg
+          path: Installer/*.pkg
+          if-no-files-found: error
+
+      - name: Inspect package contents
+        run: |
+          set -euo pipefail
+          pkg=$(ls Installer/*.pkg)
+          ls -l "$pkg"
+          pkgutil --check-signature "$pkg" || true
+          mkdir -p inspect && cd inspect && xar -xf "../$pkg" && ls -R . | head -n 40
+          for c in Triad-AU.pkg Triad-VST3.pkg; do echo "== $c payload"; pkgutil --payload-files "$c" 2>/dev/null || lsbom "$c/Bom"; done
+
+      - name: Install the .pkg on the runner
+        run: |
+          set -euo pipefail
+          sudo installer -pkg Installer/*.pkg -target / -verboseR
+          pkgutil --pkgs | grep thomasross
+          for b in /Library/Audio/Plug-Ins/Components/Triad.component /Library/Audio/Plug-Ins/VST3/Triad.vst3; do
+            ls -ld "$b"; lipo -archs "$b/Contents/MacOS/Triad"; codesign --verify --deep --strict --verbose=2 "$b"
+            du -sh "$b"
+          done
+
+      - name: Validate the Audio Unit (auval)
+        run: |
+          set -euo pipefail
+          sleep 5
+          auval -a | grep -i triad || true
+          auval -v aufx Trid Tsrt | tee auval.log
+          grep -q "AU VALIDATION SUCCEEDED" auval.log
+
+      - name: Integration tests (native arm64)
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-tests -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 -DTRIAD_BUILD_TESTS=ON -DJUCE_SOURCE_DIR="$PWD/deps/JUCE"
+          cmake --build build-tests --config Release --target TriadTests TriadTestEffect_VST3 Triad_VST3 --parallel "$(sysctl -n hw.ncpu)"
+          exe="$(find build-tests/TriadTests_artefacts -type f -perm -u+x -name 'Triad*Tests' | head -n 1)"
+          mkdir -p ci-ui
+          "$exe" "$PWD/build-tests/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
+                 "$PWD/ci-ui/Triad-preview-mac.png" \
+                 "$PWD/build-tests/Triad_artefacts/Release/VST3/Triad.vst3" | tee test-results-mac.txt
+
+      - name: pluginval (VST3 and AU, strictness 5)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          curl -fsSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          pv=pluginval.app/Contents/MacOS/pluginval
+          "$pv" --strictness-level 5 --skip-gui-tests --validate /Library/Audio/Plug-Ins/VST3/Triad.vst3 | tee pluginval-vst3.log
+          vst3=${PIPESTATUS[0]}
+          "$pv" --strictness-level 5 --skip-gui-tests --validate /Library/Audio/Plug-Ins/Components/Triad.component | tee pluginval-au.log
+          au=${PIPESTATUS[0]}
+          echo "pluginval exit codes: VST3=$vst3 AU=$au"
+          [ "$vst3" -eq 0 ] && [ "$au" -eq 0 ]
+
+      - name: Upload logs and Mac UI snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            build-mac.log
+            auval.log
+            test-results-mac.txt
+            pluginval-*.log
+            ci-ui/*.png
+          if-no-files-found: ignore

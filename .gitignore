@@ -1,0 +1,13 @@
+build/
+build-mac/
+build-tests/
+deps/
+Installer/
+build-mac.log
+build-mac.status
+inspect/
+ci-ui/
+pluginval*
+auval.log
+test-results-mac.txt
+.DS_Store

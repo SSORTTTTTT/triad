@@ -1,0 +1,13 @@
+PASS: crossover dragging, frequency mapping, band order, automation gestures, keyboard, reset, recall, and Nyquist guard
+Empty slots, oversized block: max error 0
+Phase-correct crossover reconstruction: max error 1.19209e-07
+Unequal band latency compensation: max error 2.98023e-08
+All bands wet: max error 1.49012e-08
+All bands dry with latency retained: max error 0
+50 percent linear wet/dry: max error 2.98023e-08
+Hosted state and mix recall: max error 2.98023e-08
+Outer VST3 wrapper with nested effects and recalled state: max error 2.98023e-08
+Missing effects pass bands dry: max error 0
+SKIP: native effect window (no display server); safe headless handling passed
+Remove effects, clear latency: max error 0
+PASS: all integration tests
