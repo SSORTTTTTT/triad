@@ -30,7 +30,9 @@ Version 0.1.1: a working source prototype for Thomas Ross. One stereo VST3 effec
    - `/Library/Audio/Plug-Ins/Components/Triad.component` (AU)
    - `/Library/Audio/Plug-Ins/VST3/Triad.vst3` (VST3)
 
-   Use **Customize** in the installer to install only one format. The shipped plugin binaries are dead-stripped and have local symbols removed to keep them small.
+   Use **Customize** in the installer to install only one format.
+
+   **Size.** Triad is built to stay small: it links only the JUCE modules it uses (plugin hosting and UI; no audio-device or audio-file-codec code), uses its own compact Linkwitz–Riley crossover instead of the `juce_dsp` module, compiles framework/UI code for size with link-time optimisation while the audio path stays at full `-O3` speed, and dead-strips and symbol-strips the shipped binaries. `cmake -DTRIAD_SIZE_OPTIMISED=OFF` restores a plain `-O3` build.
 
    After building, the `build-mac` and `deps` folders (roughly 1 GB) can be deleted to free space; they are recreated by the next build.
 5. Restart your DAW and rescan plugins. Load **Triad** on a stereo track or mixer insert.
@@ -71,6 +73,8 @@ cmake --build build --config Release --parallel 4
 On Apple Silicon add `-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0` to the first command. Intel or universal builds can be requested separately using CMake's architecture setting, but have not been validated here.
 
 For an existing JUCE 8.0.12 checkout, add `-DJUCE_SOURCE_DIR=/absolute/path/to/JUCE`. The fallback download pins commit `29396c22c93392d6738e021b83196283d6e4d850`.
+
+A standalone app is no longer built by default (it pulls in audio-device code a plugin does not need); add `-DTRIAD_BUILD_STANDALONE=ON` for development use.
 
 Linux build dependencies: a C++17 compiler, CMake, Ninja or Make, pkg-config, ALSA, X11/Xext/Xinerama/Xrandr/Xcursor development libraries, FreeType/fontconfig, and OpenGL development libraries. Linux builds are for development/testing, not for installation into Mac DAWs.
 

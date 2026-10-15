@@ -1,4 +1,5 @@
 #include "../Source/PluginProcessor.h"
+#include <juce_dsp/juce_dsp.h>
 #include <iostream>
 #include <stdexcept>
 
@@ -73,6 +74,40 @@ int main (int argc, char** argv)
             for (int s = 0; s < expected.getNumSamples(); ++s)
                 for (int c = 0; c < 2; ++c) expected.setSample (c, s, b.processSample (c, a.processSample (c, signal.getSample (c, s))));
             compare (actual, expected, "Phase-correct crossover reconstruction");
+        }
+        // Triad's built-in LR4 filter must match JUCE's dsp::LinkwitzRileyFilter exactly in
+        // behaviour: low/high split and all-pass, across sample rates and cutoff changes.
+        for (double sr : { 44100.0, 48000.0, 96000.0 })
+        {
+            const auto signal = input (8192);
+            triad::LinkwitzRiley mine, minePhase;
+            juce::dsp::LinkwitzRileyFilter<float> theirs, theirsPhase;
+            mine.prepare (sr); minePhase.prepare (sr);
+            for (auto* f : { &theirs, &theirsPhase }) f->prepare ({ sr, 8192, 2 });
+            theirsPhase.setType (juce::dsp::LinkwitzRileyFilterType::allpass);
+            juce::AudioBuffer<float> a (6, 8192), b (6, 8192);
+            for (int s = 0; s < 8192; ++s)
+            {
+                if (s % 1024 == 0)
+                {
+                    const auto hz = (float) (60.0 * std::pow (2.0, s / 1024));
+                    mine.setCutoffFrequency (hz); minePhase.setCutoffFrequency (hz);
+                    theirs.setCutoffFrequency (hz); theirsPhase.setCutoffFrequency (hz);
+                }
+                for (int c = 0; c < 2; ++c)
+                {
+                    const float x = signal.getSample (c, s);
+                    float lo, hiOut, tlo, thi;
+                    mine.processSample (c, x, lo, hiOut); theirs.processSample (c, x, tlo, thi);
+                    a.setSample (c, s, lo); a.setSample (2 + c, s, hiOut); a.setSample (4 + c, s, minePhase.processAllpass (c, x));
+                    b.setSample (c, s, tlo); b.setSample (2 + c, s, thi); b.setSample (4 + c, s, theirsPhase.processSample (c, x));
+                }
+            }
+            float error = 0;
+            for (int c = 0; c < 6; ++c)
+                for (int s = 0; s < 8192; ++s) error = juce::jmax (error, std::abs (a.getSample (c, s) - b.getSample (c, s)));
+            std::cout << "Built-in LR4 filter vs JUCE dsp filter at " << sr << " Hz: max error " << error << std::endl;
+            require (error < 1.0e-6f, "Built-in Linkwitz-Riley filter matches JUCE");
         }
         require (p.loadFile (1, effect).isEmpty(), "Load third-party VST3");
         runAudioCase (p, 48000, { 1, 0.25f, 1 }, 73, "Unequal band latency compensation");

@@ -152,7 +152,9 @@ stage_bundle()   # source destination
     local archs; archs=$(lipo -archs "$binary")
     [[ " $archs " == *" arm64 "* ]] || fail "$binary is not an Apple Silicon binary (found: $archs)"
     # Remove local debug symbols from the shipped copy only (the build folder keeps the original).
+    local before; before=$(stat -f %z "$binary")
     xcrun strip -x "$binary"
+    echo "  $(basename "$2") binary: $((before / 1024)) KB -> $(( $(stat -f %z "$binary") / 1024 )) KB after strip"
     # Local ad-hoc signature (no Developer ID). Apple Silicon requires every binary to be signed.
     codesign --force --deep --sign - "$2"
     codesign --verify --deep --strict "$2"
@@ -170,9 +172,12 @@ component_plist()   # root plist
     pkgbuild --analyze --root "$1" "$2" >/dev/null
     local i=0
     while /usr/libexec/PlistBuddy -c "Print :$i" "$2" >/dev/null 2>&1; do
-        /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$2"
+        # Newer pkgbuild versions omit the key entirely, so (re)add it rather than edit it.
+        /usr/libexec/PlistBuddy -c "Delete :$i:BundleIsRelocatable" "$2" >/dev/null 2>&1 || true
+        /usr/libexec/PlistBuddy -c "Add :$i:BundleIsRelocatable bool false" "$2"
         i=$((i + 1))
     done
+    [ "$i" -gt 0 ] || fail "pkgbuild found no bundle to describe in $1"
 }
 component_plist "$VST3_ROOT" "$PKG_WORK/vst3-components.plist"
 component_plist "$AU_ROOT"   "$PKG_WORK/au-components.plist"
@@ -255,6 +260,9 @@ for entry in "Triad-VST3.pkg:Library/Audio/Plug-Ins/VST3/Triad.vst3" \
     bundle="$VERIFY/$component/Payload/$relative"
     [ -f "$bundle/Contents/MacOS/Triad" ] || fail "$component does not contain $relative"
     codesign --verify --deep --strict "$bundle" || fail "Signature check failed inside $component"
+    if grep -q "<relocate>" "$VERIFY/$component/PackageInfo" 2>/dev/null; then
+        fail "$component is relocatable; Installer could put the plugin somewhere other than /Library"
+    fi
     echo "  $component -> /$relative ($(lipo -archs "$bundle/Contents/MacOS/Triad"), signature OK)"
 done
 { installer -pkginfo -pkg "$PKG_PATH" 2>/dev/null || true; } | sed 's/^/  package: /'
