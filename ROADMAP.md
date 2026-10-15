@@ -1,22 +1,18 @@
 # Triad roadmap
 
-## Current testing version — 0.1.1
+## Current testing version — 0.2.0
 
-- Three-band stereo VST3 effects host.
-- One hosted effect per band, with an independent 0–100% wet/dry knob.
-- Directly draggable crossover handles on a logarithmic frequency display.
-- Dashed boundaries, frequency readouts, and start/end frequency labels for every band.
-- Numeric crossover adjustment, DAW automation, latency alignment, and project recall.
-- A dark multiband layout inspired by the supplied ShaperBox references, with Triad's own styling.
+- Multiband effects host: opens with 3 bands, add up to 10 while working, remove any.
+- 10 effect slots per band in processing order (FL Studio mixer style), each with its own dry/wet knob (value shown inside) and on/off light.
+- Band Mix per band. VST3 and Audio Unit effects; effects-only plug-in list.
+- Live spectrum behind draggable crossovers; effect windows open on load.
 
-The user wants to test this core plugin before adding modulation. No LFO tab or LFO processing is included in this version.
-
-## Deferred until after core-plugin testing
+## Next: mix modulation / LFO tab
 
 Add a dedicated mix-modulation/LFO tab:
 
 - A point-based line editor for drawing each band's mix over time, inspired by the editing interaction in Gross Beat and ShaperBox.
-- A way to link each band's Mix control to its own envelope/LFO.
+- A way to link each band's Mix control (and possibly slot mixes) to its own envelope/LFO.
 - Editable points and segments representing 0–100% mix.
 - Tempo synchronization, cycle length, curves/steps, and interaction with the manual mix control to be settled when this phase begins.
 

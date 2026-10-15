@@ -42,8 +42,9 @@ if(TRIAD_BUILD_STANDALONE)
     target_link_libraries(Triad PRIVATE juce::juce_audio_utils)
 endif()
 if(APPLE)
-    # Lists Audio Units (effects vs instruments) without loading them.
-    target_link_libraries(Triad PRIVATE "-framework AudioToolbox")
+    # AudioToolbox lists Audio Units (effects vs instruments) without loading them;
+    # CoreAudioKit provides the generic editor view used when hosting Audio Units.
+    target_link_libraries(Triad PUBLIC "-framework AudioToolbox" "-framework CoreAudioKit")
 endif()
 if(TRIAD_SIZE_OPTIMISED AND NOT MSVC)
     # Framework and UI code optimised for size; the audio path (PluginProcessor.cpp,

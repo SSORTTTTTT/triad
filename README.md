@@ -1,22 +1,25 @@
-# Triad — three-band effect host
+# Triad — multiband effects host
 
-Version 0.1.1: a working source prototype for Thomas Ross. One stereo VST3 effect per band, two movable crossover frequencies, and an independent 0–100% effect mix on every band.
+Version 0.2.0 for Thomas Ross. Split your sound into up to 10 bands and run a chain of up to 10 VST3 or Audio Unit effects on each band, FL Studio mixer style, with a mix knob on every slot and on every band.
 
-**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-0.1.1-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
+**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-0.2.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
 
 ## What it does
 
-- Splits stereo input into LOW, MID, and HIGH with 24 dB/octave Linkwitz–Riley crossovers.
-- Drag either round handle or dashed divider directly on the frequency panel. Double-click a handle to reset it; Tab can focus a handle, arrow keys adjust it, and Shift gives finer steps. Drags are sent to the DAW as automation gestures.
-- Every band card shows its start frequency on the left and end frequency on the right. Low includes DC (0 Hz); High extends to Nyquist, half the session sample rate. The logarithmic display begins at 20 Hz.
-- Default split points: 250 Hz and 2,500 Hz. Frequency controls span 20 Hz–20 kHz, limited below Nyquist at lower sample rates.
-- Hosts an installed VST3 audio effect on each band, with its normal editor accessible using **Open**.
-- **Mix 0%:** the dry, frequency-filtered band. **Mix 100%:** the effect's output. Intermediate positions use a linear wet/dry blend, like an effect-slot mix knob. This is not a band volume control.
-- Empty slots pass the band through. **Remove** unloads the effect.
-- Compensates dry/wet and between-band latency and reports the total to the DAW.
-- Saves both crossover settings, all three mix controls, plugin identities, and hosted plugin states with the DAW project.
-- Exposes crossovers and mixes to DAW automation. Other effect parameters are edited in each hosted effect's own window.
-- Uses native Apple Silicon build settings in the supplied Mac script. Triad can be built as a VST3 or AU on Mac; both wrappers host **VST3** effects internally.
+- **Bands you can add while working.** Triad opens with 3 bands (crossovers at 250 Hz and 2.5 kHz). Press **+ BAND** or double-click anywhere on the frequency display to split a band right there, up to 10 bands. Each band strip has an **×** to remove it; its range joins the neighbouring band.
+- **Live spectrum.** The frequency display shows the incoming audio in real time behind the bands, like ShaperBox.
+- **Draggable crossovers.** Drag any divider on the display; double-click one to reset it; Tab focuses a divider, arrow keys adjust it, Shift gives finer steps. Each band strip shows its range (start → end); click either edge to type a frequency such as `250` or `2.5k`. Drags reach the DAW as automation gestures.
+- **10 effect slots per band**, stacked in processing order (Slot 1 runs first), like an FL Studio mixer insert:
+  - **Click an empty slot** to choose an effect. The list shows **effects only** (instruments such as Omnisphere are left out), grouped into VST3 and Audio Units, then by manufacturer.
+  - **The effect's window opens as soon as it loads.** Click a loaded slot's name to bring it back.
+  - **Each slot's knob** is that effect's dry/wet mix, with the percentage shown inside the knob. Double-click a knob for 100%.
+  - **The green light** switches the slot on or off (bypassed slots are skipped entirely).
+  - **The ▸ arrow (or right-click)** gives Open window, Replace, Move up/down, Bypass and Remove.
+- **Band Mix** on each strip blends the dry band with its whole processed chain (0% dry, 100% wet). This is the knob a future LFO tab will drive.
+- Hosts **VST3 and Audio Unit** effects (Audio Units on macOS). Triad itself installs as AU and VST3.
+- Compensates each effect's latency inside its slot, aligns all bands to the slowest chain, and reports the total to the DAW.
+- Saves the band layout, crossovers, every mix knob, every slot's on/off state, plugin identities and hosted plugin states with the DAW project. Projects saved with Triad 0.1 still open.
+- Exposes crossovers, band mixes and slot mixes to DAW automation. Hosted effects' own parameters are edited in their windows.
 
 ## Build the installer on your M3 Mac
 
@@ -26,7 +29,7 @@ Version 0.1.1: a working source prototype for Thomas Ross. One stereo VST3 effec
    - **CMake 3.22+**: uses one from Homebrew or `/Applications/CMake.app` if present; otherwise it downloads the official CMake 3.31.9 into `deps/` (checksum-verified) for this build only.
    - **JUCE 8.0.12**: downloaded into `deps/JUCE` at the pinned commit on the first run.
    - An internet connection is needed for the first run. A full log is written to `build-mac.log`.
-4. When it finishes, Finder shows `Installer/Triad-0.1.1-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
+4. When it finishes, Finder shows `Installer/Triad-0.2.0-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
    - `/Library/Audio/Plug-Ins/Components/Triad.component` (AU)
    - `/Library/Audio/Plug-Ins/VST3/Triad.vst3` (VST3)
 
@@ -53,15 +56,17 @@ If you would rather not install Apple's developer tools, push this folder to a G
 
 ## Use
 
-1. Drag the two round handles/dashed dividers on the frequency display to set the band boundaries. The **LOW / MID** and **MID / HIGH** controls below it are available for numeric adjustment.
-2. Click **Load effect...** in a card. The menu lists VST3 bundles in standard plugin locations. Choose one, or browse to its `.vst3` bundle.
-3. Click **Open** for the effect's normal interface.
-4. Turn the small **Effect Mix** knob to blend that processed band with its dry signal.
-5. Save your Ableton or FL Studio project to capture all three plugin states.
+1. Load **Triad** on a stereo track or mixer insert. It starts with 3 bands.
+2. Drag the dividers to set the band edges, or click a strip's start/end frequency to type one. Need another band? Double-click the display where you want the split, or press **+ BAND**.
+3. Click **Slot 1** in a band and choose an effect. Its window opens straight away. Add more effects to Slots 2–10; they run top to bottom.
+4. Use each slot's knob for that effect's dry/wet, the green light to bypass it, and **Band Mix** for the whole band.
+5. Save your Ableton or FL Studio project to keep everything.
 
-For a delay or reverb, setting the hosted plugin's own mix to fully wet usually makes Triad's mix knob the easiest way to control the blend.
+The first time you open the effect list, Triad sorts your plug-ins into effects and instruments (the status line shows progress). Audio Units and most modern VST3s are recognised without loading them; the result is cached, so later sessions are instant. Use **Refresh plug-in list** after installing new plug-ins, or **Rescan all plug-ins** to start over.
 
-Suggested first DAW check: use an EQ on Low, distortion on Mid, and a delay on High. Confirm each mix at 0%, 50%, and 100%; save, close, reopen; then compare playback and an offline export. These are checks to perform, not claims of completed compatibility testing.
+For a delay or reverb, setting the hosted plugin's own mix to fully wet usually makes Triad's slot knob the easiest way to control the blend.
+
+Suggested first DAW check: an EQ and a compressor chained on the low band, distortion on the mids, a delay on the highs. Try slot mixes and band mixes at 0%, 50% and 100%; add a band and remove one; save, close and reopen; then compare playback and an offline export.
 
 ## Build manually
 
@@ -78,46 +83,49 @@ A standalone app is no longer built by default (it pulls in audio-device code a 
 
 Linux build dependencies: a C++17 compiler, CMake, Ninja or Make, pkg-config, ALSA, X11/Xext/Xinerama/Xrandr/Xcursor development libraries, FreeType/fontconfig, and OpenGL development libraries. Linux builds are for development/testing, not for installation into Mac DAWs.
 
-The point-based mix LFO is deferred until after testing the core host; see `ROADMAP.md`. There is no LFO tab in this version.
+The point-based mix LFO is deferred until after testing the multiband host; see `ROADMAP.md`. There is no LFO tab in this version.
 
 ## Implementation and limits
 
-- The low branch has a compensating all-pass at the upper crossover. The three dry bands sum to a flat-magnitude, phase-rotated signal. This is a minimum-phase crossover, not a linear-phase or bit-identical dry bypass.
-- Crossover transitions are smoothed over 35 ms, mix transitions over 20 ms.
-- The frequency panel shows band boundaries and a frequency grid; it is not a live spectrum analyzer. Narrow-band labels on the plot are hidden when they would not fit, while the cards always retain both endpoints. Nearby crossover frequency readouts stack vertically to stay readable.
-- Frequencies are kept in order in the DSP. If typed values or automation cross the boundaries, the lower effective boundary is limited below the upper one; the card labels/graphic show the effective frequencies. The upper boundary is limited to 45% of sample rate.
-- Stereo effect hosting only. No AU/VST2 hosting, instruments, sidechain inputs, MIDI routing, mono layouts, chains of multiple effects per band, or exposed nested-parameter automation in this version.
-- Standard bundle discovery is file-based; it does not perform a full plugin scan just to draw the menu. Selecting an effect instantiates it in-process. Plugin shell bundles currently choose the first compatible effect they expose.
-- Effects run inside the DAW process. There is no crash isolation, bridge process, or scan blacklist. Loading/replacing plugins and opening some plugin editors can briefly interrupt audio. Do initial compatibility checks in a test project.
-- Dry/wet compensation assumes the child correctly reports its latency. Child latency changes are reconciled on the message thread; a brief silent interval prevents misaligned output while that happens. Latency above 262,144 samples per effect is unsupported and the effect is bypassed with a status message.
-- Plugins restored from a background thread are instantiated on the message thread. Audio stays silent until restoration completes. Missing plugins retain their description/state for later recovery and their band passes dry once restoration finishes.
-- Processing does not create host buffers or wait on the control lock in the audio callback. Third-party plugin realtime behavior is outside Triad's control.
-- DAW transport information is forwarded. If a host supplies a block larger than the prepared maximum, Triad chunks it; the transport position is not offset per internal chunk in this first version.
-- macOS binaries are locally signed for personal testing. No Developer ID distribution signing/notarization or commercial installer is included.
+- Linkwitz–Riley 24 dB/octave crossovers for 1–10 bands. Each band's low-pass output is followed by all-pass filters at every higher crossover, so the dry bands sum to a flat-magnitude, phase-rotated signal. This is a minimum-phase crossover, not a linear-phase or bit-identical dry bypass.
+- Crossover transitions are smoothed over 35 ms, mix transitions over 20 ms. Adding or removing a band restarts the filters with a 10 ms fade-in.
+- Bands, crossovers and their parameters are positional (Band 1 is always the lowest). Adding a band in the middle shifts the bands above it up by one, and their mix values move with them; DAW automation lanes stay attached to positions, so re-check automation after changing the band layout.
+- Frequencies are kept in order in the DSP. If typed values or automation cross, the higher crossover keeps priority and lower ones are limited 1% below it; the display shows the effective frequencies. The top crossover is limited to 45% of the sample rate.
+- The spectrum shows the input (before the bands are split), with a +3 dB/octave tilt so typical music reads level.
+- Stereo effects only. No VST2, instruments, sidechain inputs, MIDI routing or mono layouts; hosted effects' parameters are not re-exposed for DAW automation.
+- Effects run inside the DAW process; there is no crash isolation or bridge process. If a plug-in crashes while Triad is checking whether it is an effect, it is skipped from then on (until it is updated). Loading/replacing plugins and opening some plugin editors can briefly interrupt audio. Do initial compatibility checks in a test project.
+- Latency compensation assumes each effect reports its latency correctly. Changes are reconciled on the message thread, with a brief silent interval instead of misaligned audio. Up to 262,144 samples per effect and per band chain; beyond that the effect is bypassed with a status message.
+- Projects restored from a background thread are instantiated on the message thread; audio stays silent until restoration completes. Missing plugins keep their identity and state for later recovery, and their slots pass audio through.
+- The audio callback never waits on a lock or allocates. The editor reads a snapshot of the slots, so redrawing the screen cannot interrupt audio. Third-party plugin realtime behaviour is outside Triad's control.
+- AUv3 effects are created asynchronously (the slot shows "..." while loading).
+- macOS binaries are locally signed for personal testing. No Developer ID distribution signing/notarization is included.
 
 ## Tests
 
-With `TRIAD_BUILD_TESTS=ON` (the default), CMake creates a real VST3 test effect that applies stored gain and reports 73 samples of latency, plus an integration-test executable. It tests actual VST3 loading, processing, and state recall rather than mocking the host boundary. Native editor-window testing runs when a display server is available and is explicitly skipped otherwise; the main interface can still be rendered offscreen.
+With `TRIAD_BUILD_TESTS=ON` (the default), CMake builds two real VST3 fixtures — an effect that applies stored gain with 73 samples of latency, and an instrument — plus an integration-test executable. The tests load, process and recall actual plug-ins rather than mocking the host boundary: crossover reconstruction for 1–10 bands, chains of up to 10 effects, slot and band mixes, bypass, moving slots, adding/removing bands with effects loaded, Triad 0.1 project migration, the effects-only list (the instrument must not appear; a plug-in that crashed during a scan must be skipped), Audio Unit hosting on macOS, editor windows and UI snapshots.
 
 ```sh
-cmake --build build --config Release --target TriadTests TriadTestEffect_VST3 Triad_VST3 --parallel 3
-# Linux, including a virtual display for plugin editors:
-xvfb-run -a build/TriadTests_artefacts/Release/TriadTests \
+cmake --build build --config Release --target TriadTests TriadTestEffect_VST3 TriadTestSynth_VST3 Triad_VST3 --parallel 3
+build/TriadTests_artefacts/Release/"Triad Tests" \
   "$PWD/build/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
+  "$PWD/build/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3" \
   "$PWD/Triad-preview.png" \
   "$PWD/build/Triad_artefacts/Release/VST3/Triad.vst3"
 ```
 
-The test plugin is only a development fixture and is not installed by the Mac scripts. See `VALIDATION.md` for the actual results and remaining Mac checks.
+The fixtures are development-only and are not installed. See `VALIDATION.md` for results.
 
 ## Source map
 
-- `Source/AudioEngine.h`: crossovers, phase compensation, integer delays.
-- `Source/PluginProcessor.*`: VST3 host, state, mixing, latency and lifecycle.
-- `Source/PluginEditor.*`: three-card interface, knobs, numeric frequency controls, plugin chooser.
-- `Source/CrossoverDisplay.*`: draggable crossover display, logarithmic mapping, host gestures, and keyboard interaction.
-- `Tests/`: real VST3 fixture and integration tests.
+- `Source/AudioEngine.h`: N-band crossover, phase compensation, delay lines, spectrum tap, FFT.
+- `Source/PluginProcessor.*`: bands, slot chains, mixing, latency, VST3/AU hosting, state and recall.
+- `Source/PluginCatalog.*`, `Source/AudioUnitList.*`: the effects-only plug-in list and its cache.
+- `Source/CrossoverDisplay.*`: live spectrum, draggable dividers, adding bands, host gestures and keyboard control.
+- `Source/BandStrip.*`: FL-style band strips and slot rows.
+- `Source/PluginEditor.*`: main window, knob style, effect chooser.
+- `Tests/`: VST3 fixtures and integration tests.
 - `Build-Mac.command`: Mac dependency check, AU/VST3 build and `.pkg` installer creation.
 - `Install-Mac.command`: optional per-user install without the package.
+- `.github/workflows/build-mac.yml`: builds, installs and validates the package on GitHub's Apple Silicon Mac.
 
 JUCE and its included SDKs retain their own upstream licenses. JUCE is fetched as a dependency and is not bundled in this source archive. Consult the pinned checkout's license and <https://juce.com/> before distributing a product built with it.
