@@ -1,29 +1,42 @@
 #include "CrossoverDisplay.h"
 
-namespace
-{
-const std::array<juce::Colour, 3> bandColours { juce::Colour (0xff9bd85c), juce::Colour (0xff67c6b8), juce::Colour (0xffa39ce8) };
-juce::String frequencyText (float f)
-{
-    return (f >= 1000.0f ? juce::String (f / 1000.0f, 3) : juce::String (f, 2))
-        .trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + (f >= 1000.0f ? " kHz" : " Hz");
-}
-}
-CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p),
-    parameters { p.parameters.getParameter ("lowCut"), p.parameters.getParameter ("highCut") }
+using triad::ui::bandColour;
+using triad::ui::formatHz;
+
+CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p)
 {
     setComponentID ("frequencyDisplay");
-    setTitle ("Three-band crossover display");
-    for (int i = 0; i < 2; ++i)
+    setTitle ("Band crossover display");
+    addButton.setTooltip ("Add a band (up to 10). Tip: double-click the display to split a band right there.");
+    addButton.onClick = [this] { processor.addBand(); refresh(); };
+    addAndMakeVisible (addButton);
+    samples.resize ((size_t) fftSize);
+    window.resize ((size_t) fftSize);
+    bins.resize ((size_t) fftSize);
+    levels.assign ((size_t) fftSize / 2 + 1, -200.0f);
+    windowSum = 0.0f;
+    for (int i = 0; i < fftSize; ++i)
     {
-        handles[(size_t) i] = std::make_unique<Handle> (*this, i);
-        addAndMakeVisible (*handles[(size_t) i]);
+        window[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / (float) (fftSize - 1));
+        windowSum += window[(size_t) i];
     }
+    processor.spectrum.active.store (true);
+    refresh();
+    startTimerHz (30);
 }
-CrossoverDisplay::~CrossoverDisplay() { endCrossoverGesture(); }
+CrossoverDisplay::~CrossoverDisplay()
+{
+    stopTimer();
+    processor.spectrum.active.store (false);
+    endCrossoverGesture();
+}
+juce::Component* CrossoverDisplay::getHandle (int index) const
+{
+    return index >= 0 && index < (int) handles.size() ? handles[(size_t) index].get() : nullptr;
+}
 juce::Rectangle<float> CrossoverDisplay::plotBounds() const
 {
-    return { 20.0f, 36.0f, juce::jmax (1.0f, (float) getWidth() - 40.0f), juce::jmax (1.0f, (float) getHeight() - 68.0f) };
+    return { 20.0f, 38.0f, juce::jmax (1.0f, (float) getWidth() - 40.0f), juce::jmax (1.0f, (float) getHeight() - 70.0f) };
 }
 float CrossoverDisplay::xForFrequency (float frequency) const
 {
@@ -39,25 +52,26 @@ float CrossoverDisplay::frequencyForX (float x) const
 }
 float CrossoverDisplay::constrainValue (int index, float f) const
 {
-    const auto cuts = processor.effectiveCutoffs();
+    const auto current = processor.effectiveCrossovers();
+    if (index < 0 || index >= (int) current.size()) return f;
     const auto ceiling = juce::jmin (20000.0f, processor.nyquistFrequency() * 0.9f);
-    return index == 0 ? juce::jlimit (20.0f, cuts.second / 1.01f, f)
-                      : juce::jlimit (juce::jmin (ceiling, juce::jmax (30.0f, cuts.first * 1.01f)), ceiling, f);
+    const auto lower = index == 0 ? 20.0f : current[(size_t) index - 1] * triad::minCrossoverRatio;
+    const auto upper = index == (int) current.size() - 1 ? ceiling : current[(size_t) index + 1] / triad::minCrossoverRatio;
+    return juce::jlimit (juce::jmin (lower, upper), upper, f);
 }
 void CrossoverDisplay::beginCrossoverGesture (int index)
 {
-    if (index < 0 || index > 1) return;
+    if (index < 0 || index >= (int) handles.size()) return;
     endCrossoverGesture();
     activeHandle = index;
-    parameters[(size_t) index]->beginChangeGesture();
+    if (auto* p = processor.crossoverParameter (index)) p->beginChangeGesture();
     repaint();
 }
 void CrossoverDisplay::dragCrossoverTo (float x)
 {
     if (activeHandle < 0) return;
-    auto* parameter = parameters[(size_t) activeHandle];
-    const auto frequency = constrainValue (activeHandle, frequencyForX (x));
-    parameter->setValueNotifyingHost (parameter->convertTo0to1 (frequency));
+    if (auto* parameter = processor.crossoverParameter (activeHandle))
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (constrainValue (activeHandle, frequencyForX (x))));
     refresh();
 }
 void CrossoverDisplay::endCrossoverGesture()
@@ -65,83 +79,201 @@ void CrossoverDisplay::endCrossoverGesture()
     if (activeHandle < 0) return;
     const auto ended = activeHandle;
     activeHandle = -1;
-    parameters[(size_t) ended]->endChangeGesture();
+    if (auto* p = processor.crossoverParameter (ended)) p->endChangeGesture();
     repaint();
 }
 void CrossoverDisplay::setCrossoverValue (int index, float frequency)
 {
-    if (index < 0 || index > 1) return;
+    if (index < 0 || index >= processor.getBandCount() - 1) return;
     beginCrossoverGesture (index);
-    auto* parameter = parameters[(size_t) index];
-    parameter->setValueNotifyingHost (parameter->convertTo0to1 (constrainValue (index, frequency)));
+    if (auto* parameter = processor.crossoverParameter (index))
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (constrainValue (index, frequency)));
     refresh();
     endCrossoverGesture();
 }
-void CrossoverDisplay::refresh() { resized(); repaint(); }
+void CrossoverDisplay::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (! plotBounds().contains (e.position)) return;
+    processor.addBand (frequencyForX (e.position.x));
+    refresh();
+}
+void CrossoverDisplay::refresh()
+{
+    const int wanted = juce::jmax (0, processor.getBandCount() - 1);
+    if ((int) handles.size() != wanted)
+    {
+        endCrossoverGesture();
+        handles.clear();
+        for (int i = 0; i < wanted; ++i)
+        {
+            handles.push_back (std::make_unique<Handle> (*this, i));
+            addAndMakeVisible (*handles.back());
+        }
+    }
+    addButton.setEnabled (processor.getBandCount() < triad::maxBands);
+    resized();
+    repaint();
+}
+void CrossoverDisplay::layoutPills()
+{
+    // Readouts that would overlap are stacked on up to three rows.
+    pillRows.assign (cuts.size(), 0);
+    std::array<float, 3> rowRight { -1.0e9f, -1.0e9f, -1.0e9f };
+    const auto plot = plotBounds();
+    for (size_t i = 0; i < cuts.size(); ++i)
+    {
+        const auto left = juce::jlimit (plot.getX(), plot.getRight() - pillWidth, xForFrequency (cuts[i]) - pillWidth * 0.5f);
+        int row = 0;
+        while (row < 2 && left < rowRight[(size_t) row] + 4.0f) ++row;
+        pillRows[i] = row;
+        rowRight[(size_t) row] = left + pillWidth;
+    }
+}
+float CrossoverDisplay::pillTop (int index) const
+{
+    const auto row = index >= 0 && index < (int) pillRows.size() ? pillRows[(size_t) index] : 0;
+    return plotBounds().getBottom() - 37.0f - (float) row * 28.0f;
+}
 void CrossoverDisplay::resized()
 {
-    const auto cuts = processor.effectiveCutoffs();
+    addButton.setBounds (getWidth() - 96, 7, 78, 24);
+    cuts = processor.effectiveCrossovers();
+    layoutPills();
     const auto plot = plotBounds();
-    for (int i = 0; i < 2; ++i)
+    for (size_t i = 0; i < handles.size() && i < cuts.size(); ++i)
     {
-        const auto f = i == 0 ? cuts.first : cuts.second;
-        handles[(size_t) i]->setBounds (juce::roundToInt (xForFrequency (f)) - 12,
-                                       juce::roundToInt (plot.getY()), 24, juce::roundToInt (plot.getHeight()) + 10);
-        handles[(size_t) i]->setDescription (frequencyText (f) + ". Drag left or right; arrow keys adjust; Shift gives finer adjustment.");
+        const auto f = cuts[i];
+        handles[i]->setBounds (juce::roundToInt (xForFrequency (f)) - 12, juce::roundToInt (plot.getY()), 24, juce::roundToInt (plot.getHeight()) + 10);
+        handles[i]->setDescription ("Crossover " + juce::String ((int) i + 1) + ": " + formatHz (f)
+                                    + ". Drag left or right; arrow keys adjust; Shift gives finer adjustment.");
     }
-    // The selected handle stays reachable even when the two boundaries are close.
-    if (activeHandle >= 0) handles[(size_t) activeHandle]->toFront (false);
+    // The selected handle stays reachable even when two boundaries are close.
+    if (activeHandle >= 0 && activeHandle < (int) handles.size()) handles[(size_t) activeHandle]->toFront (false);
 }
+
+// ---- Live spectrum --------------------------------------------------------------------------
+void CrossoverDisplay::timerCallback()
+{
+    updateSpectrum();
+    repaint (plotBounds().toNearestInt().expanded (2));
+}
+void CrossoverDisplay::updateSpectrum()
+{
+    constexpr float decayPerFrame = 1.2f;   // dB per 1/30 s
+    const auto writeIndex = processor.spectrum.getWriteIndex();
+    const bool fresh = writeIndex != lastWriteIndex;
+    lastWriteIndex = writeIndex;
+    const auto sampleRate = (float) processor.getSampleRateForDisplay();
+    const auto binHz = sampleRate / (float) fftSize;
+    if (fresh && processor.spectrum.read (samples.data(), fftSize))
+    {
+        for (size_t i = 0; i < (size_t) fftSize; ++i) bins[i] = { samples[i] * window[i], 0.0f };
+        triad::fft (bins);
+        for (size_t k = 1; k < levels.size(); ++k)
+        {
+            const auto magnitude = std::abs (bins[k]) * 2.0f / windowSum;
+            // +3 dB/octave tilt around 1 kHz so typical music reads as roughly level.
+            const auto db = 20.0f * std::log10 (magnitude + 1.0e-9f) + 3.0f * std::log2 (juce::jmax (1.0f, (float) k * binHz) / 1000.0f);
+            levels[k] = juce::jmax (db, levels[k] - decayPerFrame);
+        }
+    }
+    else
+    {
+        for (auto& l : levels) l -= decayPerFrame;
+    }
+    const auto plot = plotBounds();
+    constexpr float floorDb = -84.0f, topDb = 6.0f;
+    auto yFor = [&] (float db) { return juce::jmap (juce::jlimit (floorDb, topDb, db), floorDb, topDb, plot.getBottom(), plot.getY() + 26.0f); };
+    auto levelAt = [&] (float binPosition)
+    {
+        const auto k = juce::jlimit (1.0f, (float) levels.size() - 2.0f, binPosition);
+        const auto i = (size_t) k;
+        return juce::jmap (k - (float) i, levels[i], levels[i + 1]);
+    };
+    spectrumLine.clear();
+    spectrumFill.clear();
+    spectrumVisible = false;
+    spectrumFill.startNewSubPath (plot.getX(), plot.getBottom());
+    for (float x = plot.getX(); x <= plot.getRight() + 0.5f; x += 2.0f)
+    {
+        const auto k0 = frequencyForX (x - 1.0f) / binHz, k1 = frequencyForX (x + 1.0f) / binHz;
+        float db;
+        if (k1 - k0 < 1.0f) db = levelAt (0.5f * (k0 + k1));
+        else
+        {
+            db = -200.0f;
+            for (auto k = (size_t) juce::jmax (1.0f, k0); k <= (size_t) k1 && k < levels.size(); ++k) db = juce::jmax (db, levels[k]);
+        }
+        spectrumVisible |= db > floorDb + 3.0f;
+        const auto y = yFor (db);
+        if (spectrumLine.isEmpty()) spectrumLine.startNewSubPath (x, y); else spectrumLine.lineTo (x, y);
+        spectrumFill.lineTo (x, y);
+    }
+    spectrumFill.lineTo (plot.getRight(), plot.getBottom());
+    spectrumFill.closeSubPath();
+}
+
 void CrossoverDisplay::paint (juce::Graphics& g)
 {
     const auto plot = plotBounds();
-    const auto cuts = processor.effectiveCutoffs();
-    const std::array<float, 4> xs { plot.getX(), xForFrequency (cuts.first), xForFrequency (cuts.second), plot.getRight() };
+    const int count = processor.getBandCount();
+    std::vector<float> xs { plot.getX() };
+    for (auto c : cuts) xs.push_back (xForFrequency (c));
+    xs.push_back (plot.getRight());
     g.setColour (juce::Colour (0xff111213)); g.fillRoundedRectangle (getLocalBounds().toFloat(), 7.0f);
     g.setColour (juce::Colour (0xffb8bcba)); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText ("BAND CROSSOVERS", 18, 7, 175, 23, juce::Justification::centredLeft);
+    g.drawText ("BAND CROSSOVERS", 18, 8, 175, 23, juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (11.0f)); g.setColour (juce::Colour (0xff898f8b));
-    g.drawText ("Drag a divider  /  Double-click to reset", getWidth() - 300, 7, 280, 23, juce::Justification::centredRight);
-    for (size_t i = 0; i < 3; ++i)
+    g.drawText ("Drag a divider  /  Double-click to add a band", getWidth() - 430, 8, 320, 23, juce::Justification::centredRight);
+    for (int i = 0; i < count && i + 1 < (int) xs.size(); ++i)
     {
-        g.setColour (bandColours[i].withAlpha (0.08f));
-        g.fillRect (xs[i], plot.getY(), xs[i + 1] - xs[i], plot.getHeight());
-        g.setColour (bandColours[i].withAlpha (0.78f));
-        g.fillRect (xs[i], plot.getBottom() - 2.0f, xs[i + 1] - xs[i], 3.0f);
-        if (xs[i + 1] - xs[i] > 64.0f)
+        const auto colour = bandColour (i);
+        g.setColour (colour.withAlpha (0.07f));
+        g.fillRect (xs[(size_t) i], plot.getY(), xs[(size_t) i + 1] - xs[(size_t) i], plot.getHeight());
+        g.setColour (colour.withAlpha (0.8f));
+        g.fillRect (xs[(size_t) i], plot.getBottom() - 2.0f, xs[(size_t) i + 1] - xs[(size_t) i], 3.0f);
+        const auto width = xs[(size_t) i + 1] - xs[(size_t) i];
+        if (width > 26.0f)
         {
-            g.setColour (bandColours[i]); g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-            g.drawText (juce::StringArray { "LOW", "MID", "HIGH" }[(int) i],
-                        juce::Rectangle<float> (xs[i] + 10.0f, plot.getY() + 7.0f, xs[i + 1] - xs[i] - 20.0f, 20.0f), juce::Justification::centredLeft);
+            g.setColour (colour); g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+            g.drawText (width > 78.0f ? "BAND " + juce::String (i + 1) : juce::String (i + 1),
+                        juce::Rectangle<float> (xs[(size_t) i] + 8.0f, plot.getY() + 6.0f, width - 12.0f, 20.0f), juce::Justification::centredLeft);
         }
     }
-    // Frequency grid only: no simulated spectrum is presented as live audio.
     g.setColour (juce::Colour (0xff929991).withAlpha (0.12f));
     for (float f : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
         if (f < processor.nyquistFrequency()) g.drawVerticalLine (juce::roundToInt (xForFrequency (f)), plot.getY() + 29.0f, plot.getBottom());
     for (int row = 1; row <= 3; ++row)
         g.drawHorizontalLine (juce::roundToInt (plot.getY() + plot.getHeight() * (float) row / 4.0f), plot.getX(), plot.getRight());
+    if (spectrumVisible)
+    {
+        g.setGradientFill (juce::ColourGradient (juce::Colour (0x30e8ece6), 0.0f, plot.getY() + 26.0f,
+                                                 juce::Colour (0x06e8ece6), 0.0f, plot.getBottom(), false));
+        g.fillPath (spectrumFill);
+        g.setColour (juce::Colour (0xb8e2e6e0));
+        g.strokePath (spectrumLine, juce::PathStrokeType (1.3f));
+    }
     g.setFont (juce::FontOptions (10.0f)); g.setColour (juce::Colour (0xff969e98));
     for (float f : { 100.0f, 1000.0f, 10000.0f })
         if (f < processor.nyquistFrequency() * 0.8f)
-            g.drawText (frequencyText (f), juce::Rectangle<float> (xForFrequency (f) - 35, plot.getBottom() + 13, 70, 16), juce::Justification::centred);
-    g.drawText ("20 Hz", juce::Rectangle<float> (plot.getX(), plot.getBottom() + 13, 65, 16), juce::Justification::centredLeft);
-    g.drawText (frequencyText (processor.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 13, 90, 16), juce::Justification::centredRight);
-    for (int i = 0; i < 2; ++i)
+            g.drawText (formatHz (f), juce::Rectangle<float> (xForFrequency (f) - 35, plot.getBottom() + 12, 70, 16), juce::Justification::centred);
+    g.drawText ("20 Hz", juce::Rectangle<float> (plot.getX(), plot.getBottom() + 12, 65, 16), juce::Justification::centredLeft);
+    g.drawText (formatHz (processor.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 12, 90, 16), juce::Justification::centredRight);
+    for (size_t i = 0; i < cuts.size(); ++i)
     {
-        const float pillWidth = 92.0f;
-        const bool close = xs[2] - xs[1] < pillWidth + 8.0f;
-        const auto x = juce::jlimit (plot.getX(), plot.getRight() - pillWidth, xs[(size_t) i + 1] - pillWidth * 0.5f);
-        const auto y = plot.getBottom() - 37.0f - (close && i == 1 ? 29.0f : 0.0f);
-        g.setColour (juce::Colour (0xff090b09)); g.fillRoundedRectangle (x, y, pillWidth, 24.0f, 4.0f);
-        g.setColour (activeHandle == i ? bandColours[(size_t) i] : juce::Colour (0xffe1e6e0));
+        const auto x = juce::jlimit (plot.getX(), plot.getRight() - pillWidth, xs[i + 1] - pillWidth * 0.5f);
+        const auto y = pillTop ((int) i);
+        g.setColour (juce::Colour (0xf0090b09)); g.fillRoundedRectangle (x, y, pillWidth, 24.0f, 4.0f);
+        g.setColour (activeHandle == (int) i ? bandColour ((int) i) : juce::Colour (0xffe1e6e0));
         g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-        g.drawText (frequencyText (i == 0 ? cuts.first : cuts.second), juce::Rectangle<float> (x, y, pillWidth, 24.0f), juce::Justification::centred);
+        g.drawText (formatHz (cuts[i]), juce::Rectangle<float> (x, y, pillWidth, 24.0f), juce::Justification::centred);
     }
 }
+
+// ---- Handles --------------------------------------------------------------------------------
 CrossoverDisplay::Handle::Handle (CrossoverDisplay& display, int which) : owner (display), index (which)
 {
-    setTitle (which == 0 ? "Low / Mid crossover" : "Mid / High crossover");
+    setTitle ("Crossover " + juce::String (which + 1));
     setWantsKeyboardFocus (true);
     setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
 }
@@ -150,34 +282,36 @@ void CrossoverDisplay::Handle::paint (juce::Graphics& g)
     const bool highlighted = isMouseOverOrDragging() || hasKeyboardFocus (false) || owner.activeHandle == index;
     const float centre = (float) getWidth() * 0.5f, bottom = (float) getHeight() - 10.0f;
     const float dash[] { 4.0f, 5.0f };
-    g.setColour (highlighted ? bandColours[(size_t) index] : juce::Colour (0xffb6bcb5));
-    const auto cuts = owner.processor.effectiveCutoffs();
-    const bool close = owner.xForFrequency (cuts.second) - owner.xForFrequency (cuts.first) < 100.0f;
-    const float firstPillTop = bottom - 37.0f - (close ? 29.0f : 0.0f);
-    const float lastPillBottom = bottom - 13.0f;
-    g.drawDashedLine (juce::Line<float> (centre, 0.0f, centre, firstPillTop - 3.0f), dash, 2, highlighted ? 2.0f : 1.5f);
-    g.drawDashedLine (juce::Line<float> (centre, lastPillBottom + 3.0f, centre, bottom - 7.0f), dash, 2, highlighted ? 2.0f : 1.5f);
+    const auto colour = bandColour (index);
+    g.setColour (highlighted ? colour : juce::Colour (0xffb6bcb5));
+    const auto pill = owner.pillTop (index) - (float) getY();
+    g.drawDashedLine (juce::Line<float> (centre, 0.0f, centre, pill - 3.0f), dash, 2, highlighted ? 2.0f : 1.5f);
+    g.drawDashedLine (juce::Line<float> (centre, pill + 27.0f, centre, bottom - 7.0f), dash, 2, highlighted ? 2.0f : 1.5f);
     g.setColour (juce::Colour (0xff111413)); g.fillEllipse (centre - 8, bottom - 8, 16, 16);
-    g.setColour (highlighted ? bandColours[(size_t) index] : juce::Colour (0xffe3e8df));
+    g.setColour (highlighted ? colour : juce::Colour (0xffe3e8df));
     g.fillEllipse (centre - 5.5f, bottom - 5.5f, 11, 11);
     if (hasKeyboardFocus (false)) g.drawEllipse (centre - 9, bottom - 9, 18, 18, 1.0f);
 }
 bool CrossoverDisplay::Handle::hitTest (int x, int y)
 {
     if (! getLocalBounds().contains (x, y)) return false;
-    const auto cuts = owner.processor.effectiveCutoffs();
+    // Overlapping hit areas go to the nearest divider, so no handle is ever unreachable.
     const float position = (float) (getX() + x);
-    const float lowDistance = std::abs (position - owner.xForFrequency (cuts.first));
-    const float highDistance = std::abs (position - owner.xForFrequency (cuts.second));
-    // Overlapping hit areas are divided at the midpoint, so a narrow band does
-    // not leave one handle completely covered by the other.
-    return index == 0 ? lowDistance <= highDistance : highDistance < lowDistance;
+    int nearest = -1;
+    float best = 1.0e9f;
+    for (size_t i = 0; i < owner.cuts.size(); ++i)
+    {
+        const auto distance = std::abs (position - owner.xForFrequency (owner.cuts[i]));
+        if (distance < best) { best = distance; nearest = (int) i; }
+    }
+    return nearest == index;
 }
 void CrossoverDisplay::Handle::mouseDown (const juce::MouseEvent& event)
 {
     if (! event.mods.isLeftButtonDown()) return;
-    const auto cuts = owner.processor.effectiveCutoffs();
-    grabOffset = owner.xForFrequency (index == 0 ? cuts.first : cuts.second) - event.getEventRelativeTo (&owner).position.x;
+    const auto current = owner.processor.effectiveCrossovers();
+    if (index >= (int) current.size()) return;
+    grabOffset = owner.xForFrequency (current[(size_t) index]) - event.getEventRelativeTo (&owner).position.x;
     owner.beginCrossoverGesture (index);
 }
 void CrossoverDisplay::Handle::mouseDrag (const juce::MouseEvent& event)
@@ -187,14 +321,16 @@ void CrossoverDisplay::Handle::mouseDrag (const juce::MouseEvent& event)
 void CrossoverDisplay::Handle::mouseUp (const juce::MouseEvent&) { owner.endCrossoverGesture(); }
 void CrossoverDisplay::Handle::mouseDoubleClick (const juce::MouseEvent& event)
 {
-    if (event.mods.isLeftButtonDown()) owner.setCrossoverValue (index, index == 0 ? 250.0f : 2500.0f);
+    if (event.mods.isLeftButtonDown())
+        owner.setCrossoverValue (index, TriadProcessor::defaultCrossover (index, owner.processor.getBandCount()));
 }
 bool CrossoverDisplay::Handle::keyPressed (const juce::KeyPress& key)
 {
     const bool left = key.getKeyCode() == juce::KeyPress::leftKey;
     if (! left && key.getKeyCode() != juce::KeyPress::rightKey) return false;
-    const auto cuts = owner.processor.effectiveCutoffs();
+    const auto current = owner.processor.effectiveCrossovers();
+    if (index >= (int) current.size()) return false;
     const float step = (key.getModifiers().isShiftDown() ? 1.0f / 120.0f : 1.0f / 12.0f) * (left ? -1.0f : 1.0f);
-    owner.setCrossoverValue (index, (index == 0 ? cuts.first : cuts.second) * std::pow (2.0f, step));
+    owner.setCrossoverValue (index, current[(size_t) index] * std::pow (2.0f, step));
     return true;
 }

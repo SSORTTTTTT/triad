@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.1.1 LANGUAGES C CXX)
+project(Triad VERSION 0.2.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(TRIAD_BUILD_TESTS "Build integration tests and a test effect" ON)
@@ -29,16 +29,21 @@ juce_add_plugin(Triad
     COPY_PLUGIN_AFTER_BUILD FALSE VST3_CATEGORIES Fx Tools
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "Triad uses audio input to process your sound.")
-target_sources(Triad PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/CrossoverDisplay.cpp)
+target_sources(Triad PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/CrossoverDisplay.cpp
+    Source/BandStrip.cpp Source/PluginCatalog.cpp Source/AudioUnitList.cpp)
 target_compile_definitions(Triad PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1
-    JUCE_PLUGINHOST_AU=0 JUCE_PLUGINHOST_VST=0
+    JUCE_PLUGINHOST_AU=$<IF:$<PLATFORM_ID:Darwin>,1,0> JUCE_PLUGINHOST_VST=0
     JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
 # Only the JUCE modules the plugin uses: plugin hosting + UI. No juce_audio_utils / juce_dsp
 # (they add audio-device I/O and the FLAC/Ogg/WAV/AIFF codecs, none of which Triad needs).
 target_link_libraries(Triad PRIVATE juce::juce_audio_processors PUBLIC juce::juce_recommended_warning_flags)
 if(TRIAD_BUILD_STANDALONE)
     target_link_libraries(Triad PRIVATE juce::juce_audio_utils)
+endif()
+if(APPLE)
+    # Lists Audio Units (effects vs instruments) without loading them.
+    target_link_libraries(Triad PRIVATE "-framework AudioToolbox")
 endif()
 if(TRIAD_SIZE_OPTIMISED AND NOT MSVC)
     # Framework and UI code optimised for size; the audio path (PluginProcessor.cpp,
@@ -64,6 +69,13 @@ if(TRIAD_BUILD_TESTS)
     target_sources(TriadTestEffect PRIVATE Tests/TestEffect.cpp)
     target_compile_definitions(TriadTestEffect PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
     target_link_libraries(TriadTestEffect PRIVATE juce::juce_audio_utils)
+    # An instrument fixture: the effect list must never offer it.
+    juce_add_plugin(TriadTestSynth COMPANY_NAME "Triad Tests" BUNDLE_ID "audio.thomasross.triad.testsynth" PLUGIN_MANUFACTURER_CODE Tsrt
+        PLUGIN_CODE Ttsy PRODUCT_NAME "Triad Test Synth" FORMATS VST3
+        IS_SYNTH TRUE NEEDS_MIDI_INPUT TRUE COPY_PLUGIN_AFTER_BUILD FALSE)
+    target_sources(TriadTestSynth PRIVATE Tests/TestSynth.cpp)
+    target_compile_definitions(TriadTestSynth PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
+    target_link_libraries(TriadTestSynth PRIVATE juce::juce_audio_utils)
     juce_add_console_app(TriadTests PRODUCT_NAME "Triad Tests")
     target_sources(TriadTests PRIVATE Tests/Tests.cpp)
     target_compile_definitions(TriadTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)

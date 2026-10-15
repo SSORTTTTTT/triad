@@ -1,196 +1,187 @@
 #include "PluginEditor.h"
+
+using namespace triad::ui;
+
 namespace
 {
-const std::array<juce::Colour, 3> colours { juce::Colour (0xff9bd85c), juce::Colour (0xff67c6b8), juce::Colour (0xffa39ce8) };
-juce::String hz (float x)
-{
-    return (x >= 1000.0f ? juce::String (x / 1000.0f, 3) : juce::String (x, 2))
-        .trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + (x >= 1000.0f ? " kHz" : " Hz");
+constexpr int editorWidth = 1000, editorHeight = 786, margin = 24, stripGap = 10, minStripWidth = 196, maxStripWidth = 420;
+enum MenuIds { scanningId = 1000001, noneId, browseId, refreshId, rescanId };
 }
-}
+
 TriadLook::TriadLook()
 {
     setColour (juce::TextButton::buttonColourId, juce::Colour (0xff303331));
-    setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe7eae5));
-    setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xffe7eae5));
-    setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    setColour (juce::Slider::trackColourId, juce::Colour (0xff9bd85c));
-    setColour (juce::Slider::thumbColourId, juce::Colour (0xff9bd85c));
-    setColour (juce::Label::textColourId, juce::Colour (0xffa6afa5));
+    setColour (juce::TextButton::textColourOffId, textColour);
+    setColour (juce::Label::textColourId, dimTextColour);
     setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff202420));
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colour (0xff3d4a36));
+    setColour (juce::TooltipWindow::backgroundColourId, juce::Colour (0xff111312));
+    setColour (juce::TooltipWindow::textColourId, textColour);
+    setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff4a504c));
 }
 void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float start, float end, juce::Slider& slider)
 {
-    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (7);
+    const bool small = juce::jmin (w, h) < 40;
+    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (small ? 1.5f : 5.0f);
     const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+    const float stroke = small ? 2.5f : 4.5f;
     const auto centre = bounds.getCentre();
+    // Dark body like FL's slot knobs, with the value arc in the band colour around it.
+    g.setColour (juce::Colour (0xff131615));
+    g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (centre));
+    const auto arcRadius = radius - stroke * 0.5f;
     juce::Path track, value;
-    track.addCentredArc (centre.x, centre.y, radius, radius, 0, start, end, true);
-    value.addCentredArc (centre.x, centre.y, radius, radius, 0, start, start + pos * (end - start), true);
-    g.setColour (juce::Colour (0xff3b413a)); g.strokePath (track, juce::PathStrokeType (4.0f));
-    g.setColour (slider.findColour (juce::Slider::rotarySliderFillColourId)); g.strokePath (value, juce::PathStrokeType (4.0f));
-    const auto angle = start + pos * (end - start) - juce::MathConstants<float>::halfPi;
-    g.drawLine (centre.x + std::cos (angle) * radius * 0.4f, centre.y + std::sin (angle) * radius * 0.4f,
-                centre.x + std::cos (angle) * radius * 0.8f, centre.y + std::sin (angle) * radius * 0.8f, 3.0f);
+    track.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0, start, end, true);
+    value.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0, start, start + pos * (end - start), true);
+    g.setColour (juce::Colour (0xff3b413a)); g.strokePath (track, juce::PathStrokeType (stroke));
+    g.setColour (slider.findColour (juce::Slider::rotarySliderFillColourId)); g.strokePath (value, juce::PathStrokeType (stroke));
+    // The percentage, inside the circle.
+    const auto v = slider.getValue();
+    const auto label = (v >= 99.95 ? juce::String ("100") : juce::String (juce::roundToInt (v))) + "%";
+    g.setColour (textColour.withAlpha (slider.isEnabled() ? 0.95f : 0.5f));
+    g.setFont (small ? juce::FontOptions (8.5f, juce::Font::bold) : juce::FontOptions (juce::jmax (11.0f, radius * 0.46f), juce::Font::bold));
+    const auto inner = juce::Rectangle<float> ((arcRadius - stroke) * 1.9f, radius).withCentre (centre).toNearestInt();
+    g.drawFittedText (label, inner, juce::Justification::centred, 1, 0.75f);
 }
+
 TriadEditor::TriadEditor (TriadProcessor& p) : AudioProcessorEditor (p), processor (p), frequencyDisplay (p)
 {
     setLookAndFeel (&look);
-    setSize (980, 710);
+    setSize (editorWidth, editorHeight);
     addAndMakeVisible (frequencyDisplay);
-    for (int i = 0; i < 3; ++i)
-    {
-        auto& c = cards[(size_t) i];
-        for (auto* button : { &c.load, &c.open, &c.remove }) addAndMakeVisible (*button);
-        addAndMakeVisible (c.plugin); addAndMakeVisible (c.detail); addAndMakeVisible (c.mix);
-        c.plugin.setFont (juce::Font (juce::FontOptions (19.0f, juce::Font::bold)));
-        c.plugin.setColour (juce::Label::textColourId, juce::Colour (0xffeef0f5));
-        c.detail.setFont (juce::Font (juce::FontOptions (12.0f)));
-        c.mix.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        c.mix.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 75, 22);
-        c.mix.setTextValueSuffix ("%"); c.mix.setDoubleClickReturnValue (true, 100.0);
-        c.mix.setColour (juce::Slider::rotarySliderFillColourId, colours[(size_t) i]);
-        c.mix.setTooltip ("Effect mix: 0% is the unprocessed band; 100% is the hosted effect.");
-        c.mix.setTitle (juce::StringArray { "Low", "Mid", "High" }[i] + " effect mix");
-        c.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.parameters, "mix" + juce::String (i), c.mix);
-        c.load.onClick = [this, i] { choose (i); };
-        c.open.onClick = [this, i] { processor.showEffect (i); };
-        c.remove.onClick = [this, i] { processor.removeEffect (i); timerCallback(); };
-    }
-    for (auto* s : { &low, &high })
-    {
-        addAndMakeVisible (*s); s->setSliderStyle (juce::Slider::LinearHorizontal);
-        s->setTextBoxStyle (juce::Slider::TextBoxRight, false, 94, 24);
-        s->setTextValueSuffix (" Hz");
-    }
-    low.setTitle ("Low / Mid crossover"); high.setTitle ("Mid / High crossover");
-    low.onValueChange = [this]
-    {
-        if (low.isMouseButtonDown() && low.getValue() >= processor.effectiveCutoffs().second / 1.01)
-            low.setValue (processor.effectiveCutoffs().second / 1.01);
-    };
-    high.onValueChange = [this]
-    {
-        if (high.isMouseButtonDown() && high.getValue() <= low.getValue() * 1.01)
-            high.setValue (low.getValue() * 1.01);
-    };
-    lowAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.parameters, "lowCut", low);
-    highAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.parameters, "highCut", high);
-    addAndMakeVisible (lowLabel); addAndMakeVisible (highLabel); addAndMakeVisible (status);
-    lowLabel.setText ("LOW / MID", juce::dontSendNotification);
-    highLabel.setText ("MID / HIGH", juce::dontSendNotification);
-    status.setFont (juce::Font (juce::FontOptions (12.0f)));
-    timerCallback(); startTimerHz (10);
+    viewport.setViewedComponent (&stripHolder, false);
+    viewport.setScrollBarsShown (false, true);
+    viewport.setScrollBarThickness (8);
+    addAndMakeVisible (viewport);
+    status.setFont (juce::FontOptions (12.0f));
+    addAndMakeVisible (status);
+    catalog->addChangeListener (this);
+    rebuildStrips();
+    timerCallback();
+    startTimerHz (10);
 }
-TriadEditor::~TriadEditor() { stopTimer(); processor.closeWindows(); setLookAndFeel (nullptr); }
-juce::Rectangle<int> TriadEditor::cardBounds (int i) const { return { 28 + i * 312, 366, 296, 284 }; }
+TriadEditor::~TriadEditor()
+{
+    stopTimer();
+    catalog->removeChangeListener (this);
+    processor.closeWindows();
+    setLookAndFeel (nullptr);
+}
 void TriadEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff252729));
-    g.setColour (juce::Colour (0xff303235)); g.fillRect (0, 0, getWidth(), 66);
-    g.setColour (juce::Colour (0xff9bd85c)); g.setFont (juce::FontOptions (30.0f, juce::Font::bold));
-    g.drawText ("TRIAD", 28, 13, 150, 42, juce::Justification::centredLeft);
+    g.fillAll (background);
+    g.setColour (juce::Colour (0xff303235)); g.fillRect (0, 0, getWidth(), 56);
+    g.setColour (juce::Colour (0xff9bd85c)); g.setFont (juce::FontOptions (28.0f, juce::Font::bold));
+    g.drawText ("TRIAD", margin, 9, 150, 38, juce::Justification::centredLeft);
     g.setColour (juce::Colour (0xffaeb6ab)); g.setFont (juce::FontOptions (12.0f));
-    g.drawText ("MULTIBAND EFFECT HOST", 176, 20, 360, 30, juce::Justification::centredLeft);
-    g.drawText ("VST3  /  0.1.1", 750, 20, 200, 30, juce::Justification::centredRight);
-    const auto cuts = processor.effectiveCutoffs();
-    const std::array<float, 4> endpoints { 0.0f, cuts.first, cuts.second, processor.nyquistFrequency() };
-    g.setColour (juce::Colour (0xffa4afa2)); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText ("YOUR EFFECTS", 28, 342, 260, 20, juce::Justification::centredLeft);
-    for (int i = 0; i < 3; ++i)
-    {
-        auto b = cardBounds (i);
-        g.setColour (juce::Colour (0xff1b1e1c)); g.fillRoundedRectangle (b.toFloat(), 7);
-        g.setColour (colours[(size_t) i].withAlpha (0.75f));
-        g.fillRoundedRectangle ((float) b.getX() + 16, (float) b.getY() + 17, 4, 19, 2);
-        g.setColour (colours[(size_t) i]); g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-        g.drawText (juce::StringArray { "LOW", "MID", "HIGH" }[i], b.getX() + 29, b.getY() + 15, 180, 24, juce::Justification::centredLeft);
-        g.setFont (juce::FontOptions (11.0f)); g.setColour (juce::Colour (0xff778275));
-        g.drawText ("0" + juce::String (i + 1), b.getRight() - 53, b.getY() + 15, 35, 24, juce::Justification::centredRight);
-        g.setColour (juce::Colour (0xffbac4b8)); g.setFont (juce::FontOptions (13.0f));
-        g.drawText (hz (endpoints[(size_t) i]), b.getX() + 18, b.getY() + 45, 123, 23, juce::Justification::centredLeft);
-        g.drawText (hz (endpoints[(size_t) i + 1]), b.getX() + 155, b.getY() + 45, 123, 23, juce::Justification::centredRight);
-        g.setColour (colours[(size_t) i].withAlpha (0.45f));
-        g.drawHorizontalLine (b.getY() + 73, (float) b.getX() + 18, (float) b.getRight() - 18);
-        g.setColour (juce::Colour (0xffa5afa2)); g.setFont (juce::FontOptions (12.0f));
-        g.drawText ("EFFECT MIX", b.getX() + 18, b.getY() + 205, 136, 24, juce::Justification::centredLeft);
-        g.setFont (juce::FontOptions (11.0f));
-        g.drawText ("Dry 0%  /  Wet 100%", b.getX() + 18, b.getY() + 230, 145, 20, juce::Justification::centredLeft);
-    }
+    g.drawText ("MULTIBAND EFFECT HOST", 168, 15, 360, 26, juce::Justification::centredLeft);
+    g.drawText ("VST3 + AU EFFECTS  /  0.2.0", getWidth() - 300, 15, 276, 26, juce::Justification::centredRight);
 }
 void TriadEditor::resized()
 {
-    frequencyDisplay.setBounds (28, 86, 924, 210);
-    lowLabel.setBounds (28, 306, 86, 28); low.setBounds (116, 304, 346, 32);
-    highLabel.setBounds (515, 306, 86, 28); high.setBounds (603, 304, 349, 32);
-    for (int i = 0; i < 3; ++i)
+    frequencyDisplay.setBounds (margin, 66, getWidth() - 2 * margin, 204);
+    viewport.setBounds (margin, 280, getWidth() - 2 * margin, BandStrip::preferredHeight + 10);
+    status.setBounds (margin, getHeight() - 30, getWidth() - 2 * margin, 24);
+    layoutStrips();
+}
+void TriadEditor::rebuildStrips()
+{
+    strips.clear();
+    builtCount = processor.getBandCount();
+    for (int b = 0; b < builtCount; ++b)
     {
-        auto b = cardBounds (i); auto& c = cards[(size_t) i];
-        c.plugin.setBounds (b.getX() + 14, b.getY() + 86, 268, 30);
-        c.detail.setBounds (b.getX() + 14, b.getY() + 117, 268, 24);
-        c.load.setBounds (b.getX() + 18, b.getY() + 156, 125, 30);
-        c.open.setBounds (b.getX() + 150, b.getY() + 156, 55, 30);
-        c.remove.setBounds (b.getX() + 212, b.getY() + 156, 66, 30);
-        c.mix.setBounds (b.getX() + 187, b.getY() + 193, 88, 87);
+        strips.push_back (std::make_unique<BandStrip> (processor, *this, b));
+        stripHolder.addAndMakeVisible (*strips.back());
     }
-    status.setBounds (28, 665, 924, 32);
+    layoutStrips();
+    frequencyDisplay.refresh();
+}
+void TriadEditor::layoutStrips()
+{
+    const int available = viewport.getWidth();
+    const int n = juce::jmax (1, (int) strips.size());
+    const int width = juce::jlimit (minStripWidth, maxStripWidth, (available - stripGap * (n - 1)) / n);
+    const int total = n * width + stripGap * (n - 1);
+    stripHolder.setSize (juce::jmax (total, available), BandStrip::preferredHeight);
+    for (int i = 0; i < (int) strips.size(); ++i)
+        strips[(size_t) i]->setBounds (i * (width + stripGap), 0, width, BandStrip::preferredHeight);
 }
 void TriadEditor::timerCallback()
 {
-    juce::String warning;
-    for (int i = 0; i < 3; ++i)
-    {
-        auto info = processor.getSlotInfo (i); auto& c = cards[(size_t) i];
-        c.plugin.setText (info.name, juce::dontSendNotification);
-        c.detail.setText (info.status.isNotEmpty() ? "Unavailable - see status" : info.loaded ? "VST3 / Stereo" : "Empty slot passes audio through", juce::dontSendNotification);
-        c.open.setEnabled (info.loaded); c.remove.setEnabled (info.loaded || info.status.isNotEmpty());
-        if (info.status.isNotEmpty()) warning = info.status;
-    }
-    auto text = warning.isNotEmpty() ? warning : processor.getStatus();
-    if (text.isEmpty()) text = "Load a VST3 effect on any band. Open its interface to adjust the effect.";
+    if (processor.getBandCount() != builtCount) rebuildStrips();
+    const auto cuts = processor.effectiveCrossovers();
+    for (auto& strip : strips) strip->update (cuts, builtCount, processor.nyquistFrequency());
+    frequencyDisplay.refresh();
+    juce::String text;
+    for (int b = 0; b < builtCount && text.isEmpty(); ++b)
+        for (int s = 0; s < triad::maxSlots; ++s)
+            if (auto info = processor.getSlotInfo (b, s); info.status.isNotEmpty())
+            { text = "Band " + juce::String (b + 1) + " / Slot " + juce::String (s + 1) + ": " + info.status; break; }
+    if (text.isEmpty() && catalog->isScanning()) text = catalog->getProgress();
+    if (text.isEmpty()) text = processor.getStatus();
+    if (text.isEmpty()) text = "Click a slot to load an effect, click a loaded slot to open it. Double-click the display to add a band.";
     status.setText (text, juce::dontSendNotification);
-    frequencyDisplay.refresh(); repaint();
 }
-void TriadEditor::choose (int band)
+void TriadEditor::changeListenerCallback (juce::ChangeBroadcaster*) { timerCallback(); }
+void TriadEditor::setCrossoverFrequency (int index, float hz) { frequencyDisplay.setCrossoverValue (index, hz); }
+
+void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
 {
-    juce::StringArray paths;
-   #if JUCE_MAC
-    paths.add ("/Library/Audio/Plug-Ins/VST3");
-    paths.add (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Audio/Plug-Ins/VST3").getFullPathName());
-   #elif JUCE_WINDOWS
-    paths.add (juce::File::getSpecialLocation (juce::File::globalApplicationsDirectory).getChildFile ("Common Files/VST3").getFullPathName());
-   #else
-    paths.add ("/usr/lib/vst3"); paths.add ("/usr/local/lib/vst3");
-    paths.add (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile (".vst3").getFullPathName());
-   #endif
-    auto files = std::make_shared<juce::Array<juce::File>>();
-    for (const auto& path : paths)
-        juce::File (path).findChildFiles (*files, juce::File::findFilesAndDirectories, true, "*.vst3");
+    auto list = std::make_shared<std::vector<EffectEntry>> (catalog->getEffects());
     juce::PopupMenu menu;
-    menu.addSectionHeader ("Installed VST3 effects");
-    int id = 1;
-    for (const auto& f : *files) menu.addItem (id++, f.getFileNameWithoutExtension());
-    if (files->isEmpty()) menu.addItem (0, "No plugins found in the standard folders", false);
-    menu.addSeparator(); menu.addItem (1000000, "Browse for a VST3...");
-    juce::Component::SafePointer<TriadEditor> safe (this);
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&cards[(size_t) band].load), [safe, files, band] (int selected)
+    menu.addSectionHeader ("Band " + juce::String (band + 1) + "  /  Slot " + juce::String (slot + 1));
+    for (const juce::String format : { "VST3", "AU" })
     {
-        if (! safe) return;
-        if (selected == 1000000) { safe->browse (band); return; }
-        if (selected > 0 && selected <= files->size())
+        juce::PopupMenu formatMenu, makerMenu;
+        juce::String maker;
+        bool any = false;
+        auto flush = [&]
         {
-            safe->processor.loadFile (band, files->getReference (selected - 1)); safe->timerCallback();
+            if (makerMenu.containsAnyActiveItems()) formatMenu.addSubMenu (maker.isNotEmpty() ? maker : "Other", makerMenu);
+            makerMenu = juce::PopupMenu();
+        };
+        for (int i = 0; i < (int) list->size(); ++i)
+        {
+            const auto& e = (*list)[(size_t) i];
+            if (e.format != format) continue;
+            if (! any || e.manufacturer != maker) { flush(); maker = e.manufacturer; }
+            makerMenu.addItem (i + 1, e.name);
+            any = true;
         }
+        flush();
+        if (any) menu.addSubMenu (format == "AU" ? "Audio Units" : "VST3", formatMenu);
+    }
+    if (catalog->isScanning()) menu.addItem (scanningId, catalog->getProgress(), false);
+    else if (list->empty()) menu.addItem (noneId, "No effects found", false);
+    menu.addSeparator();
+    menu.addItem (browseId, "Browse for a plug-in file...");
+    menu.addItem (refreshId, "Refresh plug-in list");
+    menu.addItem (rescanId, "Rescan all plug-ins");
+    juce::Component::SafePointer<TriadEditor> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&target), [safe, list, band, slot] (int choice)
+    {
+        if (safe == nullptr || choice == 0) return;
+        auto& self = *safe;
+        if (choice == browseId) { self.browse (band, slot); return; }
+        if (choice == refreshId) { self.catalog->refresh(); return; }
+        if (choice == rescanId) { self.catalog->rescanAll(); return; }
+        if (choice < 1 || choice > (int) list->size()) return;
+        const auto& e = (*list)[(size_t) choice - 1];
+        // Loading opens the effect's window straight away: one less click.
+        if (e.loadByFile) self.processor.loadFile (band, slot, juce::File (e.description.fileOrIdentifier), true);
+        else self.processor.loadEffect (band, slot, e.description, true);
+        self.timerCallback();
     });
 }
-void TriadEditor::browse (int band)
+void TriadEditor::browse (int band, int slot)
 {
-    chooser = std::make_unique<juce::FileChooser> ("Select a VST3 audio effect", juce::File(), "*.vst3");
+    chooser = std::make_unique<juce::FileChooser> ("Select a VST3 or AU effect", juce::File(), "*.vst3;*.component");
     juce::Component::SafePointer<TriadEditor> safe (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::canSelectDirectories,
-        [safe, band] (const juce::FileChooser& c)
+        [safe, band, slot] (const juce::FileChooser& c)
         {
-            if (! safe || c.getResult() == juce::File()) return;
-            safe->processor.loadFile (band, c.getResult()); safe->timerCallback();
+            if (safe == nullptr || c.getResult() == juce::File()) return;
+            safe->processor.loadFile (band, slot, c.getResult(), true);
+            safe->timerCallback();
         });
 }

@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$PWD"
 
-VERSION="0.1.1"
+VERSION="0.2.0"
 JUCE_COMMIT="29396c22c93392d6738e021b83196283d6e4d850"   # JUCE 8.0.12
 CMAKE_FALLBACK_VERSION="3.31.9"
 CMAKE_FALLBACK_SHA256="eb9d0b2b6a5b900e2f5811326a86ea393a146e4cb2384d15512c226e9c98f8bf"
@@ -201,8 +201,9 @@ pkgbuild --quiet --root "$AU_ROOT" --component-plist "$PKG_WORK/au-components.pl
 cat > "$PKG_WORK/resources/welcome.html" <<EOF
 <html><body style="font-family: -apple-system, Helvetica; font-size: 13px;">
 <h2>Triad $VERSION</h2>
-<p>Three-band stereo effect host: split your signal into Low, Mid and High with movable crossovers,
-host one VST3 effect per band and blend each band with its own Effect Mix.</p>
+<p>Multiband effects host: split your signal into up to 10 bands with draggable crossovers over a
+live spectrum, run a chain of up to 10 VST3 or AU effects on every band (each with its own mix knob),
+and blend each band with its Band Mix.</p>
 <p>This installer adds, for all users:</p>
 <ul>
 <li><b>Audio Unit</b> &rarr; /Library/Audio/Plug-Ins/Components/Triad.component</li>
@@ -216,7 +217,7 @@ cat > "$PKG_WORK/resources/conclusion.html" <<EOF
 <html><body style="font-family: -apple-system, Helvetica; font-size: 13px;">
 <h2>Triad is installed</h2>
 <p>Open your DAW, rescan plug-ins if needed, and add <b>Triad</b> to a stereo audio track or mixer insert.</p>
-<p>Effects hosted inside Triad must be native Apple Silicon VST3 plug-ins.</p>
+<p>Effects hosted inside Triad must be native Apple Silicon VST3 or Audio Unit effects.</p>
 </body></html>
 EOF
 cat > "$PKG_WORK/distribution.xml" <<EOF

@@ -8,56 +8,65 @@ struct GestureProbe final : juce::AudioProcessorParameter::Listener
     void parameterGestureChanged (int, bool starting) override { starting ? ++starts : ++ends; }
 };
 
+inline juce::MouseEvent mouseAt (juce::Component* target, float x, float y, bool dragging = false)
+{
+    return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), { x, y },
+        juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 1, 0, 0, 0, 0,
+        target, target, juce::Time::getCurrentTime(), { x, y }, juce::Time::getCurrentTime(), 1, dragging);
+}
+
+inline void requireIncreasing (const std::vector<float>& cuts, const char* label)
+{
+    for (size_t i = 1; i < cuts.size(); ++i)
+        require (cuts[i] / cuts[i - 1] >= 1.0099f, label);
+}
+
 inline void runCrossoverTests()
 {
     TriadProcessor processor;
     processor.prepareToPlay (48000, 128);
-    auto* lo = processor.parameters.getParameter ("lowCut");
-    auto* hi = processor.parameters.getParameter ("highCut");
+    require (processor.getBandCount() == 3, "Triad opens with three bands");
+    auto* lo = processor.crossoverParameter (0);
+    auto* hi = processor.crossoverParameter (1);
     GestureProbe lowProbe, highProbe;
     lo->addListener (&lowProbe); hi->addListener (&highProbe);
     {
         CrossoverDisplay display (processor);
-        display.setBounds (0, 0, 924, 210);
-        auto* lowHandle = display.getChildComponent (0);
-        auto* highHandle = display.getChildComponent (1);
-        require (lowHandle && highHandle, "Both crossover handles exist");
+        display.setBounds (0, 0, 952, 204);
+        display.refresh();
+        require (display.getNumHandles() == 2, "Three bands have two crossover handles");
+        auto* lowHandle = display.getHandle (0);
+        auto* highHandle = display.getHandle (1);
         for (float f : { 20.0f, 31.5f, 250.0f, 2500.0f, 20000.0f, 24000.0f })
             require (std::abs (display.frequencyForX (display.xForFrequency (f)) - f) < f * 0.000002f,
                      "Log frequency mapping round trip");
         require (display.frequencyForX (-10000) == 20.0f, "Left drag clamps to display edge");
         require (std::abs (display.frequencyForX (10000) - 24000.0f) < 0.01f, "Right drag clamps to display edge");
-        auto event = [] (juce::Component* handle, float x, bool dragging = false)
-        {
-            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), { x, 50.0f },
-                juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 1, 0, 0, 0, 0,
-                handle, handle, juce::Time::getCurrentTime(), { x, 50.0f }, juce::Time::getCurrentTime(), 1, dragging);
-        };
         // Grab the edge of the hit area and hold still: the cutoff must not jump.
         const auto before = processor.effectiveCutoffs().first;
-        lowHandle->mouseDown (event (lowHandle, 5.0f));
-        lowHandle->mouseDrag (event (lowHandle, 5.0f, true));
-        lowHandle->mouseUp (event (lowHandle, 5.0f));
+        lowHandle->mouseDown (mouseAt (lowHandle, 5.0f, 50.0f));
+        lowHandle->mouseDrag (mouseAt (lowHandle, 5.0f, 50.0f, true));
+        lowHandle->mouseUp (mouseAt (lowHandle, 5.0f, 50.0f));
         require (std::abs (processor.effectiveCutoffs().first - before) < 0.02f, "Handle grab does not jump");
         require (lowProbe.starts == 1 && lowProbe.ends == 1, "Mouse gesture begin/end sent to host");
-        // Exercise actual mouse callbacks, not just the frequency setter.
-        lowHandle->mouseDown (event (lowHandle, display.xForFrequency (before) - (float) lowHandle->getX()));
-        lowHandle->mouseDrag (event (lowHandle, display.xForFrequency (420.0f) - (float) lowHandle->getX(), true));
-        lowHandle->mouseUp (event (lowHandle, 12.0f));
-        require (std::abs (processor.effectiveCutoffs().first - 420.0f) < 0.03f, "Mouse drag moves low crossover");
+        lowHandle->mouseDown (mouseAt (lowHandle, display.xForFrequency (before) - (float) lowHandle->getX(), 50.0f));
+        lowHandle->mouseDrag (mouseAt (lowHandle, display.xForFrequency (420.0f) - (float) lowHandle->getX(), 50.0f, true));
+        lowHandle->mouseUp (mouseAt (lowHandle, 12.0f, 50.0f));
+        require (std::abs (processor.effectiveCutoffs().first - 420.0f) < 0.03f, "Mouse drag moves the first crossover");
         require (lowProbe.changes > 0, "Dragging notifies parameter listeners");
         display.beginCrossoverGesture (0); display.dragCrossoverTo (10000); display.endCrossoverGesture();
         auto cuts = processor.effectiveCutoffs();
-        require (cuts.first < cuts.second && cuts.second / cuts.first >= 1.0099f, "Low handle cannot cross high handle");
+        require (cuts.first < cuts.second && cuts.second / cuts.first >= 1.0099f, "Lower handle cannot cross the next one");
         display.beginCrossoverGesture (1); display.dragCrossoverTo (-10000); display.endCrossoverGesture();
         cuts = processor.effectiveCutoffs();
-        require (cuts.second / cuts.first >= 1.0099f, "High handle cannot cross low handle");
+        require (cuts.second / cuts.first >= 1.0099f, "Upper handle cannot cross the previous one");
+        display.refresh();
         const auto lowHitX = juce::roundToInt (display.xForFrequency (cuts.first)) - 4;
         const auto highHitX = juce::roundToInt (display.xForFrequency (cuts.second)) + 4;
         require (lowHandle->hitTest (lowHitX - lowHandle->getX(), 50)
-                 && ! highHandle->hitTest (lowHitX - highHandle->getX(), 50), "Narrow-band low handle remains reachable");
+                 && ! highHandle->hitTest (lowHitX - highHandle->getX(), 50), "Narrow-band lower handle remains reachable");
         require (highHandle->hitTest (highHitX - highHandle->getX(), 50)
-                 && ! lowHandle->hitTest (highHitX - lowHandle->getX(), 50), "Narrow-band high handle remains reachable");
+                 && ! lowHandle->hitTest (highHitX - lowHandle->getX(), 50), "Narrow-band upper handle remains reachable");
         display.setCrossoverValue (0, 250); display.setCrossoverValue (1, 2500);
         const juce::KeyPress right (juce::KeyPress::rightKey), fineLeft (juce::KeyPress::leftKey, juce::ModifierKeys::shiftModifier, 0);
         require (lowHandle->keyPressed (right), "Keyboard arrow handled");
@@ -65,7 +74,7 @@ inline void runCrossoverTests()
         require (afterRight > 250, "Keyboard increases crossover");
         lowHandle->keyPressed (fineLeft);
         require (processor.effectiveCutoffs().first > 250 && processor.effectiveCutoffs().first < afterRight, "Shift provides finer keyboard step");
-        lowHandle->mouseDoubleClick (event (lowHandle, 12));
+        lowHandle->mouseDoubleClick (mouseAt (lowHandle, 12, 50));
         require (std::abs (processor.effectiveCutoffs().first - 250) < 0.03f, "Double-click resets crossover");
         hi->setValueNotifyingHost (hi->convertTo0to1 (5000));
         display.refresh();
@@ -78,9 +87,41 @@ inline void runCrossoverTests()
         display.beginCrossoverGesture (1); display.dragCrossoverTo (10000); display.endCrossoverGesture();
         require (processor.effectiveCutoffs().second <= 3600.01f, "Low sample-rate Nyquist guard");
         require (lowProbe.starts == lowProbe.ends && highProbe.starts == highProbe.ends, "Completed gestures remain balanced");
+
+        // ---- Adding bands while working --------------------------------------------------------
+        processor.prepareToPlay (48000, 128);
+        display.setCrossoverValue (1, 2500); display.setCrossoverValue (0, 250);
+        display.refresh();
+        const auto plot = display.plotBounds();
+        display.mouseDoubleClick (mouseAt (&display, display.xForFrequency (1000.0f), plot.getCentreY()));
+        require (processor.getBandCount() == 4, "Double-clicking the display adds a band");
+        display.refresh();
+        require (display.getNumHandles() == 3, "A handle appears for the new crossover");
+        auto split = processor.effectiveCrossovers();
+        require (std::abs (split[0] - 250.0f) < 0.1f && std::abs (split[1] - 1000.0f) < 15.0f && std::abs (split[2] - 2500.0f) < 0.1f,
+                 "New crossover lands where you double-clicked");
+        display.getAddButton().onClick();
+        require (processor.getBandCount() == 5, "+ BAND adds a band");
+        while (processor.addBand()) {}
+        display.refresh();
+        require (processor.getBandCount() == triad::maxBands && display.getNumHandles() == triad::maxBands - 1, "Up to ten bands");
+        split = processor.effectiveCrossovers();
+        requireIncreasing (split, "Ten-band crossovers stay ordered");
+        for (int j = 0; j < display.getNumHandles(); ++j)
+        {
+            auto* h = display.getHandle (j);
+            const auto x = juce::roundToInt (display.xForFrequency (split[(size_t) j]));
+            require (h->hitTest (x - h->getX(), 50), "Every crossover handle is reachable");
+            for (int k = 0; k < display.getNumHandles(); ++k)
+                if (k != j) require (! display.getHandle (k)->hitTest (x - display.getHandle (k)->getX(), 50), "Handles do not steal each other's dividers");
+        }
+        require (! processor.addBand(), "An eleventh band is refused");
+        while (processor.getBandCount() > 3) processor.removeBand (processor.getBandCount() - 1);
+        display.refresh();
+        require (display.getNumHandles() == 2, "Removing bands removes handles");
         display.beginCrossoverGesture (0);
     }
     require (lowProbe.starts == lowProbe.ends, "Closing editor finishes an active gesture");
     lo->removeListener (&lowProbe); hi->removeListener (&highProbe);
-    std::cout << "PASS: crossover dragging, frequency mapping, band order, automation gestures, keyboard, reset, recall, and Nyquist guard" << std::endl;
+    std::cout << "PASS: crossover dragging, frequency mapping, band order, automation gestures, keyboard, reset, recall, Nyquist guard, add/remove bands up to 10" << std::endl;
 }

@@ -1,29 +1,61 @@
 #pragma once
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <array>
+#include <atomic>
 #include <cmath>
+#include <complex>
+#include <vector>
 
 namespace triad
 {
-constexpr int maxLatency = 262144;
+constexpr int maxLatency = 262144;   // per hosted effect, and per band chain
+constexpr int maxBands = 10;
+constexpr int maxSlots = 10;         // effect slots per band, like an FL Studio mixer insert
+constexpr int maxCrossovers = maxBands - 1;
+constexpr float minCrossoverRatio = 1.01f;  // adjacent crossovers stay at least 1% apart
+constexpr float lowestCrossover = 20.0f;
 
-// Integer delay, allocated only during prepare. Zero delay is exactly transparent.
+// Highest usable crossover for a sample rate (also capped at 20 kHz).
+inline float crossoverCeiling (double sampleRate) { return (float) juce::jmin (20000.0, sampleRate * 0.45); }
+
+// Keeps crossovers strictly increasing and inside [20 Hz, ceiling]. Higher crossovers take
+// priority, matching Triad 0.1 where the low/mid split was limited below the mid/high split.
+inline void constrainCrossovers (float* cuts, int count, double sampleRate)
+{
+    if (count <= 0) return;
+    const auto ceiling = crossoverCeiling (sampleRate);
+    for (int j = count - 1; j >= 0; --j)
+    {
+        const auto floorHz = lowestCrossover * std::pow (minCrossoverRatio, (float) j);
+        const auto upper = j == count - 1 ? ceiling : cuts[j + 1] / minCrossoverRatio;
+        cuts[j] = juce::jlimit (juce::jmin (floorHz, upper), upper, cuts[j]);
+    }
+}
+
+// Integer delay line. Memory is allocated by ensureCapacity() on a non-audio thread and only
+// as large as the latency it must compensate, so empty or zero-latency slots cost nothing.
 class StereoDelay
 {
 public:
-    void prepare (int capacity = maxLatency)
+    void ensureCapacity (int maxDelay)
     {
-        memory.setSize (2, capacity + 1);
+        const int needed = maxDelay > 0 ? maxDelay + 1 : 0;
+        if (needed == 0 && memory.getNumSamples() == 0) return;
+        if (memory.getNumSamples() >= needed && memory.getNumSamples() <= juce::jmax (needed * 4, 4096)) return;
+        memory.setSize (2, needed, false, true, false);
         reset();
     }
     void reset() { memory.clear(); position = 0; }
-    float tick (int channel, float input, int delay)
+    float tick (int channel, float input, int delay) noexcept
     {
+        const int size = memory.getNumSamples();
+        if (delay <= 0 || size == 0) return input;
+        jassert (delay < size);
         auto* p = memory.getWritePointer (channel);
         p[position] = input;
-        return p[(position + memory.getNumSamples() - delay) % memory.getNumSamples()];
+        return p[(position + size - juce::jmin (delay, size - 1)) % size];
     }
-    void advance() { if (++position == memory.getNumSamples()) position = 0; }
+    void advance() noexcept { if (memory.getNumSamples() > 0 && ++position >= memory.getNumSamples()) position = 0; }
 private:
     juce::AudioBuffer<float> memory;
     int position = 0;
@@ -89,66 +121,152 @@ private:
     float cutoff = 2000.0f, g = 0.0f, R2 = 0.0f, h = 0.0f;
 };
 
-// LR4 low split followed by LR4 upper split. Compensating all-pass on
-// the low branch makes L + M + H equal to the two cascaded all-passes.
+// N-band Linkwitz-Riley crossover (1 to 10 bands). Band b is the LR4 low-pass at crossover b
+// of what remains above crossover b-1, followed by all-pass filters at every higher crossover.
+// The bands therefore sum to the cascade of all-passes: flat magnitude, phase-rotated.
 class Splitter
 {
 public:
     void prepare (double sr, int blockSize)
     {
-        sampleRate = sr;
         juce::ignoreUnused (blockSize);
-        lower.prepare (sr); upper.prepare (sr); lowPhase.prepare (sr);
-        lowSmooth.reset (sr, 0.035); highSmooth.reset (sr, 0.035);
-        lowSmooth.setCurrentAndTargetValue (250.0f);
-        highSmooth.setCurrentAndTargetValue (2500.0f);
+        sampleRate = sr;
+        for (auto& f : split) f.prepare (sr);
+        for (auto& row : phase) for (auto& f : row) f.prepare (sr);
+        for (auto& s : smooth) s.reset (sr, 0.035);
         count = 0;
-        setCutoffs (250.0f, 2500.0f, true);
     }
-    std::pair<float, float> constrain (float lo, float hi) const
+    // Structural change (called with the processor locked): filter memory restarts.
+    void setBandCount (int bands, const float* cuts)
     {
-        hi = juce::jlimit (30.0f, (float) juce::jmin (20000.0, sampleRate * 0.45), hi);
-        lo = juce::jlimit (20.0f, hi / 1.01f, lo);
-        return { lo, hi };
+        numBands = juce::jlimit (1, maxBands, bands);
+        for (auto& f : split) f.reset();
+        for (auto& row : phase) for (auto& f : row) f.reset();
+        setCutoffs (cuts, true);
     }
-    void setCutoffs (float lo, float hi, bool immediate = false)
+    int getBandCount() const noexcept { return numBands; }
+    void setCutoffs (const float* raw, bool immediate = false)
     {
-        const auto cuts = constrain (lo, hi);
-        if (immediate)
+        std::array<float, maxCrossovers> cuts {};
+        const int n = numBands - 1;
+        for (int j = 0; j < n; ++j) cuts[(size_t) j] = raw[j];
+        constrainCrossovers (cuts.data(), n, sampleRate);
+        for (int j = 0; j < n; ++j)
         {
-            lowSmooth.setCurrentAndTargetValue (cuts.first);
-            highSmooth.setCurrentAndTargetValue (cuts.second);
+            auto& s = smooth[(size_t) j];
+            if (immediate) s.setCurrentAndTargetValue (cuts[(size_t) j]);
+            else s.setTargetValue (cuts[(size_t) j]);
         }
-        else { lowSmooth.setTargetValue (cuts.first); highSmooth.setTargetValue (cuts.second); }
+        if (immediate) { count = 0; updateCoefficients(); }
     }
     void process (const juce::AudioBuffer<float>& input, int offset, int n,
-                  std::array<juce::AudioBuffer<float>, 3>& bands)
+                  std::array<juce::AudioBuffer<float>, maxBands>& bands)
     {
+        const int crossovers = numBands - 1;
         for (int s = 0; s < n; ++s)
         {
-            const auto lo = lowSmooth.getNextValue(), hi = highSmooth.getNextValue();
-            if ((count++ & 15) == 0)
-            {
-                lower.setCutoffFrequency (lo);
-                upper.setCutoffFrequency (hi);
-                lowPhase.setCutoffFrequency (hi);
-            }
+            for (int j = 0; j < crossovers; ++j) current[(size_t) j] = smooth[(size_t) j].getNextValue();
+            if ((count++ & 15) == 0) updateCoefficients();
             for (int ch = 0; ch < 2; ++ch)
             {
-                float l, remainder, m, h;
-                lower.processSample (ch, input.getSample (ch, offset + s), l, remainder);
-                upper.processSample (ch, remainder, m, h);
-                bands[0].setSample (ch, s, lowPhase.processAllpass (ch, l));
-                bands[1].setSample (ch, s, m);
-                bands[2].setSample (ch, s, h);
+                float x = input.getSample (ch, offset + s);
+                for (int b = 0; b < crossovers; ++b)
+                {
+                    float low, high;
+                    split[(size_t) b].processSample (ch, x, low, high);
+                    for (int j = b + 1; j < crossovers; ++j)
+                        low = phase[(size_t) b][(size_t) j].processAllpass (ch, low);
+                    bands[(size_t) b].setSample (ch, s, low);
+                    x = high;
+                }
+                bands[(size_t) crossovers].setSample (ch, s, x);
             }
         }
-        lower.snapToZero(); upper.snapToZero(); lowPhase.snapToZero();
+        for (int b = 0; b < crossovers; ++b)
+        {
+            split[(size_t) b].snapToZero();
+            for (int j = b + 1; j < crossovers; ++j) phase[(size_t) b][(size_t) j].snapToZero();
+        }
     }
 private:
+    void updateCoefficients()
+    {
+        const int crossovers = numBands - 1;
+        for (int j = 0; j < crossovers; ++j)
+        {
+            const auto hz = smooth[(size_t) j].getCurrentValue();
+            current[(size_t) j] = hz;
+            split[(size_t) j].setCutoffFrequency (hz);
+            for (int b = 0; b < j; ++b) phase[(size_t) b][(size_t) j].setCutoffFrequency (hz);
+        }
+    }
     double sampleRate = 44100.0;
     unsigned count = 0;
-    LinkwitzRiley lower, upper, lowPhase;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> lowSmooth, highSmooth;
+    int numBands = 3;
+    std::array<LinkwitzRiley, maxCrossovers> split;
+    std::array<std::array<LinkwitzRiley, maxCrossovers>, maxBands> phase;
+    std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, maxCrossovers> smooth;
+    std::array<float, maxCrossovers> current {};
 };
+
+// Lock-free tap of the input signal for the spectrum display. The audio thread writes a mono
+// mix into a ring; the editor copies the most recent samples. Atomics avoid data races.
+class SpectrumTap
+{
+public:
+    static constexpr int size = 8192;
+    void push (const juce::AudioBuffer<float>& audio, int numSamples) noexcept
+    {
+        if (! active.load (std::memory_order_relaxed) || audio.getNumChannels() < 2) return;
+        auto w = writeIndex.load (std::memory_order_relaxed);
+        const auto* l = audio.getReadPointer (0);
+        const auto* r = audio.getReadPointer (1);
+        for (int i = 0; i < numSamples; ++i)
+            ring[(size_t) (w++ & (size - 1))].store (0.5f * (l[i] + r[i]), std::memory_order_relaxed);
+        writeIndex.store (w, std::memory_order_release);
+    }
+    // Copies the newest `count` samples (oldest first). Returns false if nothing was written yet.
+    bool read (float* dest, int count) const noexcept
+    {
+        const auto w = writeIndex.load (std::memory_order_acquire);
+        if (w == 0) return false;
+        for (int i = 0; i < count; ++i)
+            dest[i] = ring[(size_t) ((w - (uint32_t) count + (uint32_t) i) & (size - 1))].load (std::memory_order_relaxed);
+        return true;
+    }
+    uint32_t getWriteIndex() const noexcept { return writeIndex.load (std::memory_order_acquire); }
+    std::atomic<bool> active { false };
+private:
+    std::array<std::atomic<float>, size> ring {};
+    std::atomic<uint32_t> writeIndex { 0 };
+};
+
+// Small in-place radix-2 FFT, enough for the spectrum display (avoids the juce_dsp module).
+inline void fft (std::vector<std::complex<float>>& data)
+{
+    const size_t n = data.size();
+    for (size_t i = 1, j = 0; i < n; ++i)
+    {
+        size_t bit = n >> 1;
+        for (; j & bit; bit >>= 1) j ^= bit;
+        j ^= bit;
+        if (i < j) std::swap (data[i], data[j]);
+    }
+    for (size_t len = 2; len <= n; len <<= 1)
+    {
+        const auto angle = -2.0 * juce::MathConstants<double>::pi / (double) len;
+        const std::complex<float> step ((float) std::cos (angle), (float) std::sin (angle));
+        for (size_t i = 0; i < n; i += len)
+        {
+            std::complex<float> w (1.0f, 0.0f);
+            for (size_t k = 0; k < len / 2; ++k)
+            {
+                const auto u = data[i + k], v = data[i + k + len / 2] * w;
+                data[i + k] = u + v;
+                data[i + k + len / 2] = u - v;
+                w *= step;
+            }
+        }
+    }
+}
 }

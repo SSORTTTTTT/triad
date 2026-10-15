@@ -58,12 +58,13 @@ jobs:
           set -euo pipefail
           cmake -S . -B build-tests -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 -DTRIAD_BUILD_TESTS=ON -DJUCE_SOURCE_DIR="$PWD/deps/JUCE"
-          cmake --build build-tests --config Release --target TriadTests TriadTestEffect_VST3 Triad_VST3 --parallel "$(sysctl -n hw.ncpu)"
+          cmake --build build-tests --config Release --target TriadTests TriadTestEffect_VST3 TriadTestSynth_VST3 Triad_VST3 --parallel "$(sysctl -n hw.ncpu)"
           exe="$(find build-tests/TriadTests_artefacts -type f -perm -u+x -name 'Triad*Tests' | head -n 1)"
           mkdir -p ci-ui
           "$exe" "$PWD/build-tests/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
+                 "$PWD/build-tests/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3" \
                  "$PWD/ci-ui/Triad-preview-mac.png" \
-                 "$PWD/build-tests/Triad_artefacts/Release/VST3/Triad.vst3" | tee test-results-mac.txt
+                 "$PWD/build-tests/Triad_artefacts/Release/VST3/Triad.vst3" 2>&1 | tee test-results-mac.txt
 
       - name: pluginval (VST3 and AU, strictness 5)
         continue-on-error: true
