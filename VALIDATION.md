@@ -44,9 +44,25 @@ Audio tests exercised 44.1, 48, and 96 kHz; crossover controls were also checked
 
 The default native UI snapshot is `Triad-preview.png`. A narrow-band snapshot is included in `Tests/UI/`. These were rendered by the compiled JUCE editor, not generated as mockups.
 
+## macOS build and installer — 2026-10-15
+
+GitHub Actions `macos-14` runner (Apple M1, virtualised), macOS 14.8, Xcode 15.4 / Apple clang 15, CMake 4.4, JUCE 8.0.12 at the pinned commit; `Build-Mac.command` run unmodified, commit `443b180`.
+
+| Check | Result |
+| --- | --- |
+| AU and VST3 build (arm64, Release, macOS 12.0+) | Built |
+| Shipped binary size (stripped) | 2.6 MB per format (was 3.5 MB before the size work) |
+| Installer `Triad-0.1.1-macOS-AppleSilicon.pkg` | 2.4 MB; AU and VST3 choices; payload verified arm64, ad-hoc signed, not relocatable |
+| `sudo installer -pkg ... -target /` | Installed to `/Library/Audio/Plug-Ins/Components` and `/Library/Audio/Plug-Ins/VST3`; signatures valid |
+| Apple `auval -v aufx Trid Tsrt` | AU VALIDATION SUCCEEDED |
+| pluginval, strictness 5 (GUI tests skipped) | VST3: SUCCESS; AU: SUCCESS |
+| Integration tests (native arm64) | All passed, including the native hosted-effect editor window, which is skipped on headless Linux |
+| Built-in Linkwitz–Riley filter vs JUCE `dsp::LinkwitzRileyFilter` | Max error 0 at 44.1, 48 and 96 kHz |
+
+Still to check by hand: Ableton Live and FL Studio scanning, playback, automation, project recall and offline rendering with your own third-party effects. The installer is ad hoc signed, not Developer ID signed or notarized.
+
 ## Not yet validated
 
-- Compilation, signing, and installation on macOS.
 - Ableton Live and FL Studio scanning, playback, automation, bypass, project recall, and offline rendering on the user's Mac.
 - Native hosted-plugin editor windows. This environment cannot create a display-server socket; the native-window test explicitly skipped. The main plugin interface was rendered and inspected offscreen.
 - Compatibility with specific commercial third-party plugins, shell bundles, license managers, or plugins that change latency dynamically.
