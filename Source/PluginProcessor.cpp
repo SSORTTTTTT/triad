@@ -135,6 +135,13 @@ void TriadProcessor::prepareToPlay (double sr, int block)
     fadeRemaining = 0;
     prepared = true;
     alignLatency();
+    // A new playback session must not replay audio left in the compensation delays.
+    for (auto& band : bands)
+    {
+        band->dryDelay.reset(); band->alignDelay.reset();
+        for (auto& s : band->slots) s.dryDelay.reset();
+    }
+    bypassDelay.reset();
 }
 void TriadProcessor::releaseResources()
 {
