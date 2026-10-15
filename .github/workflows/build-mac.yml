@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write   # lets the last step publish logs and the .pkg to the ci-results branch
+
 jobs:
   build:
     name: Build, package and validate (Apple Silicon)
@@ -76,6 +79,16 @@ jobs:
           echo "pluginval exit codes: VST3=$vst3 AU=$au"
           [ "$vst3" -eq 0 ] && [ "$au" -eq 0 ]
 
+      - name: Report errors as annotations
+        if: failure()
+        run: |
+          for f in build-mac.log auval.log test-results-mac.txt; do
+            [ -f "$f" ] || continue
+            msg=$( (grep -n -E "error:|error :|CMake Error|ERROR|FAIL|fatal:|No such file|Undefined symbols" "$f" | head -n 40; echo "--- last 60 lines ---"; tail -n 60 "$f") \
+                   | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk 'BEGIN{ORS="%0A"}{print}')
+            echo "::error title=$f::$msg"
+          done
+
       - name: Upload logs and Mac UI snapshot
         if: always()
         uses: actions/upload-artifact@v4
@@ -88,3 +101,19 @@ jobs:
             pluginval-*.log
             ci-ui/*.png
           if-no-files-found: ignore
+
+      - name: Publish logs and installer to the ci-results branch
+        if: always()
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          out="$RUNNER_TEMP/ci-results"; rm -rf "$out"; mkdir -p "$out"
+          cp -f build-mac.log auval.log test-results-mac.txt pluginval-*.log "$out/" 2>/dev/null || true
+          cp -f Installer/*.pkg ci-ui/*.png "$out/" 2>/dev/null || true
+          echo "run=${{ github.run_id }} sha=${{ github.sha }} job_status=${{ job.status }}" > "$out/RUN.txt"
+          cd "$out"
+          git init -q -b ci-results
+          git add -A
+          git -c user.name="Triad CI" -c user.email="actions@users.noreply.github.com" commit -q -m "CI results for ${{ github.sha }} (${{ job.status }})"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git" ci-results
