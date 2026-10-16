@@ -2,7 +2,7 @@
 
 ## Triad 0.2.0 on macOS — 2026-10-15
 
-GitHub Actions `macos-14` runner (Apple M1, virtualised), macOS 14.8, Xcode 15.4, CMake 4.4, JUCE 8.0.12; `Build-Mac.command` run unmodified (commit `7b52a14`).
+GitHub Actions `macos-14` runner (Apple M1, virtualised), macOS 14.8, Xcode 15.4, CMake 4.4, JUCE 8.0.12; `Build-Mac.command` run unmodified (commit `cffb2ab`).
 
 | Check | Result |
 | --- | --- |

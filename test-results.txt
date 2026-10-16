@@ -1,13 +1,35 @@
-PASS: crossover dragging, frequency mapping, band order, automation gestures, keyboard, reset, recall, and Nyquist guard
+PASS: crossover dragging, frequency mapping, band order, automation gestures, keyboard, reset, recall, Nyquist guard, add/remove bands up to 10
+Built-in LR4 filter vs JUCE dsp filter at 44100 Hz: max error 0
+Built-in LR4 filter vs JUCE dsp filter at 48000 Hz: max error 0
+Built-in LR4 filter vs JUCE dsp filter at 96000 Hz: max error 0
+Phase-correct reconstruction, 1 to 10 bands: max error 2.68221e-07
 Empty slots, oversized block: max error 0
-Phase-correct crossover reconstruction: max error 1.19209e-07
 Unequal band latency compensation: max error 2.98023e-08
 All bands wet: max error 1.49012e-08
 All bands dry with latency retained: max error 0
-50 percent linear wet/dry: max error 2.98023e-08
-Hosted state and mix recall: max error 2.98023e-08
+50 percent band mix: max error 2.98023e-08
+50 percent slot mix: max error 2.98023e-08
+Slot mix and band mix together: max error 5.96046e-08
+Three-effect chain on one band, other bands aligned: max error 2.23517e-08
+Bypassed slot leaves the chain and its latency: max error 1.49012e-08
+Slot at 0 percent passes its input (latency kept): max error 1.49012e-08
+Moving a slot keeps the chain's result: max error 1.49012e-08
+Chain removed, latency back to one effect: max error 1.49012e-08
+Hosted state and mix recall: max error 5.96046e-08
+Triad 0.1 project recall: max error 2.98023e-08
 Outer VST3 wrapper with nested effects and recalled state: max error 2.98023e-08
 Missing effects pass bands dry: max error 0
-SKIP: native effect window (no display server); safe headless handling passed
+Added band keeps effects in place: max error 2.98023e-08
+Removing a band merges its range: max error 0
+Ten bands with a ten-effect chain: max error 2.98023e-08
+Ten-band project recall: max error 2.98023e-08
+moduleinfo.json in test effect: yes
+  listed: VST3 / Triad Tests / Triad Test Effect
+Hosted AU: AudioUnit:Effects/aufx,dely,appl, latency 0
+PASS: effect list excludes instruments, skips crashed plug-ins, caches results
+Hosted effect editor opened and closed (including auto-open on load)
 Remove effects, clear latency: max error 0
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-mac.png
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-5bands.png
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-10bands.png
 PASS: all integration tests
