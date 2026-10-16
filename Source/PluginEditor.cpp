@@ -5,7 +5,7 @@ using namespace triad::ui;
 namespace
 {
 constexpr int editorWidth = 1000, editorHeight = 786, margin = 24, stripGap = 10, minStripWidth = 196, maxStripWidth = 420;
-enum MenuIds { scanningId = 1000001, noneId, browseId, refreshId, rescanId };
+enum MenuIds { scanningId = 1000001, noneId, browseId, refreshId, rescanId, emptySlotId };
 }
 
 TriadLook::TriadLook()
@@ -114,12 +114,12 @@ void TriadEditor::timerCallback()
     frequencyDisplay.refresh();
     juce::String text;
     for (int b = 0; b < builtCount && text.isEmpty(); ++b)
-        for (int s = 0; s < triad::maxSlots; ++s)
+        for (int s = 0; s < processor.getSlotCount (b); ++s)
             if (auto info = processor.getSlotInfo (b, s); info.status.isNotEmpty())
             { text = "Band " + juce::String (b + 1) + " / Slot " + juce::String (s + 1) + ": " + info.status; break; }
     if (text.isEmpty() && catalog->isScanning()) text = catalog->getProgress();
     if (text.isEmpty()) text = processor.getStatus();
-    if (text.isEmpty()) text = "Click a slot to load an effect, click a loaded slot to open it. Double-click the display to add a band.";
+    if (text.isEmpty()) text = "Click a slot to load an effect, + to add a slot, a loaded slot to open it. Double-click the display to add a band.";
     status.setText (text, juce::dontSendNotification);
 }
 void TriadEditor::changeListenerCallback (juce::ChangeBroadcaster*) { timerCallback(); }
@@ -128,8 +128,9 @@ void TriadEditor::setCrossoverFrequency (int index, float hz) { frequencyDisplay
 void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
 {
     auto list = std::make_shared<std::vector<EffectEntry>> (catalog->getEffects());
+    const bool newSlot = slot >= processor.getSlotCount (band);
     juce::PopupMenu menu;
-    menu.addSectionHeader ("Band " + juce::String (band + 1) + "  /  Slot " + juce::String (slot + 1));
+    menu.addSectionHeader ("Band " + juce::String (band + 1) + "  /  " + (newSlot ? juce::String ("New slot") : "Slot " + juce::String (slot + 1)));
     for (const juce::String format : { "VST3", "AU" })
     {
         juce::PopupMenu formatMenu, makerMenu;
@@ -143,7 +144,7 @@ void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
         for (int i = 0; i < (int) list->size(); ++i)
         {
             const auto& e = (*list)[(size_t) i];
-            if (e.format != format) continue;
+            if (e.format != format || ! e.verified) continue;
             if (! any || e.manufacturer != maker) { flush(); maker = e.manufacturer; }
             makerMenu.addItem (i + 1, e.name);
             any = true;
@@ -151,9 +152,18 @@ void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
         flush();
         if (any) menu.addSubMenu (format == "AU" ? "Audio Units" : "VST3", formatMenu);
     }
+    {
+        // Plug-ins Triad could not check (no time, or they crashed its scanner) are kept apart.
+        juce::PopupMenu unchecked;
+        for (int i = 0; i < (int) list->size(); ++i)
+            if (const auto& e = (*list)[(size_t) i]; ! e.verified)
+                unchecked.addItem (i + 1, e.name + (e.crashed ? juce::String (" (crashed when checked)") : juce::String()), ! e.crashed);
+        if (unchecked.getNumItems() > 0) menu.addSubMenu ("Not checked", unchecked);
+    }
     if (catalog->isScanning()) menu.addItem (scanningId, catalog->getProgress(), false);
     else if (list->empty()) menu.addItem (noneId, "No effects found", false);
     menu.addSeparator();
+    if (newSlot) menu.addItem (emptySlotId, "Add an empty slot");
     menu.addItem (browseId, "Browse for a plug-in file...");
     menu.addItem (refreshId, "Refresh plug-in list");
     menu.addItem (rescanId, "Rescan all plug-ins");
@@ -163,12 +173,13 @@ void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
         if (safe == nullptr || choice == 0) return;
         auto& self = *safe;
         if (choice == browseId) { self.browse (band, slot); return; }
+        if (choice == emptySlotId) { self.processor.addSlot (band); self.timerCallback(); return; }
         if (choice == refreshId) { self.catalog->refresh(); return; }
         if (choice == rescanId) { self.catalog->rescanAll(); return; }
         if (choice < 1 || choice > (int) list->size()) return;
         const auto& e = (*list)[(size_t) choice - 1];
         // Loading opens the effect's window straight away: one less click.
-        if (e.loadByFile) self.processor.loadFile (band, slot, juce::File (e.description.fileOrIdentifier), true);
+        if (e.loadByFile) self.processor.loadFile (band, slot, juce::File (e.description.fileOrIdentifier), true, e.name);
         else self.processor.loadEffect (band, slot, e.description, true);
         self.timerCallback();
     });

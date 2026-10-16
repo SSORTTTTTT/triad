@@ -10,7 +10,7 @@ namespace triad
 {
 constexpr int maxLatency = 262144;   // per hosted effect, and per band chain
 constexpr int maxBands = 10;
-constexpr int maxSlots = 10;         // effect slots per band, like an FL Studio mixer insert
+// Effect slots per band are unlimited (each band starts with one, like an FL Studio mixer insert).
 constexpr int maxCrossovers = maxBands - 1;
 constexpr float minCrossoverRatio = 1.01f;  // adjacent crossovers stay at least 1% apart
 constexpr float lowestCrossover = 20.0f;

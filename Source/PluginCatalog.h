@@ -7,65 +7,87 @@ struct EffectEntry
 {
     juce::PluginDescription description;
     juce::String name, manufacturer, format;   // format: "VST3" or "AU"
-    bool loadByFile = false;                    // only the bundle is known: load it with TriadProcessor::loadFile
+    bool loadByFile = false;                    // load the bundle with TriadProcessor::loadFile (name picks the plug-in)
+    bool verified = true;                       // false: could not be checked (listed separately)
+    bool crashed = false;                       // the plug-in crashed Triad's scanner: not offered
 };
 
-// Process-wide list of installed *effect* plug-ins; instruments (Omnisphere, etc.) are excluded.
-//  - Audio Units: macOS states each component's type, so the list is read without loading anything.
-//  - VST3: the bundle's moduleinfo.json (fast, nothing loaded); otherwise an AU of the same name
-//    tells effect from instrument; only as a last resort is the plug-in's factory queried, once,
-//    guarded by a crash marker so a plug-in that crashes is skipped next time.
-// Work runs on the message thread in small time slices (JUCE's VST3 loader is not thread-safe),
-// and results are cached on disk so later sessions only check modification dates.
-class PluginCatalog final : public juce::ChangeBroadcaster, private juce::Timer
+// Process-wide list of installed *effect* plug-ins; instruments (Omnisphere, Battery, ...) are excluded.
+//
+// Nothing is ever loaded into the DAW's process to build this list:
+//  - Audio Units: macOS states each component's type, so they are listed without loading.
+//  - VST3 with a moduleinfo.json: the file is read directly.
+//  - VST3 without one: an Audio Unit of the same name tells effect from instrument; otherwise
+//    "Triad Scanner", a small helper program inside Triad's bundle, opens the plug-in in its own
+//    process (like a DAW's plug-in scanner). If a plug-in crashes or hangs there, only the helper
+//    is affected: the plug-in is marked and skipped, and the DAW keeps running.
+// Work runs on a background thread; results are cached on disk, so later sessions only look at
+// plug-ins that are new or have changed.
+class PluginCatalog final : public juce::ChangeBroadcaster, private juce::Thread
 {
 public:
     struct Options
     {
         juce::Array<juce::File> vst3Folders;
         juce::File cacheFolder;
+        juce::File scanner;                 // the helper; empty = look inside Triad's own bundle
         bool includeAudioUnits = true;
+        int timeoutMs = 30000;              // per plug-in, for the helper
     };
     static Options defaultOptions();
+    static juce::File findScanner();        // Contents/Helpers/Triad Scanner next to this binary
 
     PluginCatalog() : PluginCatalog (defaultOptions()) {}
     explicit PluginCatalog (Options);
     ~PluginCatalog() override;
 
-    const std::vector<EffectEntry>& getEffects() const noexcept { return effects; }
-    bool isScanning() const noexcept { return scanning; }
+    std::vector<EffectEntry> getEffects() const;   // sorted: VST3, then AU; by maker and name
+    bool isScanning() const noexcept { return scanning.load(); }
     juce::String getProgress() const;
     void refresh();                        // pick up new, changed or removed plug-ins
-    void rescanAll();                      // forget the cache and the crash list
-    bool scanUntilIdle (int timeoutMs);    // synchronous scan (tests)
+    void rescanAll();                      // forget the cache (including plug-ins that crashed)
+    bool waitUntilIdle (int timeoutMs);    // tests: true once a scan pass has finished
+
+    struct Counts { int bundles = 0, fromModuleInfo = 0, fromAudioUnit = 0, fromScanner = 0, crashed = 0, timedOut = 0, unchecked = 0; };
+    Counts getCounts() const;
 
 private:
+    enum class Status { ok, crashed, timedOut, unavailable };
+    enum class Source { moduleInfo, audioUnit, scanner };
     struct FileRecord
     {
         juce::int64 modified = 0;
-        bool blacklisted = false;
+        Status status = Status::ok;
+        Source source = Source::moduleInfo;
         int instruments = 0;
         std::vector<EffectEntry> effects;
+        juce::String name, maker;          // for plug-ins that could not be checked
     };
-    void timerCallback() override;
-    bool step (double budgetMs);
-    void beginScan();
-    void classify (const juce::File& bundle, FileRecord&);
-    void collectBundles (const juce::File& folder, int depth);
+    void run() override;
+    void scanPass (bool forget);
+    void listAudioUnits();
+    FileRecord classify (const juce::File& bundle);
+    bool readModuleInfo (const juce::File& bundle, FileRecord&) const;
+    void runScanner (const juce::File& bundle, FileRecord&);
+    void collectBundles (const juce::File& folder, int depth, juce::Array<juce::File>&) const;
     void loadCache();
     void saveCache() const;
     void publish();
-    juce::File cacheFile() const { return options.cacheFolder.getChildFile ("PluginCache.xml"); }
-    juce::File crashMarker() const { return options.cacheFolder.getChildFile ("ScanInProgress.txt"); }
+    juce::File cacheFile() const { return options.cacheFolder.getChildFile ("PluginCache-v2.xml"); }
 
-    Options options;
-    juce::VST3PluginFormat vst3;
+    const Options options;
+    juce::File scanner;
+    // Owned by the scan thread.
     std::map<juce::String, std::pair<int, juce::String>> auKinds;   // normalised AU name -> (1 effect / 2 instrument, maker)
     std::vector<EffectEntry> auEffects;
-    std::map<juce::String, FileRecord> records; // keyed by bundle path
-    juce::Array<juce::File> queue;
+    std::map<juce::String, FileRecord> records;                    // keyed by bundle path
+    bool cacheLoaded = false;
+    // Shared with other threads.
+    mutable juce::CriticalSection lock;
     std::vector<EffectEntry> effects;
-    int processed = 0, queued = 0;
-    bool scanning = false, cacheLoaded = false;
+    Counts counts;
     juce::String current;
+    int processed = 0, queued = 0;
+    std::atomic<bool> scanning { true }, passRequested { true }, forgetRequested { false };
+    std::atomic<int> passesFinished { 0 };
 };

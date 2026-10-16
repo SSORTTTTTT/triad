@@ -2,6 +2,7 @@
 #include "../Source/PluginCatalog.h"
 #include "../Source/PluginEditor.h"
 #include <juce_dsp/juce_dsp.h>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
@@ -74,6 +75,18 @@ std::vector<juce::XmlElement*> slotNodes (juce::XmlElement& root)
         for (auto* slot : band->getChildWithTagNameIterator ("Slot")) result.push_back (slot);
     return result;
 }
+// Copies a .vst3 bundle under another name (on Linux, the binary inside must match the bundle name).
+bool copyBundle (const juce::File& source, const juce::File& dest)
+{
+    dest.getParentDirectory().createDirectory();
+    if (! source.copyDirectoryTo (dest)) return false;
+   #if JUCE_LINUX || JUCE_BSD
+    for (auto& arch : dest.getChildFile ("Contents").findChildFiles (juce::File::findDirectories, false, "*-linux"))
+        for (auto& so : arch.findChildFiles (juce::File::findFiles, false, "*.so"))
+            so.moveFileTo (arch.getChildFile (dest.getFileNameWithoutExtension() + ".so"));
+   #endif
+    return true;
+}
 juce::String writeImage (const juce::File& file, const juce::Image& image)
 {
     juce::FileOutputStream stream (file);
@@ -89,11 +102,14 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI gui;
     try
     {
-        require (argc >= 3, "Usage: TriadTests <Test Effect.vst3> <Test Synth.vst3> [screenshot.png] [Triad.vst3]");
+        require (argc >= 5, "Usage: TriadTests <Test Effect.vst3> <Test Synth.vst3> <Crash Fixture.vst3> <Triad Scanner> [screenshot.png] [Triad.vst3]");
         const juce::File effect (juce::String::fromUTF8 (argv[1]));
         const juce::File synth (juce::String::fromUTF8 (argv[2]));
-        const juce::File screenshotFile = argc >= 4 ? juce::File (juce::String::fromUTF8 (argv[3])) : juce::File();
-        const juce::File triadVst3 = argc >= 5 ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
+        const juce::File crashFixture (juce::String::fromUTF8 (argv[3]));
+        const juce::File scannerHelper (juce::String::fromUTF8 (argv[4]));
+        const juce::File screenshotFile = argc >= 6 ? juce::File (juce::String::fromUTF8 (argv[5])) : juce::File();
+        const juce::File triadVst3 = argc >= 7 ? juce::File (juce::String::fromUTF8 (argv[6])) : juce::File();
+        require (crashFixture.exists() && scannerHelper.existsAsFile(), "Crash fixture and scanner helper are built");
         runCrossoverTests();
 
         // ---- Built-in Linkwitz-Riley filter equals JUCE's -----------------------------------
@@ -175,30 +191,35 @@ int main (int argc, char** argv)
         bandMix (p, 100);
 
         // ---- Per-slot mix (FL-style slot knobs) ----------------------------------------------
-        for (int b = 0; b < 3; ++b) setParam (p, TriadProcessor::slotMixID (b, 0), 50);
+        for (int b = 0; b < 3; ++b) p.setSlotMix (b, 0, 50);
+        require (p.getParameters().size() == triad::maxCrossovers + triad::maxBands, "Slot mixes are not DAW parameters");
         runAudioCase (p, 48000, { .625f, .625f, .625f }, 73, "50 percent slot mix");
         bandMix (p, 50);
         runAudioCase (p, 48000, { .8125f, .8125f, .8125f }, 73, "Slot mix and band mix together");
         bandMix (p, 100);
-        for (int b = 0; b < 3; ++b) setParam (p, TriadProcessor::slotMixID (b, 0), 100);
+        for (int b = 0; b < 3; ++b) p.setSlotMix (b, 0, 100);
 
         // ---- Chains: several effects on one band, in order -----------------------------------
-        require (p.loadFile (0, 1, effect).isEmpty() && p.loadFile (0, 2, effect).isEmpty(), "Load a three-effect chain");
+        require (p.getSlotCount (0) == 1, "A band starts with one slot");
+        require (p.loadFile (0, 1, effect).isEmpty() && p.loadFile (0, 2, effect).isEmpty(), "Load a three-effect chain into new slots");
+        require (p.getSlotCount (0) == 3 && p.getSlotCount (1) == 1, "Slots are added per band");
+        require (p.loadFile (0, 7, effect).isNotEmpty() && p.getSlotCount (0) == 3, "Only the next slot can be added");
         runAudioCase (p, 48000, { .015625f, .25f, .25f }, 219, "Three-effect chain on one band, other bands aligned");
         p.setSlotEnabled (0, 2, false);
         require (! p.getSlotInfo (0, 2).enabled, "Slot light switches off");
         runAudioCase (p, 48000, { .0625f, .25f, .25f }, 146, "Bypassed slot leaves the chain and its latency");
         p.setSlotEnabled (0, 2, true);
-        setParam (p, TriadProcessor::slotMixID (0, 1), 0);
+        p.setSlotMix (0, 1, 0);
         runAudioCase (p, 48000, { .0625f, .25f, .25f }, 219, "Slot at 0 percent passes its input (latency kept)");
         require (p.moveSlot (0, 1, 1), "Move slot down");
-        require (getParam (p, TriadProcessor::slotMixID (0, 2)) == 0.0f && getParam (p, TriadProcessor::slotMixID (0, 1)) == 100.0f,
-                 "Slot mix travels with the moved effect");
+        require (p.getSlotMix (0, 2) == 0.0f && p.getSlotMix (0, 1) == 100.0f, "Slot mix travels with the moved effect");
         require (p.getSlotInfo (0, 1).loaded && p.getSlotInfo (0, 2).loaded, "Both moved slots keep their effects");
         runAudioCase (p, 48000, { .0625f, .25f, .25f }, 219, "Moving a slot keeps the chain's result");
-        setParam (p, TriadProcessor::slotMixID (0, 2), 100);
-        p.removeEffect (0, 1); p.removeEffect (0, 2);
-        require (! p.getSlotInfo (0, 1).hasContent && ! p.getSlotInfo (0, 2).hasContent, "Remove clears slots");
+        p.setSlotMix (0, 2, 100);
+        p.removeEffect (0, 2);
+        require (p.getSlotCount (0) == 3 && ! p.getSlotInfo (0, 2).hasContent, "Remove effect keeps an empty slot");
+        p.removeSlot (0, 2); p.removeSlot (0, 1);
+        require (p.getSlotCount (0) == 1 && p.getSlotInfo (0, 0).loaded, "Remove slot deletes the row");
         runAudioCase (p, 48000, { .25f, .25f, .25f }, 73, "Chain removed, latency back to one effect");
 
         // ---- Project recall with edited child state --------------------------------------------
@@ -219,7 +240,7 @@ int main (int argc, char** argv)
         juce::MemoryBlock editedChildState;
         fixture->getStateInformation (editedChildState);
         auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), (int) saved.getSize());
-        require (xml->getIntAttribute ("version") == 2 && xml->getIntAttribute ("bands") == 3, "State version 2 with band count");
+        require (xml->getIntAttribute ("version") == 3 && xml->getIntAttribute ("bands") == 3, "State version 3 with band count");
         require (slotNodes (*xml).size() == 3, "One saved slot per loaded effect");
         for (auto* node : slotNodes (*xml))
         {
@@ -253,6 +274,37 @@ int main (int argc, char** argv)
             old.setStateInformation (v1Data.getData(), (int) v1Data.getSize());
             require (old.getBandCount() == 3 && old.getSlotInfo (1, 0).loaded && ! old.getSlotInfo (0, 0).hasContent, "0.1 project: effect lands in band 2, slot 1");
             runAudioCase (old, 48000, { 1, .25f, 1 }, 73, "Triad 0.1 project recall", { 300, 3000 });
+        }
+
+        // ---- Triad 0.2.0 / 0.2.1 projects (ten fixed slots, slot mixes were DAW parameters) ------
+        {
+            juce::XmlElement v2 ("TriadState");
+            v2.setAttribute ("version", 2);
+            v2.setAttribute ("bands", 3);
+            auto* params = v2.createNewChildElement ("Parameters");
+            for (auto [id, value] : std::vector<std::pair<const char*, float>> { { "lowCut", 250 }, { "highCut", 2500 }, { "slot0_1", 40 }, { "slot2_0", 20 } })
+            {
+                auto* param = params->createNewChildElement ("PARAM");
+                param->setAttribute ("id", id); param->setAttribute ("value", value);
+            }
+            auto* band = v2.createNewChildElement ("Band");
+            band->setAttribute ("index", 0);
+            auto* slot = band->createNewChildElement ("Slot");
+            slot->setAttribute ("index", 1);
+            slot->setAttribute ("enabled", true);
+            slot->addChildElement (fixtureTypes[0]->createXml().release());
+            slot->createNewChildElement ("State")->addTextElement (juce::MemoryBlock().toBase64Encoding());
+            juce::MemoryBlock v2Data;
+            juce::AudioProcessor::copyXmlToBinary (v2, v2Data);
+            TriadProcessor old;
+            old.setStateInformation (v2Data.getData(), (int) v2Data.getSize());
+            require (old.getSlotCount (0) == 2 && ! old.getSlotInfo (0, 0).hasContent && old.getSlotInfo (0, 1).loaded, "0.2 project: effect in band 1, slot 2");
+            require (std::abs (old.getSlotMix (0, 1) - 40.0f) < 0.01f && std::abs (old.getSlotMix (2, 0) - 20.0f) < 0.01f, "0.2 slot mixes recalled");
+            require (! old.parameters.state.getChildWithProperty ("id", "slot0_1").isValid(), "Old slot parameters dropped");
+            runAudioCase (old, 48000, { .7f, 1, 1 }, 73, "Triad 0.2 project recall (40 percent slot mix)");
+            juce::MemoryBlock v3; old.getStateInformation (v3);
+            TriadProcessor again; again.setStateInformation (v3.getData(), (int) v3.getSize());
+            require (again.getSlotCount (0) == 2 && std::abs (again.getSlotMix (0, 1) - 40.0f) < 0.01f, "Slot mix saved with the project");
         }
 
         if (triadVst3.exists())
@@ -327,68 +379,123 @@ int main (int argc, char** argv)
             while (q.addBand()) {}
             require (q.getBandCount() == 10, "Ten bands");
             bandMix (q, 100);
-            for (int s = 0; s < triad::maxSlots; ++s) require (q.loadFile (9, s, effect).isEmpty(), "Fill all ten slots of a band");
+            constexpr int chainLength = 16;   // more than the old ten-slot limit
+            for (int s = 0; s < chainLength; ++s) require (q.loadFile (9, s, effect).isEmpty(), "Keep adding slots to a band");
+            require (q.getSlotCount (9) == chainLength, "Sixteen slots in one band");
             const auto ten = q.effectiveCrossovers();
-            const auto chain = std::pow (0.25f, 10.0f);
+            const auto chain = std::pow (0.25f, (float) chainLength);
             std::vector<float> gains (10, 1.0f); gains[9] = chain;
-            runAudioCase (q, 48000, gains, 730, "Ten bands with a ten-effect chain", ten);
+            runAudioCase (q, 48000, gains, 73 * chainLength, "Ten bands with a sixteen-effect chain", ten);
             juce::MemoryBlock tenState; q.getStateInformation (tenState);
             TriadProcessor tenRestored; tenRestored.setStateInformation (tenState.getData(), (int) tenState.getSize());
-            require (tenRestored.getBandCount() == 10 && tenRestored.getSlotInfo (9, 9).loaded, "Ten bands and slots recall");
-            runAudioCase (tenRestored, 48000, gains, 730, "Ten-band project recall", ten);
+            require (tenRestored.getBandCount() == 10 && tenRestored.getSlotCount (9) == chainLength
+                     && tenRestored.getSlotInfo (9, chainLength - 1).loaded, "Ten bands and sixteen slots recall");
+            runAudioCase (tenRestored, 48000, gains, 73 * chainLength, "Ten-band project recall", ten);
         }
 
-        // ---- Effects-only plug-in list ------------------------------------------------------------
+        // ---- Effects-only plug-in list, without ever loading a plug-in inside Triad ----------------
         {
             auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadCatalogTest");
             temp.deleteRecursively();
             auto folder = temp.getChildFile ("VST3");
             folder.createDirectory();
-            require (effect.copyDirectoryTo (folder.getChildFile ("Triad Test Effect.vst3")), "Copy effect fixture");
-            require (synth.copyDirectoryTo (folder.getChildFile ("Triad Test Synth.vst3")), "Copy instrument fixture");
-            require (synth.copyDirectoryTo (folder.getChildFile ("Vendor/Hidden Synth.vst3")), "Copy instrument without metadata");
-            for (auto name : { "Contents/Resources/moduleinfo.json", "Contents/moduleinfo.json" })
-                folder.getChildFile ("Vendor/Hidden Synth.vst3").getChildFile (name).deleteFile();
-            require (effect.copyDirectoryTo (folder.getChildFile ("Crashy Effect.vst3")), "Copy crash-marker fixture");
+            auto withoutModuleInfo = [] (const juce::File& bundle)
+            {
+                for (auto name : { "Contents/Resources/moduleinfo.json", "Contents/moduleinfo.json" }) bundle.getChildFile (name).deleteFile();
+            };
+            require (copyBundle (effect, folder.getChildFile ("Triad Test Effect.vst3")), "Copy effect fixture");
+            require (copyBundle (synth, folder.getChildFile ("Triad Test Synth.vst3")), "Copy instrument fixture");
+            require (copyBundle (synth, folder.getChildFile ("Vendor/Hidden Synth.vst3")), "Copy instrument without metadata");
+            require (copyBundle (effect, folder.getChildFile ("Vendor/Hidden Effect.vst3")), "Copy effect without metadata");
+            withoutModuleInfo (folder.getChildFile ("Vendor/Hidden Synth.vst3"));
+            withoutModuleInfo (folder.getChildFile ("Vendor/Hidden Effect.vst3"));
+            require (copyBundle (crashFixture, folder.getChildFile ("Crashy Effect.vst3")), "Copy the plug-in that crashes when loaded");
             PluginCatalog::Options options;
             options.vst3Folders.add (folder);
             options.cacheFolder = temp.getChildFile ("cache");
+            options.scanner = scannerHelper;
             options.includeAudioUnits = false;
             options.cacheFolder.createDirectory();
-            options.cacheFolder.getChildFile ("ScanInProgress.txt").replaceWithText (folder.getChildFile ("Crashy Effect.vst3").getFullPathName());
+            // Files left by Triad 0.2.1's list are cleaned up.
+            options.cacheFolder.getChildFile ("PluginCache.xml").replaceWithText ("<TriadPluginCache version=\"1\"/>");
+            options.cacheFolder.getChildFile ("ScanInProgress.txt").replaceWithText ("x");
             std::cout << "moduleinfo.json in test effect: " << (effect.getChildFile ("Contents/Resources/moduleinfo.json").existsAsFile() ? "yes" : "no") << std::endl;
-            int effects = 0;
-            juce::PluginDescription catalogEntry;
+            EffectEntry byFile, scanned;
             {
+                const auto started = juce::Time::getMillisecondCounterHiRes();
                 PluginCatalog catalog (options);
-                require (catalog.scanUntilIdle (60000), "Catalog scan finishes");
+                require (catalog.waitUntilIdle (120000), "Catalog scan finishes");
+                const auto c = catalog.getCounts();
+                std::cout << "Plug-in list: " << c.bundles << " bundles (" << c.fromModuleInfo << " from moduleinfo.json, " << c.fromScanner
+                          << " checked by Triad Scanner, " << c.crashed << " crashed the scanner) in "
+                          << juce::roundToInt (juce::Time::getMillisecondCounterHiRes() - started) << " ms" << std::endl;
+                bool crashedListed = false;
                 for (const auto& e : catalog.getEffects())
                 {
-                    std::cout << "  listed: " << e.format << " / " << e.manufacturer << " / " << e.name << std::endl;
+                    std::cout << "  listed: " << e.format << " / " << e.manufacturer << " / " << e.name
+                              << (e.verified ? "" : " [not checked]") << (e.crashed ? " [crashed]" : "") << std::endl;
                     require (! e.name.containsIgnoreCase ("Synth"), "Instruments are not listed");
-                    if (e.name == "Triad Test Effect") { ++effects; catalogEntry = e.description; }
+                    if (e.name == "Triad Test Effect" && e.verified) (e.loadByFile ? byFile : scanned) = e;
+                    if (e.name == "Crashy Effect") crashedListed = e.crashed && ! e.verified;
                 }
+                require (c.fromModuleInfo == 2 && c.fromScanner == 2 && c.crashed == 1, "Each plug-in classified the expected way");
+                require (crashedListed, "The plug-in that crashes is marked and not offered");
+                require (byFile.name.isNotEmpty() && scanned.name.isNotEmpty(), "Effects found from moduleinfo.json and by the scanner");
             }
-            require (effects == 1, "Effect listed once; the plug-in that crashed during a scan is skipped");
-            require (options.cacheFolder.getChildFile ("PluginCache.xml").existsAsFile(), "Plug-in list is cached");
+            std::cout << "A plug-in that aborts when loaded only took down Triad Scanner; Triad kept running" << std::endl;
+            require (! options.cacheFolder.getChildFile ("PluginCache.xml").exists() && ! options.cacheFolder.getChildFile ("ScanInProgress.txt").exists(),
+                     "Old 0.2.1 list files removed");
+            require (options.cacheFolder.getChildFile ("PluginCache-v2.xml").existsAsFile(), "Plug-in list is cached");
             {
-                PluginCatalog cached (options);
-                require (cached.scanUntilIdle (60000), "Cached catalog finishes");
+                auto noHelper = options;   // the cached results need no helper
+                noHelper.scanner = temp.getChildFile ("missing/Triad Scanner");
+                PluginCatalog cached (noHelper);
+                require (cached.waitUntilIdle (60000), "Cached catalog finishes");
+                const auto c = cached.getCounts();
                 int again = 0;
-                for (const auto& e : cached.getEffects()) if (e.name == "Triad Test Effect") ++again;
-                require (again == 1, "Cached list matches");
+                for (const auto& e : cached.getEffects()) if (e.name == "Triad Test Effect" && e.verified) ++again;
+                require (again == 2 && c.unchecked == 0 && c.crashed == 1, "Cached list matches");
+            }
+           #if ! JUCE_WINDOWS
+            {
+                setenv ("TRIAD_FIXTURE_HANG", "1", 1);   // the fixture now hangs instead of crashing
+                auto hanging = options;
+                hanging.timeoutMs = 2000;
+                PluginCatalog catalog (hanging);
+                catalog.rescanAll();
+                require (catalog.waitUntilIdle (120000), "Scan with a hanging plug-in finishes");
+                unsetenv ("TRIAD_FIXTURE_HANG");
+                const auto c = catalog.getCounts();
+                bool listed = false;
+                for (const auto& e : catalog.getEffects()) if (e.name == "Crashy Effect") listed = ! e.verified && ! e.crashed;
+                require (c.timedOut == 1 && listed, "A plug-in that hangs is given up on and listed as not checked");
+                std::cout << "A plug-in that hangs when loaded was stopped after 2 s; Triad kept running" << std::endl;
+            }
+           #endif
+            {
+                auto damaged = options;   // no helper at all: unknown plug-ins are listed, never loaded
+                damaged.scanner = temp.getChildFile ("missing/Triad Scanner");
+                damaged.cacheFolder = temp.getChildFile ("cache-without-helper");
+                PluginCatalog catalog (damaged);
+                require (catalog.waitUntilIdle (60000), "Catalog without helper finishes");
+                require (catalog.getCounts().unchecked == 3, "Without the helper, unknown plug-ins are listed as not checked");
             }
             TriadProcessor fromList;
             fromList.prepareToPlay (48000, 128);
-            require (fromList.loadEffect (0, 0, catalogEntry, false).isEmpty() && fromList.getSlotInfo (0, 0).loaded, "Effect picked from the list loads");
+            require (fromList.loadFile (0, 0, juce::File (byFile.description.fileOrIdentifier), false, byFile.name).isEmpty()
+                     && fromList.getSlotInfo (0, 0).loaded, "Effect picked from the list loads");
+            require (fromList.loadEffect (0, 1, scanned.description, false).isEmpty() && fromList.getSlotInfo (0, 1).loaded,
+                     "Effect found by the scanner loads into a new slot");
             juce::PluginDescription instrument;
             instrument.name = "Some Synth"; instrument.isInstrument = true; instrument.pluginFormatName = "VST3";
-            require (fromList.loadEffect (0, 1, instrument, false).isNotEmpty(), "Instruments are refused");
+            require (fromList.loadEffect (0, 2, instrument, false).isNotEmpty() && fromList.getSlotCount (0) == 2,
+                     "Instruments are refused (no slot is left behind)");
            #if JUCE_MAC
             PluginCatalog::Options auOnly;
             auOnly.cacheFolder = temp.getChildFile ("au-cache");
+            auOnly.scanner = scannerHelper;
             PluginCatalog audioUnits (auOnly);
-            require (audioUnits.scanUntilIdle (60000), "AU list");
+            require (audioUnits.waitUntilIdle (120000), "AU list");
             bool appleDelay = false;
             for (const auto& e : audioUnits.getEffects())
             {
@@ -396,18 +503,19 @@ int main (int argc, char** argv)
                 if (e.format == "AU" && e.name == "AUDelay")
                 {
                     appleDelay = true;
-                    require (fromList.loadEffect (0, 2, e.description, false).isEmpty(), "Host an Audio Unit effect");
-                    for (int wait = 0; wait < 40 && ! fromList.getSlotInfo (0, 2).loaded; ++wait)
+                    const int slot = fromList.getSlotCount (0);
+                    require (fromList.loadEffect (0, slot, e.description, false).isEmpty(), "Host an Audio Unit effect");
+                    for (int wait = 0; wait < 40 && ! fromList.getSlotInfo (0, slot).loaded; ++wait)
                         juce::MessageManager::getInstance()->runDispatchLoopUntil (50);   // AUv3 loads asynchronously
-                    require (fromList.getSlotInfo (0, 2).loaded, "Audio Unit effect is running in its slot");
-                    std::cout << "Hosted AU: " << e.description.fileOrIdentifier << ", latency " << fromList.getSlotInfo (0, 2).latency << std::endl;
+                    require (fromList.getSlotInfo (0, slot).loaded, "Audio Unit effect is running in its slot");
+                    std::cout << "Hosted AU: " << e.description.fileOrIdentifier << ", latency " << fromList.getSlotInfo (0, slot).latency << std::endl;
+                    fromList.removeSlot (0, slot);
                 }
             }
             require (appleDelay, "Apple's AUDelay is listed as an effect");
-            fromList.removeEffect (0, 2);
            #endif
             temp.deleteRecursively();
-            std::cout << "PASS: effect list excludes instruments, skips crashed plug-ins, caches results" << std::endl;
+            std::cout << "PASS: effect list excludes instruments, survives plug-ins that crash or hang, caches results" << std::endl;
         }
 
         // ---- Editor windows ---------------------------------------------------------------------
@@ -433,16 +541,29 @@ int main (int argc, char** argv)
             TriadProcessor preview;
             preview.prepareToPlay (48000, 512);
             require (preview.loadFile (0, 0, effect).isEmpty() && preview.loadFile (0, 1, effect).isEmpty()
-                     && preview.loadFile (1, 0, effect).isEmpty() && preview.loadFile (2, 0, effect).isEmpty(), "Load effects for the preview");
-            setParam (preview, TriadProcessor::slotMixID (0, 1), 65);
-            setParam (preview, TriadProcessor::slotMixID (2, 0), 30);
+                     && preview.loadFile (0, 2, effect).isEmpty() && preview.loadFile (1, 0, effect).isEmpty()
+                     && preview.loadFile (2, 0, effect).isEmpty(), "Load effects for the preview");
+            preview.addSlot (2);
+            preview.setSlotMix (0, 1, 65);
+            preview.setSlotMix (2, 0, 30);
             setParam (preview, TriadProcessor::bandMixID (1), 80);
             std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (preview.createEditor()));
             require (editor != nullptr, "Create editor");
             editor->setVisible (true);
             editor->refreshNow();
             require (editor->getNumStrips() == 3, "One strip per band");
+            require (editor->getStrip (0)->getNumRows() == 3 && editor->getStrip (1)->getNumRows() == 1
+                     && editor->getStrip (2)->getNumRows() == 2, "Each band shows its own slots");
             require (editor->getStrip (0)->getRow (1).knob.getValue() == 65.0, "Slot knob shows its mix");
+            editor->getStrip (1)->getRow (0).knob.setValue (42.0, juce::sendNotificationSync);
+            require (std::abs (preview.getSlotMix (1, 0) - 42.0f) < 0.01f, "Turning a slot knob sets its mix");
+            preview.addSlot (1);
+            editor->refreshNow();
+            require (editor->getStrip (1)->getNumRows() == 2, "A new slot row appears under the last one");
+            preview.removeSlot (1, 1);
+            editor->refreshNow();
+            require (editor->getStrip (1)->getNumRows() == 1, "A removed slot row disappears");
+            preview.setSlotMix (1, 0, 100);
             require (editor->getStrip (1)->getMixKnob().getValue() == 80.0, "Band knob shows its mix");
             // Feed music-like noise so the live spectrum has something to draw.
             juce::Random random (7);
@@ -468,6 +589,10 @@ int main (int argc, char** argv)
                 require (editor->getNumStrips() == 5, "Strips follow added bands");
                 editor->getDisplay().updateSpectrum();
                 std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-5bands.png"),
+                                                           editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+                for (int s = 0; s < 11; ++s) preview.addSlot (1);
+                editor->refreshNow();
+                std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-slots.png"),
                                                            editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
                 while (preview.addBand()) {}
                 editor->refreshNow();

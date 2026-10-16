@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$PWD"
 
-VERSION="0.2.1"
+VERSION="0.2.2"
 PRODUCT="Triad v2"                 # bundle and display name (plug-in IDs unchanged from Triad 0.1)
 JUCE_COMMIT="29396c22c93392d6738e021b83196283d6e4d850"   # JUCE 8.0.12
 CMAKE_FALLBACK_VERSION="3.31.9"
@@ -156,6 +156,12 @@ stage_bundle()   # source destination
     local before; before=$(stat -f %z "$binary")
     xcrun strip -x "$binary"
     echo "  $(basename "$2") binary: $((before / 1024)) KB -> $(( $(stat -f %z "$binary") / 1024 )) KB after strip"
+    # The plug-in scanner helper (checks plug-ins in its own process, so a bad plug-in cannot crash the DAW).
+    local helper="$2/Contents/Helpers/Triad Scanner"
+    [ -x "$helper" ] || fail "Plug-in scanner helper missing: $helper"
+    [[ " $(lipo -archs "$helper") " == *" arm64 "* ]] || fail "$helper is not an Apple Silicon binary"
+    xcrun strip -x "$helper"
+    echo "  Triad Scanner helper: $(( $(stat -f %z "$helper") / 1024 )) KB"
     # Local ad-hoc signature (no Developer ID). Apple Silicon requires every binary to be signed.
     codesign --force --deep --sign - "$2"
     codesign --verify --deep --strict "$2"
@@ -281,6 +287,7 @@ for entry in "Triad-VST3.pkg:Library/Audio/Plug-Ins/VST3/$PRODUCT.vst3" \
     component="${entry%%:*}"; relative="${entry#*:}"
     bundle="$VERIFY/$component/Payload/$relative"
     [ -f "$bundle/Contents/MacOS/$PRODUCT" ] || fail "$component does not contain $relative"
+    [ -x "$bundle/Contents/Helpers/Triad Scanner" ] || fail "$component is missing the Triad Scanner helper"
     [ -x "$VERIFY/$component/Scripts/preinstall" ] || fail "$component is missing the step that removes the old Triad"
     codesign --verify --deep --strict "$bundle" || fail "Signature check failed inside $component"
     if grep -q "<relocate>" "$VERIFY/$component/PackageInfo" 2>/dev/null; then

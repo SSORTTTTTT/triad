@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.2.1 LANGUAGES C CXX)
+project(Triad VERSION 0.2.2 LANGUAGES C CXX)
 # Installed as "Triad v2.vst3" / "Triad v2.component"; the plug-in IDs are unchanged from Triad 0.1,
 # so projects made with the earlier "Triad" open with Triad v2.
 set(TRIAD_PRODUCT_NAME "Triad v2")
@@ -50,22 +50,49 @@ if(APPLE)
     # CoreAudioKit provides the generic editor view used when hosting Audio Units.
     target_link_libraries(Triad PUBLIC "-framework AudioToolbox" "-framework CoreAudioKit")
 endif()
+# "Triad Scanner": a small helper that opens a plug-in in its own process when Triad cannot tell
+# from disk whether it is an effect, so a plug-in that crashes while being checked cannot take
+# the DAW down. It is copied into every plug-in bundle as Contents/Helpers/Triad Scanner.
+juce_add_console_app(TriadScanner PRODUCT_NAME "Triad Scanner")
+target_sources(TriadScanner PRIVATE Source/Scanner.cpp)
+target_compile_definitions(TriadScanner PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_AU=0 JUCE_PLUGINHOST_VST=0
+    JUCE_PLUGINHOST_LADSPA=0 JUCE_PLUGINHOST_LV2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+target_link_libraries(TriadScanner PRIVATE juce::juce_audio_processors_headless PUBLIC juce::juce_recommended_warning_flags)
+foreach(target IN ITEMS Triad TriadScanner)
+    if(TRIAD_SIZE_OPTIMISED AND NOT MSVC)
+        # Framework and UI code optimised for size; the audio path (PluginProcessor.cpp,
+        # which inlines the crossover and delay lines) keeps full -O3 speed.
+        target_compile_options(${target} PUBLIC $<$<CONFIG:Debug>:-g -O0> $<$<CONFIG:Release>:-Os>)
+        target_link_libraries(${target} PUBLIC juce::juce_recommended_lto_flags)
+    else()
+        target_link_libraries(${target} PUBLIC juce::juce_recommended_config_flags)
+    endif()
+endforeach()
 if(TRIAD_SIZE_OPTIMISED AND NOT MSVC)
-    # Framework and UI code optimised for size; the audio path (PluginProcessor.cpp,
-    # which inlines the crossover and delay lines) keeps full -O3 speed.
-    target_compile_options(Triad PUBLIC $<$<CONFIG:Debug>:-g -O0> $<$<CONFIG:Release>:-Os>)
     set_source_files_properties(Source/PluginProcessor.cpp PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Release>:-O3>")
-    target_link_libraries(Triad PUBLIC juce::juce_recommended_lto_flags)
-else()
-    target_link_libraries(Triad PUBLIC juce::juce_recommended_config_flags)
 endif()
 if(APPLE)
-    # Drop unreferenced code from the AU/VST3 at link time.
+    # Drop unreferenced code at link time.
     target_link_options(Triad INTERFACE $<$<CONFIG:Release>:LINKER:-dead_strip>)
+    target_link_options(TriadScanner PRIVATE $<$<CONFIG:Release>:LINKER:-dead_strip>)
 elseif(NOT MSVC)
-    target_compile_options(Triad PUBLIC $<$<CONFIG:Release>:-ffunction-sections -fdata-sections>)
+    foreach(target IN ITEMS Triad TriadScanner)
+        target_compile_options(${target} PUBLIC $<$<CONFIG:Release>:-ffunction-sections -fdata-sections>)
+    endforeach()
     target_link_options(Triad INTERFACE $<$<CONFIG:Release>:LINKER:--gc-sections>)
+    target_link_options(TriadScanner PRIVATE $<$<CONFIG:Release>:LINKER:--gc-sections>)
 endif()
+foreach(format IN ITEMS VST3 AU)
+    if(TARGET Triad_${format})
+        add_dependencies(Triad_${format} TriadScanner)
+        # <bundle>/Contents/MacOS (or x86_64-linux) -> <bundle>/Contents/Helpers
+        add_custom_command(TARGET Triad_${format} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:TriadScanner>" "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers/Triad Scanner"
+            VERBATIM)
+    endif()
+endforeach()
 if(TRIAD_BUILD_TESTS)
     enable_testing()
     juce_add_plugin(TriadTestEffect COMPANY_NAME "Triad Tests" BUNDLE_ID "audio.thomasross.triad.testeffect" PLUGIN_MANUFACTURER_CODE Tsrt
@@ -81,8 +108,25 @@ if(TRIAD_BUILD_TESTS)
     target_sources(TriadTestSynth PRIVATE Tests/TestSynth.cpp)
     target_compile_definitions(TriadTestSynth PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
     target_link_libraries(TriadTestSynth PRIVATE juce::juce_audio_utils)
+    # A "plug-in" that crashes (or hangs) as soon as it is loaded: Triad must never load it itself.
+    add_library(TriadCrashFixture MODULE Tests/CrashFixture.cpp)
+    set_target_properties(TriadCrashFixture PROPERTIES PREFIX "" OUTPUT_NAME "Triad Crash Fixture")
+    if(APPLE)
+        set_target_properties(TriadCrashFixture PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION vst3
+            LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures>")
+    else()
+        set_target_properties(TriadCrashFixture PROPERTIES SUFFIX ".so"
+            LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures/Triad Crash Fixture.vst3/Contents/${CMAKE_SYSTEM_PROCESSOR}-linux>")
+    endif()
     juce_add_console_app(TriadTests PRODUCT_NAME "Triad Tests")
     target_sources(TriadTests PRIVATE Tests/Tests.cpp)
     target_compile_definitions(TriadTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(TriadTests PRIVATE Triad juce::juce_audio_utils juce::juce_dsp)
+    add_dependencies(TriadTests TriadScanner TriadCrashFixture)
+    # Stress test: hundreds of hosted effects, random edits while audio runs, many instances.
+    juce_add_console_app(TriadStress PRODUCT_NAME "Triad Stress")
+    target_sources(TriadStress PRIVATE Tests/Stress.cpp)
+    target_compile_definitions(TriadStress PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(TriadStress PRIVATE Triad juce::juce_audio_utils)
+    add_dependencies(TriadStress TriadScanner TriadCrashFixture)
 endif()
