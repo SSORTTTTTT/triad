@@ -182,6 +182,7 @@ void installCrashHandler() {}
 // What the run is doing now, and how long that may take before the watchdog calls it a hang.
 void step (const juce::String& what, double limitSeconds = 120.0)
 {
+    installCrashHandler();   // again: a hosted plug-in may have installed its own crash handler meanwhile
     if (what.isNotEmpty())
     {
         const int n = stepCount.load();

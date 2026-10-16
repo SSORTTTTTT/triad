@@ -237,11 +237,8 @@ private:
 
     juce::AudioPluginFormatManager formats;
     std::array<std::unique_ptr<Band>, triad::maxBands> bands;
-    // Removed effects are deleted a moment later, after the message loop has run: some plug-ins post
-    // themselves a message when they load, and would crash if it arrived after they were deleted.
-    struct Retired { std::unique_ptr<juce::AudioPluginInstance> effect; juce::uint32 since = 0; };
-    std::vector<Retired> retired;
-    void retire (std::unique_ptr<juce::AudioPluginInstance>);
+    // Removed effects (and those of a closed Triad) are deleted a moment later; see EffectGraveyard.
+    static void retire (std::unique_ptr<juce::AudioPluginInstance>);
     std::array<juce::AudioBuffer<float>, triad::maxBands> split;
     juce::AudioBuffer<float> wide;   // for effects with an extra bus that cannot be switched off (e.g. a sidechain)
     triad::Splitter splitter;

@@ -307,6 +307,16 @@ int main (int argc, char** argv)
             juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
             require (SidechainEffect::delivered == 1 && SidechainEffect::deliveredAfterDeletion == 0, "Its message arrives while it still exists");
             require (SidechainEffect::live().empty(), "It is deleted a moment later");
+            // The same when Triad itself is closed (a project closed, Triad removed from a track).
+            {
+                TriadProcessor closing;
+                closing.prepareToPlay (48000, 512);
+                require (closing.loadInstance (0, 0, std::make_unique<SidechainEffect> (false, true)).isEmpty(), "Load it into a Triad that is closed next");
+            }
+            require (! SidechainEffect::live().empty(), "Closing Triad does not delete its effects on the spot");
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
+            require (SidechainEffect::delivered == 2 && SidechainEffect::deliveredAfterDeletion == 0 && SidechainEffect::live().empty(),
+                     "After Triad closes, its effects get their messages and are then deleted");
             std::cout << "Removed effects are deleted after their pending messages: passed" << std::endl;
         }
 

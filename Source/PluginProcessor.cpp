@@ -7,6 +7,46 @@
 
 namespace
 {
+// Hosted effects that were removed, or whose Triad was closed, are deleted about a second later on
+// the message thread. Some plug-ins post themselves messages (when they load, or from the audio
+// thread) and crash if one arrives after they were deleted. Shared by every Triad instance, so it
+// outlives the one that removed them; anything left is deleted when the plug-in shuts down.
+class EffectGraveyard final : private juce::Timer, public juce::DeletedAtShutdown
+{
+public:
+    ~EffectGraveyard() override
+    {
+        stopTimer();
+        clearSingletonInstance();
+        const juce::ScopedLock lock (mutex);
+        entries.clear();
+    }
+    void add (std::unique_ptr<juce::AudioPluginInstance> effect)
+    {
+        const juce::ScopedLock lock (mutex);
+        entries.push_back ({ std::move (effect), juce::Time::getMillisecondCounter() });
+        if (! isTimerRunning()) startTimer (250);
+    }
+    JUCE_DECLARE_SINGLETON_INLINE (EffectGraveyard, false)
+private:
+    struct Entry { std::unique_ptr<juce::AudioPluginInstance> effect; juce::uint32 since = 0; };
+    void timerCallback() override
+    {
+        std::vector<Entry> due;
+        {
+            const juce::ScopedLock lock (mutex);
+            const auto now = juce::Time::getMillisecondCounter();
+            auto keep = std::find_if (entries.begin(), entries.end(), [now] (const Entry& e) { return now - e.since < 1000; });
+            due.assign (std::make_move_iterator (entries.begin()), std::make_move_iterator (keep));
+            entries.erase (entries.begin(), keep);
+            if (entries.empty()) stopTimer();
+        }
+        due.clear();   // deleted outside the lock (a plug-in may take a while to close)
+    }
+    juce::CriticalSection mutex;
+    std::vector<Entry> entries;
+};
+
 // A hosted effect's window. It stays in front of Triad's window, and keys the effect does not use
 // (the spacebar for play/stop, DAW shortcuts) are passed back to the DAW.
 class EffectWindow final : public juce::DocumentWindow
@@ -227,6 +267,10 @@ TriadProcessor::~TriadProcessor()
     stopTimer(); cancelPendingUpdate();
     closeWindows();
     releaseResources();
+    // The effects are deleted a moment after Triad, once their own pending messages have arrived.
+    for (auto& band : bands)
+        if (band != nullptr)
+            for (auto& s : band->slots) retire (std::move (s->effect));
 }
 bool TriadProcessor::isBusesLayoutSupported (const BusesLayout& b) const
 {
@@ -389,19 +433,12 @@ void TriadProcessor::timerCallback()
         const juce::ScopedTryLock lock (gate);
         if (lock.isLocked()) alignLatency();
     }
-    // Delete effects removed at least a second ago (oldest first).
-    if (! retired.empty())
-    {
-        const auto now = juce::Time::getMillisecondCounter();
-        auto keep = std::find_if (retired.begin(), retired.end(), [now] (const Retired& r) { return now - r.since < 1000; });
-        retired.erase (retired.begin(), keep);
-    }
 }
 void TriadProcessor::retire (std::unique_ptr<juce::AudioPluginInstance> effect)
 {
     if (effect == nullptr) return;
     effect->setPlayHead (nullptr);
-    retired.push_back ({ std::move (effect), juce::Time::getMillisecondCounter() });
+    if (auto* graveyard = EffectGraveyard::getInstance()) graveyard->add (std::move (effect));
 }
 void TriadProcessor::startFadeIn() { fadeRemaining = fadeLength; }
 

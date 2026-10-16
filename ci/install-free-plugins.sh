@@ -55,6 +55,17 @@ install_from_dir()   # folder
     sudo installer -pkg "$pkg" -target / >/dev/null && found=1
   done < <(find "$1" -maxdepth 4 \( -name "*.pkg" -o -name "*.mpkg" \) -print0)
   if [ "$found" = 0 ]; then
+    # A disk image inside the download: open it and install from it.
+    while IFS= read -r -d '' image; do
+      local inner="$work/mount-inner-$(basename "$image")"; mkdir -p "$inner"
+      if (set +o pipefail; yes | hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$inner" "$image" >/dev/null 2>&1); then
+        install_from_dir "$inner"; found=1
+        hdiutil detach "$inner" -quiet || hdiutil detach "$inner" -force -quiet || true
+      fi
+    done < <(find "$1" -maxdepth 4 -name "*.dmg" -print0)
+  fi
+  if [ "$found" = 0 ]; then
+    echo "    contents: $(cd "$1" && find . -maxdepth 4 | head -n 25 | tr '\n' ' ')"
     while IFS= read -r -d '' bundle; do
       echo "    copying $(basename "$bundle")"
       sudo cp -R "$bundle" /Library/Audio/Plug-Ins/VST3/
