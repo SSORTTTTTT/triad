@@ -1,5 +1,27 @@
 # Validation — Triad
 
+## Triad v2 (0.2.2) on macOS — 2026-10-15
+
+GitHub Actions `macos-14` runner (Apple M1, virtualised, 3 cores), macOS 14.8, Xcode 15.4, JUCE 8.0.12; `Build-Mac.command` run unmodified (commit `8f6a818`). Also built and tested on Linux (debug) before the Mac run.
+
+| Check | Result |
+| --- | --- |
+| AU and VST3 build (arm64, Release, macOS 12.0+) | Built; each bundle contains `Contents/Helpers/Triad Scanner` |
+| Shipped binary size (stripped) | 2.9 MB per format; Triad Scanner helper 326 KB |
+| Installer `Triad-v2-0.2.2-macOS-AppleSilicon.pkg` | 2.9 MB; installs over an earlier "Triad"; signatures valid; installed helper runs |
+| Apple `auval -v aufx Trid Tsrt` | AU VALIDATION SUCCEEDED |
+| pluginval, strictness 5 (GUI tests skipped) | VST3: SUCCESS; AU: SUCCESS |
+| All earlier audio, recall and UI checks | Passed (max error ≤ 6e-8) |
+| Slots | Bands start with one slot; slots added and removed; 16-effect chain on one band (1,168 samples) recalled exactly |
+| Triad 0.2.0/0.2.1 project | Slot positions and slot mixes recalled; old slot parameters dropped |
+| Effects-only list | Nothing loaded inside Triad: plug-ins read from moduleinfo.json, Audio Unit registry, or Triad Scanner. A plug-in that aborts on load and one that hangs (stopped after 2 s) only affect the helper |
+| Stress: 200 effects in one Triad (VST3 + 20 Apple AUs, 10 bands × 20 slots) | Loaded in 0.1 s; 20 s of audio at 4.7 ms per 256-sample block (89% of one core); saved and reopened complete |
+| Stress: 3,000 random edits while audio plays on another thread | Bands, slots, effects, mixes, windows, project reloads, sample-rate changes: no crash, no NaN/Inf |
+| Stress: 24 instances, 288 hosted effects | Created in 0.3 s; closed cleanly; 40 open/close cycles |
+| Stress: plug-in list of 60, 20 of which crash | 4.9 s first scan, 0.2 s from cache; Triad unaffected |
+
+The CPU figures above come from a shared virtual Mac with Apple's reverbs and dynamics processors in every chain; real projects depend on the effects used, and DAWs spread tracks across cores.
+
 ## Triad v2 (0.2.1) on macOS — 2026-10-15
 
 GitHub Actions `macos-14` runner (Apple M1, virtualised), macOS 14.8, Xcode 15.4, CMake 4.4, JUCE 8.0.12; `Build-Mac.command` run unmodified (commit `384f566`). 0.2.1 renames the installed plug-in to "Triad v2"; the audio code is the same as 0.2.0.
