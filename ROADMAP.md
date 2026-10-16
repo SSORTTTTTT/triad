@@ -57,11 +57,18 @@ rein the randomness in, so results are usable rhythms rather than noise:
 ### 2. Soft crossovers ("bleed" between bands)
 
 Today each crossover is a fixed, steep Linkwitz-Riley 24 dB/octave split, so an effect stops sharply at the band edge
-(e.g. at 2.5 kHz). Add a **slope handle**: a small circle on each crossover line in the spectrum display, dragged up or
-down to go from a hard cut (48 dB/oct) to a broad, gentle one (12 or 6 dB/oct) where the effect fades into the
-neighbouring bands, like ShaperBox. Per crossover, saved with the project and presets. With Linkwitz-Riley-type
-filters at each slope, the bands still add back to the original sound when no effects are loaded. Thomas may send a
-picture of what he means.
+(e.g. at 2.5 kHz). Thomas (2026-10-16): one of the **two things to focus on for the next version** (with the LFO randomizer).
+
+- A **slope dot** for each crossover: besides the frequency handle at the bottom of the spectrum display, a second dot
+  higher up on the same crossover line, in the middle of the grid.
+- Click and drag it to pull the slope in (gentle, broad: the effect bleeds into the neighbouring bands) or out (steep,
+  hard cut at that frequency), like the band splitting in ShaperBox's multiband view.
+- While you drag (and on hover), the **slope picture** appears: the two neighbouring bands' filter curves drawn over
+  the spectrum, so you can see how much of each band reaches the other.
+- A **readout** next to the dot shows the slope in dB per octave (e.g. "12 dB/oct"); double-click resets it to 24.
+- Steps: 6, 12, 24, 36 and 48 dB/oct (Linkwitz-Riley-type filters at each step, so the bands still add back to the
+  original sound when no effects are loaded). Per crossover, saved with projects and presets, automatable.
+- Thomas will send a picture of ShaperBox's multiband band splitting as the visual reference.
 
 ### 3. Knobs inside third-party effects (detail)
 
