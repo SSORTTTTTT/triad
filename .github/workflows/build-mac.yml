@@ -71,11 +71,13 @@ jobs:
           cmake --build build-tests --config Release --target TriadTests TriadStress TriadScanner TriadCrashFixture \
             TriadTestEffect_VST3 TriadTestSynth_VST3 Triad_VST3 --parallel "$(sysctl -n hw.ncpu)"
           exe="$(find build-tests/TriadTests_artefacts -type f -perm -u+x -name 'Triad*Tests' | head -n 1)"
+          scanner="$(find build-tests/TriadScanner_artefacts -type f -perm -u+x -name 'Triad*Scanner' | head -n 1)"
+          echo "$PWD/$scanner" > scanner-path.txt
           mkdir -p ci-ui
           "$exe" "$PWD/build-tests/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
                  "$PWD/build-tests/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3" \
                  "$PWD/build-tests/fixtures/Triad Crash Fixture.vst3" \
-                 "$PWD/build-tests/TriadScanner_artefacts/Release/Triad Scanner" \
+                 "$PWD/$scanner" \
                  "$PWD/ci-ui/Triad-preview-mac.png" \
                  "$PWD/build-tests/Triad_artefacts/Release/VST3/Triad v2.vst3" 2>&1 | tee test-results-mac.txt
 
@@ -85,7 +87,7 @@ jobs:
           exe="$(find build-tests/TriadStress_artefacts -type f -perm -u+x -name 'Triad*Stress' | head -n 1)"
           "$exe" "$PWD/build-tests/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
                  "$PWD/build-tests/fixtures/Triad Crash Fixture.vst3" \
-                 "$PWD/build-tests/TriadScanner_artefacts/Release/Triad Scanner" \
+                 "$(cat scanner-path.txt)" \
                  "$PWD/stress-results.txt" 2>&1 | tee stress-log.txt
 
       - name: pluginval (VST3 and AU, strictness 5)

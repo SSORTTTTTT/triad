@@ -212,7 +212,7 @@ int main (int argc, char** argv)
         p.setSlotMix (0, 1, 0);
         runAudioCase (p, 48000, { .0625f, .25f, .25f }, 219, "Slot at 0 percent passes its input (latency kept)");
         require (p.moveSlot (0, 1, 1), "Move slot down");
-        require (p.getSlotMix (0, 2) == 0.0f && p.getSlotMix (0, 1) == 100.0f, "Slot mix travels with the moved effect");
+        require (juce::exactlyEqual (p.getSlotMix (0, 2), 0.0f) && juce::exactlyEqual (p.getSlotMix (0, 1), 100.0f), "Slot mix travels with the moved effect");
         require (p.getSlotInfo (0, 1).loaded && p.getSlotInfo (0, 2).loaded, "Both moved slots keep their effects");
         runAudioCase (p, 48000, { .0625f, .25f, .25f }, 219, "Moving a slot keeps the chain's result");
         p.setSlotMix (0, 2, 100);
@@ -251,7 +251,12 @@ int main (int argc, char** argv)
         TriadProcessor restored; restored.prepareToPlay (44100, 128);
         restored.setStateInformation (saved.getData(), (int) saved.getSize());
         juce::MessageManager::getInstance()->runDispatchLoopUntil (250);
-        for (int i = 0; i < 3; ++i) require (restored.getSlotInfo (i, 0).loaded, "Restore child plugin");
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto info = restored.getSlotInfo (i, 0);
+            if (! info.loaded) std::cout << "Band " << i + 1 << ": '" << info.name << "' " << info.status << " (" << restored.getSlotCount (i) << " slots)" << std::endl;
+            require (info.loaded, "Restore child plugin");
+        }
         runAudioCase (restored, 44100, { .875f, .875f, .875f }, 73, "Hosted state and mix recall");
 
         // ---- Triad 0.1 projects still open -----------------------------------------------------

@@ -122,7 +122,7 @@ void CrossoverDisplay::layoutPills()
     const auto plot = plotBounds();
     for (size_t i = 0; i < cuts.size(); ++i)
     {
-        const auto left = juce::jlimit (plot.getX(), plot.getRight() - pillWidth, xForFrequency (cuts[i]) - pillWidth * 0.5f);
+        const auto left = juce::jlimit (plot.getX(), juce::jmax (plot.getX(), plot.getRight() - pillWidth), xForFrequency (cuts[i]) - pillWidth * 0.5f);
         int row = 0;
         while (row < 2 && left < rowRight[(size_t) row] + 4.0f) ++row;
         pillRows[i] = row;
@@ -261,7 +261,7 @@ void CrossoverDisplay::paint (juce::Graphics& g)
     g.drawText (formatHz (processor.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 12, 90, 16), juce::Justification::centredRight);
     for (size_t i = 0; i < cuts.size(); ++i)
     {
-        const auto x = juce::jlimit (plot.getX(), plot.getRight() - pillWidth, xs[i + 1] - pillWidth * 0.5f);
+        const auto x = juce::jlimit (plot.getX(), juce::jmax (plot.getX(), plot.getRight() - pillWidth), xs[i + 1] - pillWidth * 0.5f);
         const auto y = pillTop ((int) i);
         g.setColour (juce::Colour (0xf0090b09)); g.fillRoundedRectangle (x, y, pillWidth, 24.0f, 4.0f);
         g.setColour (activeHandle == (int) i ? bandColour ((int) i) : juce::Colour (0xffe1e6e0));

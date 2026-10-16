@@ -350,7 +350,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
     say ("Finished in " + juce::String ((juce::Time::getMillisecondCounterHiRes() - started) / 1000.0, 1) + " s: "
          + juce::String (blocks.load()) + " audio blocks processed alongside the edits (" + juce::String (automation.load())
          + " automation moves), worst block " + ms (worstBlock.load()) + ", up to " + juce::String (peakEffects) + " effects loaded at once");
-    say ("Final layout: " + juce::String (p.getBandCount()) + " bands, " + juce::String (loadedCount (p)) + " effects; NaN/Inf output: none");
+    say ("Final layout: " + juce::String (p.getBandCount()) + (p.getBandCount() == 1 ? " band, " : " bands, ") + juce::String (loadedCount (p)) + " effects; NaN/Inf output: none");
     juce::StringArray lines;
     for (auto& [k, v] : counts) lines.add (k + " x" + juce::String (v));
     say ("Edits: " + lines.joinIntoString (", ") + (failedLoads > 0 ? "; loads refused " + juce::String (failedLoads) : juce::String()));

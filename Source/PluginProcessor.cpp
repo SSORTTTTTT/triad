@@ -679,6 +679,8 @@ juce::String TriadProcessor::finishInstall (int band, int slotIndex, const juce:
         old = std::move (s->effect);
         s->effect = std::move (instance);
         s->description = actual.name.isNotEmpty() ? actual : desc;
+        // Keep the location the effect was opened from (an instance may report the binary inside its bundle).
+        if (desc.fileOrIdentifier.isNotEmpty()) s->description.fileOrIdentifier = desc.fileOrIdentifier;
         s->savedState = state;
         s->error.clear();
         s->pendingRequest = 0;
@@ -730,7 +732,7 @@ void TriadProcessor::setSlotMix (int band, int slot, float percent)
     auto* s = slotAt (band, slot);   // message thread: the slot list cannot change underneath us
     if (s == nullptr) return;
     percent = juce::jlimit (0.0f, 100.0f, percent);
-    if (s->mixPercent.exchange (percent) == percent) return;
+    if (juce::exactlyEqual (s->mixPercent.exchange (percent), percent)) return;
     {
         const juce::ScopedLock lock (infoLock);
         if (slot < (int) info[(size_t) band].size()) info[(size_t) band][(size_t) slot].mix = percent;
@@ -808,7 +810,7 @@ void TriadProcessor::getStateInformation (juce::MemoryBlock& output)
         {
             auto& s = *slots[(size_t) i];
             const bool hasPlugin = s.description.name.isNotEmpty();
-            if (! hasPlugin && s.enabled && s.mixPercent.load() == 100.0f) continue;
+            if (! hasPlugin && s.enabled && juce::exactlyEqual (s.mixPercent.load(), 100.0f)) continue;
             auto* node = bandNode->createNewChildElement ("Slot");
             node->setAttribute ("index", i);
             node->setAttribute ("enabled", s.enabled);

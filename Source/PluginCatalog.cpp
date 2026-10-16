@@ -198,11 +198,7 @@ bool PluginCatalog::waitUntilIdle (int timeoutMs)
     while (scanning.load() || passRequested.load())
     {
         if (juce::Time::getMillisecondCounterHiRes() > deadline) return false;
-        if (juce::MessageManager::getInstanceWithoutCreating() != nullptr
-            && juce::MessageManager::getInstance()->isThisTheMessageThread())
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
-        else
-            juce::Thread::sleep (20);
+        juce::Thread::sleep (20);   // the scan thread never needs the message thread
     }
     return true;
 }
