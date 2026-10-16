@@ -4,6 +4,7 @@
 // PlatformWindowsMac.mm
 void triadMacKeepAbove (void* childView, void* parentView);
 bool triadMacSendCurrentKey (void* targetView);
+void triadMacRelease (void* childView);
 #endif
 
 namespace triad::platform
@@ -22,6 +23,14 @@ void keepAbove (juce::Component& window, juce::Component* owner)
     juce::ignoreUnused (owner);
    #endif
     window.setAlwaysOnTop (true);
+}
+void release (juce::Component& window)
+{
+   #if JUCE_MAC
+    if (auto* peer = window.getPeer()) triadMacRelease (peer->getNativeHandle());
+   #else
+    juce::ignoreUnused (window);
+   #endif
 }
 bool sendKeyToHost (juce::Component& owner)
 {

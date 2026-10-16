@@ -10,4 +10,6 @@ void keepAbove (juce::Component& window, juce::Component* owner);
 // Passes the key press being handled right now to the DAW window that contains `owner`, so the
 // DAW's own shortcuts (spacebar play/stop) work while an effect window is focused. macOS only.
 bool sendKeyToHost (juce::Component& owner);
+// Undoes keepAbove before the window is hidden, so the DAW window does not bring it back.
+void release (juce::Component& window);
 }

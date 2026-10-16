@@ -241,8 +241,10 @@ private:
 
     juce::AudioPluginFormatManager formats;
     std::array<std::unique_ptr<Band>, triad::maxBands> bands;
-    // Removed effects (and those of a closed Triad) are deleted a moment later; see EffectGraveyard.
+    // Removed effects and closed effect windows (also those of a closed Triad) are deleted a moment
+    // later; see EffectGraveyard.
     static void retire (std::unique_ptr<juce::AudioPluginInstance>);
+    static void retire (std::unique_ptr<juce::DocumentWindow>);   // hidden now, deleted with the same delay
     void handleInvalidAudio();   // message thread: reset (or bypass) effects that produced NaN/Inf
     std::array<juce::AudioBuffer<float>, triad::maxBands> split;
     juce::AudioBuffer<float> wide;   // for effects with an extra bus that cannot be switched off (e.g. a sidechain)

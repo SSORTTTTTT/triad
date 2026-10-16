@@ -273,14 +273,14 @@ juce::TopLevelWindow* effectWindow (int band, int slot)
 {
     const auto prefix = "Band " + juce::String (band + 1) + juce::String::fromUTF8 (" \xc2\xb7 Slot ") + juce::String (slot + 1) + juce::String::fromUTF8 (" \xe2\x80\x94");
     for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
-        if (auto* w = juce::TopLevelWindow::getTopLevelWindow (i); w != nullptr && w->getName().startsWith (prefix)) return w;
+        if (auto* w = juce::TopLevelWindow::getTopLevelWindow (i); w != nullptr && w->isVisible() && w->getName().startsWith (prefix)) return w;
     return nullptr;
 }
 int openEffectWindows()
 {
     int n = 0;
     for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
-        if (auto* w = juce::TopLevelWindow::getTopLevelWindow (i); w != nullptr && isEffectWindowTitle (w->getName())) ++n;
+        if (auto* w = juce::TopLevelWindow::getTopLevelWindow (i); w != nullptr && w->isVisible() && isEffectWindowTitle (w->getName())) ++n;
     return n;
 }
 // Whether OpenGL is drawn by a graphics card here. CI Macs are virtual machines without one, where

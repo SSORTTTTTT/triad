@@ -13,6 +13,13 @@ void triadMacKeepAbove (void* childView, void* parentView)
     [parent addChildWindow: child ordered: NSWindowAbove];
 }
 
+// Detaches the window from the DAW window again (before it is hidden).
+void triadMacRelease (void* childView)
+{
+    NSWindow* child = [(NSView*) childView window];
+    if (child != nil && [child parentWindow] != nil) [[child parentWindow] removeChildWindow: child];
+}
+
 // Re-sends the key press being handled to the DAW window, and gives that window the keyboard.
 bool triadMacSendCurrentKey (void* targetView)
 {

@@ -8,9 +8,11 @@
 
 namespace
 {
-// Hosted effects that were removed, or whose Triad was closed, are deleted about a second later on
-// the message thread. Some plug-ins post themselves messages (when they load, or from the audio
-// thread) and crash if one arrives after they were deleted. Shared by every Triad instance, so it
+// Hosted effects that were removed, or whose Triad was closed, and closed effect windows (with the
+// effect's editor) are deleted about a second later on the message thread. Some plug-ins and their
+// editors post themselves messages (when they load or open, or from the audio thread) and crash if
+// one arrives after they were deleted. Entries are deleted oldest first, so an editor always goes
+// before its effect. Shared by every Triad instance, so it
 // outlives the one that removed them; anything left is deleted when the plug-in shuts down.
 class EffectGraveyard final : private juce::Timer, public juce::DeletedAtShutdown
 {
@@ -22,15 +24,20 @@ public:
         const juce::ScopedLock lock (mutex);
         entries.clear();
     }
-    void add (std::unique_ptr<juce::AudioPluginInstance> effect)
+    void add (std::unique_ptr<juce::AudioPluginInstance> effect, std::unique_ptr<juce::DocumentWindow> window)
     {
         const juce::ScopedLock lock (mutex);
-        entries.push_back ({ std::move (effect), juce::Time::getMillisecondCounter() });
+        entries.push_back ({ std::move (effect), std::move (window), juce::Time::getMillisecondCounter() });
         if (! isTimerRunning()) startTimer (250);
     }
     JUCE_DECLARE_SINGLETON_INLINE (EffectGraveyard, false)
 private:
-    struct Entry { std::unique_ptr<juce::AudioPluginInstance> effect; juce::uint32 since = 0; };
+    struct Entry
+    {
+        std::unique_ptr<juce::AudioPluginInstance> effect;
+        std::unique_ptr<juce::DocumentWindow> window;   // declared after the effect: deleted first
+        juce::uint32 since = 0;
+    };
     void timerCallback() override
     {
         std::vector<Entry> due;
@@ -42,7 +49,8 @@ private:
             entries.erase (entries.begin(), keep);
             if (entries.empty()) stopTimer();
         }
-        due.clear();   // deleted outside the lock (a plug-in may take a while to close)
+        // Deleted outside the lock (a plug-in may take a while to close), oldest first.
+        for (auto& e : due) { e.window.reset(); e.effect.reset(); }
     }
     juce::CriticalSection mutex;
     std::vector<Entry> entries;
@@ -63,7 +71,7 @@ public:
         setResizable (editor->isResizable(), false);
         setWantsKeyboardFocus (true);
     }
-    void closeButtonPressed() override { setVisible (false); }
+    void closeButtonPressed() override { triad::platform::release (*this); setVisible (false); }
     bool keyPressed (const juce::KeyPress& key) override
     {
         if (forwardKey != nullptr && forwardKey()) return true;
@@ -499,7 +507,14 @@ void TriadProcessor::retire (std::unique_ptr<juce::AudioPluginInstance> effect)
 {
     if (effect == nullptr) return;
     effect->setPlayHead (nullptr);
-    if (auto* graveyard = EffectGraveyard::getInstance()) graveyard->add (std::move (effect));
+    if (auto* graveyard = EffectGraveyard::getInstance()) graveyard->add (std::move (effect), {});
+}
+void TriadProcessor::retire (std::unique_ptr<juce::DocumentWindow> window)
+{
+    if (window == nullptr) return;
+    triad::platform::release (*window);
+    window->setVisible (false);
+    if (auto* graveyard = EffectGraveyard::getInstance()) graveyard->add ({}, std::move (window));
 }
 void TriadProcessor::startFadeIn() { fadeRemaining = fadeLength; }
 
@@ -817,7 +832,7 @@ bool TriadProcessor::removeBand (int band)
         startFadeIn();
         setStatus ("Removed band " + juce::String (band + 1));
     }
-    for (auto& s : removed->slots) { s->window.reset(); retire (std::move (s->effect)); }
+    for (auto& s : removed->slots) { retire (std::move (s->window)); retire (std::move (s->effect)); }
     removed.reset();
     for (int j = 0; j < count - 1; ++j) setParameterValue (crossoverID (j), next[(size_t) j]);
     for (int p = band; p < count; ++p)
@@ -959,7 +974,7 @@ void TriadProcessor::removeSlot (int band, int slot)
         alignLatency();
         setStatus (removed->description.name.isNotEmpty() ? "Removed " + removed->description.name : "Removed slot");
     }
-    removed->window.reset();   // an editor must be deleted before its processor
+    retire (std::move (removed->window));   // an editor must be deleted before its processor (it is: oldest first)
     retire (std::move (removed->effect));
     ++structureVersion;
     refreshWindowTitles();
@@ -1137,7 +1152,7 @@ juce::String TriadProcessor::finishInstall (int band, int slotIndex, const juce:
         s->dryDelay.reset();
         alignLatency();
     }
-    oldWindow.reset();   // an editor must be deleted before its processor
+    retire (std::move (oldWindow));   // an editor must be deleted before its processor (it is: oldest first)
     retire (std::move (old));
     stateChanged();
     if (openEditor) showEffect (band, slotIndex);
@@ -1160,7 +1175,7 @@ void TriadProcessor::removeEffect (int band, int slot)
         alignLatency();
         setStatus ("Effect removed");
     }
-    window.reset();
+    retire (std::move (window));
     retire (std::move (old));
     stateChanged();
 }
@@ -1248,7 +1263,7 @@ void TriadProcessor::refreshWindowTitles()
 void TriadProcessor::closeWindows()
 {
     for (auto& band : bands)
-        for (auto& s : band->slots) s->window.reset();
+        for (auto& s : band->slots) retire (std::move (s->window));
 }
 
 // ---- LFOs ------------------------------------------------------------------------------------------------
@@ -1723,7 +1738,7 @@ void TriadProcessor::restoreFrom (const juce::XmlElement& xml)
         publishInfo();
     }
     for (auto& band : old)
-        for (auto& s : band->slots) { s->window.reset(); retire (std::move (s->effect)); }
+        for (auto& s : band->slots) { retire (std::move (s->window)); retire (std::move (s->effect)); }
     old = {};
     // Parameters, minus any that no longer exist (Triad 0.2.0 had per-slot mix parameters).
     juce::ValueTree savedParameters;
@@ -1825,7 +1840,7 @@ juce::String TriadProcessor::loadChainXml (int band, const juce::XmlElement& xml
         prepareBand (band, false);
         alignLatency();
     }
-    for (auto& s : old->slots) { s->window.reset(); retire (std::move (s->effect)); }
+    for (auto& s : old->slots) { retire (std::move (s->window)); retire (std::move (s->effect)); }
     old.reset();
     setParameterValue (bandMixID (band), (float) xml.getDoubleAttribute ("bandMix", 100.0));
     setParameterValue (bandGainID (band), (float) xml.getDoubleAttribute ("bandGain", 0.0));
