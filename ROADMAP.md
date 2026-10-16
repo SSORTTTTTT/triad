@@ -57,6 +57,8 @@ Add a dedicated mix-modulation/LFO tab:
 - A way to link each band's Mix control (and possibly slot mixes) to its own envelope/LFO.
 - Editable points and segments representing 0–100% mix.
 - Tempo synchronization, cycle length, curves/steps, and interaction with the manual mix control to be settled when this phase begins.
+- **Later (after v3): modulate knobs inside third-party effects.** Like Ableton (move a parameter and it is ready to automate) or FL Studio (right-click > browse parameters): move any knob in a hosted effect's window and Triad offers to link it to one of its LFOs. The matrix destination then shows the plug-in's own parameter name (e.g. "Valhalla Room · Decay"). JUCE can see hosted plug-ins' parameter changes, so this is feasible.
+- **Later: LFO randomizer** (ShaperBox's dice button).
 - Routing between bands/effects is planned alongside the LFO work; Thomas will describe it when that phase starts.
 - Thomas is researching how other plug-ins handle LFOs, including randomised LFOs, before writing the LFO prompts.
 
