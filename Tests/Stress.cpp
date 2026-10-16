@@ -18,12 +18,18 @@
 #include <cstdlib>
 #include <map>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
 #if ! JUCE_WINDOWS
  #include <unistd.h>
+#endif
+
+#if JUCE_MAC
+std::string triadStressOpenGLRenderer();      // StressMac.mm
+bool triadStressUsesOpenGL (void* nativeHandle);
 #endif
 
 namespace
@@ -56,7 +62,13 @@ public:
     void step (const juce::String& what, double limitSeconds)
     {
         const std::lock_guard<std::mutex> lock (mutex);
-        current = what; since = now(); limit = limitSeconds;
+        current = what; since = now(); limit = limitSeconds; detail.clear();
+    }
+    // What the current step is waiting for (does not restart its clock).
+    void note (const juce::String& what)
+    {
+        const std::lock_guard<std::mutex> lock (mutex);
+        detail = what;
     }
     void watchAudio (const std::atomic<int>* blocks, const std::atomic<bool>* paused)
     {
@@ -74,7 +86,8 @@ private:
             {
                 const std::lock_guard<std::mutex> lock (mutex);
                 if (current.isNotEmpty() && now() - since > limit)
-                    problem = "stuck for " + juce::String (juce::roundToInt (now() - since)) + " s in: " + current;
+                    problem = "stuck for " + juce::String (juce::roundToInt (now() - since)) + " s in: " + current
+                            + (detail.isNotEmpty() ? " (" + detail + ")" : juce::String());
                 else if (audioBlocks != nullptr)
                 {
                     const int b = audioBlocks->load();
@@ -121,7 +134,7 @@ private:
         std::_Exit (3);
     }
     std::mutex mutex;
-    juce::String current;
+    juce::String current, detail;
     double since = 0.0, limit = 0.0, lastProgress = 0.0;
     const std::atomic<int>* audioBlocks = nullptr;
     const std::atomic<bool>* audioPaused = nullptr;
@@ -191,19 +204,65 @@ struct Pool
 {
     std::vector<juce::PluginDescription> effects;
     juce::StringArray names;
+    std::set<juce::String> openGlWindows;   // "format|name" of effects whose windows draw with OpenGL
 };
+juce::String windowKey (const TriadProcessor::SlotInfo& info) { return info.format + "|" + info.name; }
 
 // Waits for asynchronous (AUv3) loads to land.
 void settle (TriadProcessor& p)
 {
     for (int i = 0; i < 100; ++i)
     {
-        bool pending = false;
+        int pending = 0;
         for (int b = 0; b < p.getBandCount(); ++b)
-            for (int s = 0; s < p.getSlotCount (b); ++s) pending |= p.getSlotInfo (b, s).pending;
-        if (! pending) return;
+            for (int s = 0; s < p.getSlotCount (b); ++s) pending += p.getSlotInfo (b, s).pending ? 1 : 0;
+        if (pending == 0) return;
+        if (watchdog != nullptr) watchdog->note ("waiting for " + juce::String (pending) + " effects still loading, pass " + juce::String (i + 1) + " of 100");
         pump (20);
     }
+}
+
+// ---- Effect windows -------------------------------------------------------------------------------
+// Triad's effect windows are titled "Band N · Slot M — Effect".
+bool isEffectWindowTitle (const juce::String& title) { return title.startsWith ("Band ") && title.contains (juce::String::fromUTF8 (" \xc2\xb7 Slot ")); }
+juce::TopLevelWindow* effectWindow (int band, int slot)
+{
+    const auto prefix = "Band " + juce::String (band + 1) + juce::String::fromUTF8 (" \xc2\xb7 Slot ") + juce::String (slot + 1) + juce::String::fromUTF8 (" \xe2\x80\x94");
+    for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
+        if (auto* w = juce::TopLevelWindow::getTopLevelWindow (i); w != nullptr && w->getName().startsWith (prefix)) return w;
+    return nullptr;
+}
+int openEffectWindows()
+{
+    int n = 0;
+    for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
+        if (auto* w = juce::TopLevelWindow::getTopLevelWindow (i); w != nullptr && isEffectWindowTitle (w->getName())) ++n;
+    return n;
+}
+// Whether OpenGL is drawn by a graphics card here. CI Macs are virtual machines without one, where
+// OpenGL plug-in windows are drawn in software, so slowly that one window can stall the test.
+juce::String openGlRenderer()
+{
+   #if JUCE_MAC
+    static const juce::String name (triadStressOpenGLRenderer());
+    return name;
+   #else
+    return "unknown";
+   #endif
+}
+bool hardwareGraphics()
+{
+    const auto r = openGlRenderer();
+    return r.isNotEmpty() && ! r.containsIgnoreCase ("software") && ! r.containsIgnoreCase ("paravirtual");
+}
+bool usesOpenGL (juce::Component* window)
+{
+   #if JUCE_MAC
+    if (auto* peer = window != nullptr ? window->getPeer() : nullptr) return triadStressUsesOpenGL (peer->getNativeHandle());
+   #else
+    juce::ignoreUnused (window);
+   #endif
+    return false;
 }
 int loadedCount (const TriadProcessor& p)
 {
@@ -262,6 +321,10 @@ Pool buildRealPool (const juce::File& scanner)
     probe.prepareToPlay (48000, 256);
     juce::StringArray rejected;
     juce::VST3PluginFormat vst3;
+    const bool haveDisplay = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr;
+    if (haveDisplay && ! hardwareGraphics())
+        say ("Note: this test Mac has no graphics card (OpenGL renderer: " + (openGlRenderer().isNotEmpty() ? openGlRenderer() : juce::String ("none"))
+             + "), so plug-in windows that draw with OpenGL are opened and closed but not left on screen (not a problem on a real Mac).");
     for (const auto& e : catalog.getEffects())
     {
         if (! e.verified || skip.contains (e.name)) continue;
@@ -282,9 +345,33 @@ Pool buildRealPool (const juce::File& scanner)
         const auto label = e.name + " (" + e.format + (e.manufacturer.isNotEmpty() ? ", " + e.manufacturer : juce::String()) + ")";
         if (error.isEmpty() && info.loaded)
         {
+            // Its window: opened on top of Triad, left to draw for a moment, closed.
+            juce::String window;
+            if (haveDisplay)
+            {
+                step ("opening the window of " + label);
+                const auto w0 = juce::Time::getMillisecondCounterHiRes();
+                probe.showEffect (0, slot);
+                auto* w = effectWindow (0, slot);
+                const auto openMs = juce::Time::getMillisecondCounterHiRes() - w0;
+                const bool openGl = usesOpenGL (w);
+                if (openGl) pool.openGlWindows.insert (windowKey (info));
+                if (w == nullptr) window = ", no window";
+                else if (openGl && ! hardwareGraphics()) window = ", window opens in " + ms (openMs) + " (OpenGL: not drawn on this test Mac)";
+                else
+                {
+                    const auto d0 = juce::Time::getMillisecondCounterHiRes();
+                    pump (300);
+                    const auto drawMs = juce::Time::getMillisecondCounterHiRes() - d0 - 300.0;
+                    window = ", window opens in " + ms (openMs) + (openGl ? " (OpenGL)" : "")
+                           + (drawMs > 200.0 ? ", drawing it held Triad up for " + ms (drawMs) : juce::String());
+                }
+                probe.closeWindows();
+                pump (20);
+            }
             pool.effects.push_back (description);
             pool.names.add (label);
-            say ("  OK   " + label + ": loads in " + ms (loadMs) + ", latency " + juce::String (info.latency) + " samples");
+            say ("  OK   " + label + ": loads in " + ms (loadMs) + ", latency " + juce::String (info.latency) + " samples" + window);
         }
         else rejected.add (label + ": " + (error.isNotEmpty() ? error : info.status));
         if (slot < probe.getSlotCount (0)) probe.removeSlot (0, slot);
@@ -483,7 +570,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     std::map<juce::String, int> counts;
     struct Timing { double total = 0.0, worst = 0.0; int worstOp = 0; };
     std::map<juce::String, Timing> timings;
-    int peakEffects = 0, failedLoads = 0, done = 0;
+    int peakEffects = 0, failedLoads = 0, done = 0, windowsOpened = 0, windowsNotDrawn = 0;
     bool timeLimit = false;
     constexpr int maxEffects = 120;
     const auto started = juce::Time::getMillisecondCounterHiRes();
@@ -579,7 +666,19 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             else if (choice < 98)
             {
                 begin ("open effect window");
-                if (haveDisplay && p.getSlotInfo (band, slot).loaded) p.showEffect (band, slot);
+                const auto info = p.getSlotInfo (band, slot);
+                if (haveDisplay && info.loaded)
+                {
+                    // People keep a few effect windows open, not dozens.
+                    if (openEffectWindows() >= 4) p.closeWindows();
+                    if (! hardwareGraphics() && pool.openGlWindows.count (windowKey (info)) > 0) ++windowsNotDrawn;
+                    else
+                    {
+                        p.showEffect (band, slot);
+                        ++windowsOpened;
+                        if (! hardwareGraphics() && usesOpenGL (effectWindow (band, slot))) { p.closeWindows(); ++windowsNotDrawn; }
+                    }
+                }
             }
             else if (choice < 100) { begin ("close effect windows"); p.closeWindows(); }
             else if (choice < 108)
@@ -684,6 +783,9 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     say (juce::String (done) + " edits in " + juce::String ((juce::Time::getMillisecondCounterHiRes() - started) / 1000.0, 1) + " s: "
          + juce::String (blocks.load()) + " audio blocks processed alongside the edits (" + juce::String (automation.load())
          + " automation moves), worst block " + ms (worstBlock.load()) + ", up to " + juce::String (peakEffects) + " effects loaded at once");
+    if (windowsOpened + windowsNotDrawn > 0)
+        say ("Effect windows opened on top of Triad: " + juce::String (windowsOpened)
+             + (windowsNotDrawn > 0 ? " (" + juce::String (windowsNotDrawn) + " OpenGL windows skipped: no graphics card on this test Mac)" : juce::String()));
     say ("Final layout: " + juce::String (p.getBandCount()) + (p.getBandCount() == 1 ? " band, " : " bands, ") + juce::String (loadedCount (p)) + " effects; NaN/Inf output: none");
     juce::StringArray lines;
     for (auto& [k, v] : counts) lines.add (k + " x" + juce::String (v));
