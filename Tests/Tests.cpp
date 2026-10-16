@@ -2,8 +2,14 @@
 #include "../Source/PluginCatalog.h"
 #include "../Source/PluginEditor.h"
 #include <juce_dsp/juce_dsp.h>
+#include <csignal>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
+#if ! JUCE_WINDOWS
+ #include <execinfo.h>
+ #include <unistd.h>
+#endif
 #include <limits>
 #include <set>
 #include <stdexcept>
@@ -231,8 +237,27 @@ juce::String writeImage (const juce::File& file, const juce::Image& image)
 }
 }
 
+// On a crash, says which part of the run it was in and prints the crashing thread's call stack.
+const char* volatile testStage = "starting";
+#if ! JUCE_WINDOWS
+void onTestCrash (int signal)
+{
+    const char* parts[] { "\n*** CRASH (signal ", signal == SIGSEGV ? "SIGSEGV" : signal == SIGBUS ? "SIGBUS" : signal == SIGABRT ? "SIGABRT" : "other",
+                          ") during: ", testStage, "\n" };
+    for (const char* t : parts) { const auto ignored = ::write (2, t, std::strlen (t)); juce::ignoreUnused (ignored); }
+    void* frames[128];
+    backtrace_symbols_fd (frames, backtrace (frames, 128), 2);
+    std::signal (signal, SIG_DFL);
+    std::raise (signal);
+}
+#endif
+
 int main (int argc, char** argv)
 {
+   #if ! JUCE_WINDOWS
+    for (int signal : { SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE }) std::signal (signal, onTestCrash);
+   #endif
+    testStage = "running the tests";
     juce::ScopedJuceInitialiser_GUI gui;
     try
     {
@@ -994,6 +1019,7 @@ int main (int argc, char** argv)
             editor.reset();
         }
         std::cout << "PASS: all integration tests" << std::endl;
+        testStage = "closing the test's Triads and shutting JUCE down, after all tests passed";
         return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << std::endl; return 1; }

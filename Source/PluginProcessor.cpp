@@ -22,6 +22,7 @@ public:
         stopTimer();
         clearSingletonInstance();
         const juce::ScopedLock lock (mutex);
+        for (auto& e : entries) { e.window.reset(); e.effect.reset(); }   // oldest first, editor before effect
         entries.clear();
     }
     void add (std::unique_ptr<juce::AudioPluginInstance> effect, std::unique_ptr<juce::DocumentWindow> window)
@@ -51,6 +52,15 @@ private:
         }
         // Deleted outside the lock (a plug-in may take a while to close), oldest first.
         for (auto& e : due) { e.window.reset(); e.effect.reset(); }
+        // An empty graveyard goes away. The next one is made after whatever its effects and windows
+        // needed (plug-in format caches, window managers), so if the plug-in shuts down it is
+        // deleted before those, not after.
+        bool empty = false;
+        {
+            const juce::ScopedLock lock (mutex);
+            empty = entries.empty();
+        }
+        if (empty) deleteInstance();   // `this` is gone after this line
     }
     juce::CriticalSection mutex;
     std::vector<Entry> entries;

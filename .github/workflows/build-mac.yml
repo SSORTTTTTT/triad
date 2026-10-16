@@ -77,12 +77,24 @@ jobs:
           scanner="$(find build-tests/TriadScanner_artefacts -type f -perm -u+x -name 'Triad*Scanner' | head -n 1)"
           echo "$PWD/$scanner" > scanner-path.txt
           mkdir -p ci-ui
+          set +e   # keep going after a failure, to collect its crash report
           "$exe" "$PWD/build-tests/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
                  "$PWD/build-tests/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3" \
                  "$PWD/build-tests/fixtures/Triad Crash Fixture.vst3" \
                  "$PWD/$scanner" \
                  "$PWD/ci-ui/Triad-preview-mac.png" \
                  "$PWD/build-tests/Triad_artefacts/Release/VST3/Triad v3.vst3" 2>&1 | tee test-results-mac.txt
+          status=${PIPESTATUS[0]}
+          echo "Integration tests exit code: $status" | tee -a test-results-mac.txt
+          if [ "$status" -ne 0 ]; then
+            sleep 15
+            i=0
+            for f in "$HOME"/Library/Logs/DiagnosticReports/*Tests* /Library/Logs/DiagnosticReports/*Tests*; do
+              [ -f "$f" ] || continue
+              i=$((i + 1)); cp "$f" "test-crash-$i.txt"; echo "Crash report: $f"
+            done
+          fi
+          exit $status
 
       - name: Stress test (hundreds of effects, random edits while audio plays)
         run: |
@@ -158,6 +170,7 @@ jobs:
             stress-real-log.txt
             stress-*hang-sample.txt
             stress-real-crash-*.txt
+            test-crash-*.txt
             free-plugins.log
             pluginval-*.log
             ci-ui/*.png
@@ -170,7 +183,7 @@ jobs:
         run: |
           set -u
           out="$RUNNER_TEMP/ci-results"; rm -rf "$out"; mkdir -p "$out"
-          cp -f build-mac.log auval.log test-results-mac.txt stress-results.txt stress-log.txt stress-real.txt stress-real-log.txt stress-*hang-sample.txt stress-real-crash-*.txt free-plugins.log pluginval-*.log "$out/" 2>/dev/null || true
+          cp -f build-mac.log auval.log test-results-mac.txt stress-results.txt stress-log.txt stress-real.txt stress-real-log.txt stress-*hang-sample.txt stress-real-crash-*.txt test-crash-*.txt free-plugins.log pluginval-*.log "$out/" 2>/dev/null || true
           cp -f Installer/*.pkg ci-ui/*.png "$out/" 2>/dev/null || true
           echo "run=${{ github.run_id }} sha=${{ github.sha }} job_status=${{ job.status }}" > "$out/RUN.txt"
           cd "$out"
