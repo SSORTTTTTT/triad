@@ -26,7 +26,7 @@ juce::String windowTitle (int band, int slot, const juce::String& name)
 {
     return "Band " + juce::String (band + 1) + " \xc2\xb7 Slot " + juce::String (slot + 1) + " \xe2\x80\x94 " + name;
 }
-bool isTriad (const juce::PluginDescription& d) { return d.name == "Triad" || d.descriptiveName == "Triad"; }
+bool isTriad (const juce::PluginDescription& d) { return triad::isTriadName (d.name) || triad::isTriadName (d.descriptiveName); }
 }
 
 juce::String TriadProcessor::crossoverID (int i) { return i == 0 ? "lowCut" : i == 1 ? "highCut" : "cross" + juce::String (i + 1); }

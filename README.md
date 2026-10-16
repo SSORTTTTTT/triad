@@ -1,8 +1,8 @@
 # Triad — multiband effects host
 
-Version 0.2.0 for Thomas Ross. Split your sound into up to 10 bands and run a chain of up to 10 VST3 or Audio Unit effects on each band, FL Studio mixer style, with a mix knob on every slot and on every band.
+Version 0.2.1 ("Triad v2") for Thomas Ross. Split your sound into up to 10 bands and run a chain of up to 10 VST3 or Audio Unit effects on each band, FL Studio mixer style, with a mix knob on every slot and on every band.
 
-**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-0.2.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
+**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v2-0.2.1-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
 
 ## What it does
 
@@ -16,7 +16,7 @@ Version 0.2.0 for Thomas Ross. Split your sound into up to 10 bands and run a ch
   - **The green light** switches the slot on or off (bypassed slots are skipped entirely).
   - **The ▸ arrow (or right-click)** gives Open window, Replace, Move up/down, Bypass and Remove.
 - **Band Mix** on each strip blends the dry band with its whole processed chain (0% dry, 100% wet). This is the knob a future LFO tab will drive.
-- Hosts **VST3 and Audio Unit** effects (Audio Units on macOS). Triad itself installs as AU and VST3.
+- Hosts **VST3 and Audio Unit** effects (Audio Units on macOS). Triad itself installs as AU and VST3, named **Triad v2**.
 - Compensates each effect's latency inside its slot, aligns all bands to the slowest chain, and reports the total to the DAW.
 - Saves the band layout, crossovers, every mix knob, every slot's on/off state, plugin identities and hosted plugin states with the DAW project. Projects saved with Triad 0.1 still open.
 - Exposes crossovers, band mixes and slot mixes to DAW automation. Hosted effects' own parameters are edited in their windows.
@@ -29,16 +29,18 @@ Version 0.2.0 for Thomas Ross. Split your sound into up to 10 bands and run a ch
    - **CMake 3.22+**: uses one from Homebrew or `/Applications/CMake.app` if present; otherwise it downloads the official CMake 3.31.9 into `deps/` (checksum-verified) for this build only.
    - **JUCE 8.0.12**: downloaded into `deps/JUCE` at the pinned commit on the first run.
    - An internet connection is needed for the first run. A full log is written to `build-mac.log`.
-4. When it finishes, Finder shows `Installer/Triad-0.2.0-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
-   - `/Library/Audio/Plug-Ins/Components/Triad.component` (AU)
-   - `/Library/Audio/Plug-Ins/VST3/Triad.vst3` (VST3)
+4. When it finishes, Finder shows `Installer/Triad-v2-0.2.1-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
+   - `/Library/Audio/Plug-Ins/Components/Triad v2.component` (AU)
+   - `/Library/Audio/Plug-Ins/VST3/Triad v2.vst3` (VST3)
+
+   It shows up in your DAW as **Triad v2**. It replaces an earlier "Triad" (the installer removes `Triad.vst3` / `Triad.component` first, so hosts never see two copies of the same plug-in), and projects made with the earlier Triad open in Triad v2. Quit your DAW completely before installing: macOS keeps an already-loaded plug-in running until the app quits.
 
    Use **Customize** in the installer to install only one format.
 
    **Size.** Triad is built to stay small: it links only the JUCE modules it uses (plugin hosting and UI; no audio-device or audio-file-codec code), uses its own compact Linkwitz–Riley crossover instead of the `juce_dsp` module, compiles framework/UI code for size with link-time optimisation while the audio path stays at full `-O3` speed, and dead-strips and symbol-strips the shipped binaries. `cmake -DTRIAD_SIZE_OPTIMISED=OFF` restores a plain `-O3` build.
 
    After building, the `build-mac` and `deps` folders (roughly 1 GB) can be deleted to free space; they are recreated by the next build.
-5. Restart your DAW and rescan plugins. Load **Triad** on a stereo track or mixer insert.
+5. Reopen your DAW and rescan plugins. Load **Triad v2** on a stereo track or mixer insert.
 
 `Install-Mac.command` is still included as an alternative: it copies the built bundles into your *user* plugin folders (`~/Library/Audio/Plug-Ins/...`) without an installer, backing up any previous copy to `~/Library/Application Support/Triad/Backups/`. Use one method or the other so your DAW does not find two copies of Triad.
 
@@ -46,7 +48,7 @@ If macOS refuses to launch a `.command` file or the ZIP extractor loses its exec
 
 The package and plugins are signed ad hoc on the Mac that built them (no Apple Developer ID, no notarization). That is fine on your own Mac. A copy downloaded onto another Mac will be blocked by Gatekeeper until it is allowed under System Settings > Privacy & Security > Open Anyway, or until it is signed with a Developer ID Installer certificate (`productsign`) and notarized.
 
-To uninstall, quit your DAWs and delete the two bundles listed above, then run `sudo pkgutil --forget audio.thomasross.triad.au` and `sudo pkgutil --forget audio.thomasross.triad.vst3` in Terminal.
+To uninstall, quit your DAWs and delete the two Triad v2 bundles listed above, then run `sudo pkgutil --forget audio.thomasross.triad.au` and `sudo pkgutil --forget audio.thomasross.triad.vst3` in Terminal.
 
 Your hosted effects must have native Apple Silicon VST3 versions installed. Triad does not bridge Intel-only binaries. Their existing licenses/authorizations still apply.
 
@@ -56,7 +58,7 @@ If you would rather not install Apple's developer tools, push this folder to a G
 
 ## Use
 
-1. Load **Triad** on a stereo track or mixer insert. It starts with 3 bands.
+1. Load **Triad v2** on a stereo track or mixer insert. It starts with 3 bands.
 2. Drag the dividers to set the band edges, or click a strip's start/end frequency to type one. Need another band? Double-click the display where you want the split, or press **+ BAND**.
 3. Click **Slot 1** in a band and choose an effect. Its window opens straight away. Add more effects to Slots 2–10; they run top to bottom.
 4. Use each slot's knob for that effect's dry/wet, the green light to bypass it, and **Band Mix** for the whole band.
@@ -110,7 +112,7 @@ build/TriadTests_artefacts/Release/"Triad Tests" \
   "$PWD/build/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
   "$PWD/build/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3" \
   "$PWD/Triad-preview.png" \
-  "$PWD/build/Triad_artefacts/Release/VST3/Triad.vst3"
+  "$PWD/build/Triad_artefacts/Release/VST3/Triad v2.vst3"
 ```
 
 The fixtures are development-only and are not installed. See `VALIDATION.md` for results.

@@ -75,7 +75,7 @@ void TriadEditor::paint (juce::Graphics& g)
     g.drawText ("TRIAD", margin, 9, 150, 38, juce::Justification::centredLeft);
     g.setColour (juce::Colour (0xffaeb6ab)); g.setFont (juce::FontOptions (12.0f));
     g.drawText ("MULTIBAND EFFECT HOST", 168, 15, 360, 26, juce::Justification::centredLeft);
-    g.drawText ("VST3 + AU EFFECTS  /  0.2.0", getWidth() - 300, 15, 276, 26, juce::Justification::centredRight);
+    g.drawText (juce::String ("VST3 + AU EFFECTS  /  V2  ") + TRIAD_VERSION, getWidth() - 300, 15, 276, 26, juce::Justification::centredRight);
 }
 void TriadEditor::resized()
 {

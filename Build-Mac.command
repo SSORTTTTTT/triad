@@ -8,14 +8,15 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$PWD"
 
-VERSION="0.2.0"
+VERSION="0.2.1"
+PRODUCT="Triad v2"                 # bundle and display name (plug-in IDs unchanged from Triad 0.1)
 JUCE_COMMIT="29396c22c93392d6738e021b83196283d6e4d850"   # JUCE 8.0.12
 CMAKE_FALLBACK_VERSION="3.31.9"
 CMAKE_FALLBACK_SHA256="eb9d0b2b6a5b900e2f5811326a86ea393a146e4cb2384d15512c226e9c98f8bf"
 BUILD_DIR="$ROOT/build-mac"
 DEPS_DIR="$ROOT/deps"
 OUT_DIR="$ROOT/Installer"
-PKG_NAME="Triad-$VERSION-macOS-AppleSilicon.pkg"
+PKG_NAME="Triad-v2-$VERSION-macOS-AppleSilicon.pkg"
 PKG_PATH="$OUT_DIR/$PKG_NAME"
 LOG="$ROOT/build-mac.log"
 STATUS="$ROOT/build-mac.status"
@@ -133,8 +134,8 @@ step "Building Triad AU and VST3"
 
 # ---------------------------------------------------------------------------
 step "Preparing the plugin bundles"
-VST3_BUNDLE="$BUILD_DIR/Triad_artefacts/Release/VST3/Triad.vst3"
-AU_BUNDLE="$BUILD_DIR/Triad_artefacts/Release/AU/Triad.component"
+VST3_BUNDLE="$BUILD_DIR/Triad_artefacts/Release/VST3/$PRODUCT.vst3"
+AU_BUNDLE="$BUILD_DIR/Triad_artefacts/Release/AU/$PRODUCT.component"
 PKG_WORK="$BUILD_DIR/pkg"
 rm -rf "$PKG_WORK"
 VST3_ROOT="$PKG_WORK/vst3-root"
@@ -147,7 +148,7 @@ stage_bundle()   # source destination
     [ -d "$1" ] || fail "Expected build output is missing: $1"
     ditto --norsrc --noextattr --noqtn --noacl "$1" "$2"
     xattr -cr "$2" 2>/dev/null || true
-    local binary="$2/Contents/MacOS/Triad"
+    local binary="$2/Contents/MacOS/$PRODUCT"
     [ -f "$binary" ] || fail "Plugin binary missing: $binary"
     local archs; archs=$(lipo -archs "$binary")
     [[ " $archs " == *" arm64 "* ]] || fail "$binary is not an Apple Silicon binary (found: $archs)"
@@ -160,8 +161,8 @@ stage_bundle()   # source destination
     codesign --verify --deep --strict "$2"
     echo "  $(basename "$2"): $archs, $(du -sh "$2" | awk '{print $1}'), ad-hoc signed, id $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$2/Contents/Info.plist")"
 }
-stage_bundle "$VST3_BUNDLE" "$VST3_ROOT/Library/Audio/Plug-Ins/VST3/Triad.vst3"
-stage_bundle "$AU_BUNDLE"   "$AU_ROOT/Library/Audio/Plug-Ins/Components/Triad.component"
+stage_bundle "$VST3_BUNDLE" "$VST3_ROOT/Library/Audio/Plug-Ins/VST3/$PRODUCT.vst3"
+stage_bundle "$AU_BUNDLE"   "$AU_ROOT/Library/Audio/Plug-Ins/Components/$PRODUCT.component"
 
 # ---------------------------------------------------------------------------
 step "Building the installer package"
@@ -182,6 +183,24 @@ component_plist()   # root plist
 component_plist "$VST3_ROOT" "$PKG_WORK/vst3-components.plist"
 component_plist "$AU_ROOT"   "$PKG_WORK/au-components.plist"
 
+# Triad v2 replaces the earlier "Triad" bundles (same plug-in IDs): remove them first so a host
+# never finds two copies of the same plug-in. Only bundles with Triad's identifier are touched.
+mkdir -p "$PKG_WORK/scripts-vst3"
+write_preinstall()   # script-dir old-bundle-path-relative-to-volume
+{
+    cat > "$1/preinstall" <<EOF
+#!/bin/sh
+old="\${3%/}/$2"
+id=\$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "\$old/Contents/Info.plist" 2>/dev/null)
+if [ -d "\$old" ] && [ "\$id" = "audio.thomasross.triad" ]; then
+    /bin/rm -rf "\$old"
+fi
+exit 0
+EOF
+    chmod 755 "$1/preinstall"
+}
+write_preinstall "$PKG_WORK/scripts-vst3" "Library/Audio/Plug-Ins/VST3/Triad.vst3"
+write_preinstall "$PKG_WORK/scripts-au" "Library/Audio/Plug-Ins/Components/Triad.component"
 cat > "$PKG_WORK/scripts-au/postinstall" <<'EOF'
 #!/bin/sh
 # Ask macOS to refresh its Audio Unit registry so hosts see Triad on their next scan.
@@ -191,6 +210,7 @@ EOF
 chmod 755 "$PKG_WORK/scripts-au/postinstall"
 
 pkgbuild --quiet --root "$VST3_ROOT" --component-plist "$PKG_WORK/vst3-components.plist" \
+    --scripts "$PKG_WORK/scripts-vst3" \
     --identifier audio.thomasross.triad.vst3 --version "$VERSION" --install-location / \
     "$PKG_WORK/components/Triad-VST3.pkg"
 pkgbuild --quiet --root "$AU_ROOT" --component-plist "$PKG_WORK/au-components.plist" \
@@ -200,30 +220,31 @@ pkgbuild --quiet --root "$AU_ROOT" --component-plist "$PKG_WORK/au-components.pl
 
 cat > "$PKG_WORK/resources/welcome.html" <<EOF
 <html><body style="font-family: -apple-system, Helvetica; font-size: 13px;">
-<h2>Triad $VERSION</h2>
+<h2>$PRODUCT ($VERSION)</h2>
 <p>Multiband effects host: split your signal into up to 10 bands with draggable crossovers over a
 live spectrum, run a chain of up to 10 VST3 or AU effects on every band (each with its own mix knob),
 and blend each band with its Band Mix.</p>
 <p>This installer adds, for all users:</p>
 <ul>
-<li><b>Audio Unit</b> &rarr; /Library/Audio/Plug-Ins/Components/Triad.component</li>
-<li><b>VST3</b> &rarr; /Library/Audio/Plug-Ins/VST3/Triad.vst3</li>
+<li><b>Audio Unit</b> &rarr; /Library/Audio/Plug-Ins/Components/$PRODUCT.component</li>
+<li><b>VST3</b> &rarr; /Library/Audio/Plug-Ins/VST3/$PRODUCT.vst3</li>
 </ul>
+<p>It replaces an earlier &ldquo;Triad&rdquo; if one is installed; projects made with it open in $PRODUCT.</p>
 <p>Built natively for Apple Silicon (macOS 12 or later). Quit your DAWs before installing.
 Use <i>Customize</i> to install only one format.</p>
 </body></html>
 EOF
 cat > "$PKG_WORK/resources/conclusion.html" <<EOF
 <html><body style="font-family: -apple-system, Helvetica; font-size: 13px;">
-<h2>Triad is installed</h2>
-<p>Open your DAW, rescan plug-ins if needed, and add <b>Triad</b> to a stereo audio track or mixer insert.</p>
+<h2>$PRODUCT is installed</h2>
+<p>Open your DAW, rescan plug-ins if needed, and add <b>$PRODUCT</b> to a stereo audio track or mixer insert.</p>
 <p>Effects hosted inside Triad must be native Apple Silicon VST3 or Audio Unit effects.</p>
 </body></html>
 EOF
 cat > "$PKG_WORK/distribution.xml" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>Triad $VERSION</title>
+    <title>$PRODUCT ($VERSION)</title>
     <welcome file="welcome.html" mime-type="text/html"/>
     <conclusion file="conclusion.html" mime-type="text/html"/>
     <options customize="allow" require-scripts="false" hostArchitectures="arm64"/>
@@ -235,10 +256,10 @@ cat > "$PKG_WORK/distribution.xml" <<EOF
         <line choice="au"/>
         <line choice="vst3"/>
     </choices-outline>
-    <choice id="au" title="Triad Audio Unit (AU)" description="Installs Triad.component in /Library/Audio/Plug-Ins/Components.">
+    <choice id="au" title="$PRODUCT Audio Unit (AU)" description="Installs $PRODUCT.component in /Library/Audio/Plug-Ins/Components.">
         <pkg-ref id="audio.thomasross.triad.au"/>
     </choice>
-    <choice id="vst3" title="Triad VST3" description="Installs Triad.vst3 in /Library/Audio/Plug-Ins/VST3.">
+    <choice id="vst3" title="$PRODUCT VST3" description="Installs $PRODUCT.vst3 in /Library/Audio/Plug-Ins/VST3.">
         <pkg-ref id="audio.thomasross.triad.vst3"/>
     </choice>
     <pkg-ref id="audio.thomasross.triad.au" version="$VERSION" onConclusion="none">Triad-AU.pkg</pkg-ref>
@@ -255,16 +276,17 @@ step "Verifying the installer contents"
 VERIFY="$PKG_WORK/verify"
 rm -rf "$VERIFY"
 pkgutil --expand-full "$PKG_PATH" "$VERIFY"
-for entry in "Triad-VST3.pkg:Library/Audio/Plug-Ins/VST3/Triad.vst3" \
-             "Triad-AU.pkg:Library/Audio/Plug-Ins/Components/Triad.component"; do
+for entry in "Triad-VST3.pkg:Library/Audio/Plug-Ins/VST3/$PRODUCT.vst3" \
+             "Triad-AU.pkg:Library/Audio/Plug-Ins/Components/$PRODUCT.component"; do
     component="${entry%%:*}"; relative="${entry#*:}"
     bundle="$VERIFY/$component/Payload/$relative"
-    [ -f "$bundle/Contents/MacOS/Triad" ] || fail "$component does not contain $relative"
+    [ -f "$bundle/Contents/MacOS/$PRODUCT" ] || fail "$component does not contain $relative"
+    [ -x "$VERIFY/$component/Scripts/preinstall" ] || fail "$component is missing the step that removes the old Triad"
     codesign --verify --deep --strict "$bundle" || fail "Signature check failed inside $component"
     if grep -q "<relocate>" "$VERIFY/$component/PackageInfo" 2>/dev/null; then
         fail "$component is relocatable; Installer could put the plugin somewhere other than /Library"
     fi
-    echo "  $component -> /$relative ($(lipo -archs "$bundle/Contents/MacOS/Triad"), signature OK)"
+    echo "  $component -> /$relative ($(lipo -archs "$bundle/Contents/MacOS/$PRODUCT"), signature OK)"
 done
 { installer -pkginfo -pkg "$PKG_PATH" 2>/dev/null || true; } | sed 's/^/  package: /'
 pkg_bytes=$(stat -f %z "$PKG_PATH")

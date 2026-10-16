@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "AudioEngine.h"
+#include "TriadIdentity.h"
 
 // Triad: a multiband effects host. The signal is split into 1-10 bands; each band runs a chain
 // of up to 10 hosted effects (VST3, and AU on macOS) in order, like an FL Studio mixer insert.
@@ -20,7 +21,7 @@ public:
     bool isBusesLayoutSupported (const BusesLayout&) const override;
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
-    const juce::String getName() const override { return "Triad"; }
+    const juce::String getName() const override { return TRIAD_PRODUCT_NAME; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     double getTailLengthSeconds() const override { return tail.load(); }

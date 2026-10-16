@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.2.0 LANGUAGES C CXX)
+project(Triad VERSION 0.2.1 LANGUAGES C CXX)
+# Installed as "Triad v2.vst3" / "Triad v2.component"; the plug-in IDs are unchanged from Triad 0.1,
+# so projects made with the earlier "Triad" open with Triad v2.
+set(TRIAD_PRODUCT_NAME "Triad v2")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(TRIAD_BUILD_TESTS "Build integration tests and a test effect" ON)
@@ -23,7 +26,7 @@ endif()
 juce_add_plugin(Triad
     COMPANY_NAME "Thomas Ross" BUNDLE_ID "audio.thomasross.triad"
     PLUGIN_MANUFACTURER_CODE Tsrt PLUGIN_CODE Trid
-    PRODUCT_NAME "Triad" FORMATS ${TRIAD_FORMATS}
+    PRODUCT_NAME "${TRIAD_PRODUCT_NAME}" FORMATS ${TRIAD_FORMATS}
     IS_SYNTH FALSE NEEDS_MIDI_INPUT FALSE NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE VST3_CATEGORIES Fx Tools
@@ -34,7 +37,8 @@ target_sources(Triad PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp 
 target_compile_definitions(Triad PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=$<IF:$<PLATFORM_ID:Darwin>,1,0> JUCE_PLUGINHOST_VST=0
-    JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
+    JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0
+    TRIAD_PRODUCT_NAME="${TRIAD_PRODUCT_NAME}" TRIAD_VERSION="${PROJECT_VERSION}")
 # Only the JUCE modules the plugin uses: plugin hosting + UI. No juce_audio_utils / juce_dsp
 # (they add audio-device I/O and the FLAC/Ogg/WAV/AIFF codecs, none of which Triad needs).
 target_link_libraries(Triad PRIVATE juce::juce_audio_processors PUBLIC juce::juce_recommended_warning_flags)

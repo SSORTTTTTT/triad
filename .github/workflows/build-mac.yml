@@ -38,10 +38,17 @@ jobs:
       - name: Install the .pkg on the runner
         run: |
           set -euo pipefail
+          # Simulate an earlier "Triad" install: the v2 package must remove it.
+          sudo ditto "build-mac/Triad_artefacts/Release/VST3/Triad v2.vst3" "/Library/Audio/Plug-Ins/VST3/Triad.vst3"
+          sudo ditto "build-mac/Triad_artefacts/Release/AU/Triad v2.component" "/Library/Audio/Plug-Ins/Components/Triad.component"
           sudo installer -pkg Installer/*.pkg -target / -verboseR
           pkgutil --pkgs | grep thomasross
-          for b in /Library/Audio/Plug-Ins/Components/Triad.component /Library/Audio/Plug-Ins/VST3/Triad.vst3; do
-            ls -ld "$b"; lipo -archs "$b/Contents/MacOS/Triad"; codesign --verify --deep --strict --verbose=2 "$b"
+          for old in "/Library/Audio/Plug-Ins/VST3/Triad.vst3" "/Library/Audio/Plug-Ins/Components/Triad.component"; do
+            if [ -e "$old" ]; then echo "::error::$old was not removed"; exit 1; fi
+            echo "removed old $old"
+          done
+          for b in "/Library/Audio/Plug-Ins/Components/Triad v2.component" "/Library/Audio/Plug-Ins/VST3/Triad v2.vst3"; do
+            ls -ld "$b"; lipo -archs "$b/Contents/MacOS/Triad v2"; codesign --verify --deep --strict --verbose=2 "$b"
             du -sh "$b"
           done
 
@@ -49,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           sleep 5
-          auval -a | grep -i triad || true
+          auval -a | grep -i triad
           auval -v aufx Trid Tsrt | tee auval.log
           grep -q "AU VALIDATION SUCCEEDED" auval.log
 
@@ -64,7 +71,7 @@ jobs:
           "$exe" "$PWD/build-tests/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
                  "$PWD/build-tests/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3" \
                  "$PWD/ci-ui/Triad-preview-mac.png" \
-                 "$PWD/build-tests/Triad_artefacts/Release/VST3/Triad.vst3" 2>&1 | tee test-results-mac.txt
+                 "$PWD/build-tests/Triad_artefacts/Release/VST3/Triad v2.vst3" 2>&1 | tee test-results-mac.txt
 
       - name: pluginval (VST3 and AU, strictness 5)
         continue-on-error: true
@@ -73,9 +80,9 @@ jobs:
           curl -fsSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
           unzip -q pluginval.zip
           pv=pluginval.app/Contents/MacOS/pluginval
-          "$pv" --strictness-level 5 --skip-gui-tests --validate /Library/Audio/Plug-Ins/VST3/Triad.vst3 | tee pluginval-vst3.log
+          "$pv" --strictness-level 5 --skip-gui-tests --validate "/Library/Audio/Plug-Ins/VST3/Triad v2.vst3" | tee pluginval-vst3.log
           vst3=${PIPESTATUS[0]}
-          "$pv" --strictness-level 5 --skip-gui-tests --validate /Library/Audio/Plug-Ins/Components/Triad.component | tee pluginval-au.log
+          "$pv" --strictness-level 5 --skip-gui-tests --validate "/Library/Audio/Plug-Ins/Components/Triad v2.component" | tee pluginval-au.log
           au=${PIPESTATUS[0]}
           echo "pluginval exit codes: VST3=$vst3 AU=$au"
           [ "$vst3" -eq 0 ] && [ "$au" -eq 0 ]

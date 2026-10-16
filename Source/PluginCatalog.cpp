@@ -1,5 +1,6 @@
 #include "PluginCatalog.h"
 #include "AudioUnitList.h"
+#include "TriadIdentity.h"
 
 namespace
 {
@@ -103,7 +104,7 @@ void PluginCatalog::beginScan()
                     auto& k = auKinds[key];   // an instrument of the same name wins
                     k = { juce::jmax (k.first, instrument ? 2 : 1), maker };
                 }
-            if (! effect || name == "Triad") continue;
+            if (! effect || triad::isTriadName (name)) continue;
             EffectEntry e;
             e.name = name;
             e.manufacturer = maker.isNotEmpty() ? maker : fourCC (c.manufacturer).trim();
@@ -196,7 +197,7 @@ void PluginCatalog::classify (const juce::File& bundle, FileRecord& record)
     for (auto* d : found)
     {
         if (d->isInstrument) { ++record.instruments; continue; }
-        if (d->name == "Triad") continue;
+        if (triad::isTriadName (d->name)) continue;
         EffectEntry e;
         e.description = *d;
         e.name = d->name;
