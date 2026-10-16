@@ -7,6 +7,15 @@
 - Band Mix per band. VST3 and Audio Unit effects; effects-only plug-in list built without loading plug-ins inside the DAW (Triad Scanner helper for the rest).
 - Live spectrum behind draggable crossovers; effect windows open on load.
 
+## Notes for the next version (from Thomas, 2026-10-15) — not started
+
+Wait until Thomas has tried 0.2.2 with his own plug-ins; he will then describe the LFO tab and routing.
+
+- **Remove a band from the crossover display**, not only with the × on its strip: right-click inside a band's area of the spectrum (or right-click a crossover dot) for a menu with "Remove band" (an "Add band here" item fits there too).
+- **Keep the effect list grouped by company** (VST3 / Audio Units, then manufacturer, then plug-in). Thomas likes this; keep it in every redesign.
+- **Settings gear** at the top right, just left of "VST3 + AU EFFECTS / V2". First contents: the plug-in list ("Rescan for new plug-ins", "Rescan everything", how many effects were found, plug-ins that could not be checked). The Refresh/Rescan items can then leave the slot menu. More settings come with the GUI work.
+- **Plug-in catalog**: already a saved file (`~/Library/Application Support/Triad/PluginCache-v2.xml`) that is reused instead of re-scanning; only new or changed plug-ins are checked. Possible setting: "check for new plug-ins automatically" on/off, so the folder check only runs when Rescan is pressed (like FL Studio / Ableton).
+
 ## Next: mix modulation / LFO tab
 
 Add a dedicated mix-modulation/LFO tab:
