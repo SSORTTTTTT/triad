@@ -1,5 +1,16 @@
 # Validation — Triad
 
+## Triad v3 (0.3.2) on macOS — 2026-10-16
+
+Same runner; commit `02ebf2d`, run 38953057961. 0.3.2 keeps one idle copy of each third-party effect loaded for the session (see 0.3.1, "Still open").
+
+| Check | Result |
+| --- | --- |
+| Installer `Triad-v3-0.3.2-macOS-AppleSilicon.pkg`, auval, pluginval (VST3 + AU) | Built; AU VALIDATION SUCCEEDED; pluginval SUCCESS for both |
+| Integration tests, standard stress test | All passed (including: removed effects deleted after their pending messages, one idle copy kept per effect) |
+| Real plug-ins (51 effects) | All sections passed: 200 effects with every LFO on (LFO cost 1.3%), reopened in 6.1 s; **all five 3,000-edit sequences passed** (15,000 edits, up to 69 effects at once); 24 instances; plug-in list |
+| Invalid audio caught | FILT-R (VST3 and AU), and Apple's AUDistortion and AUPitch, produced NaN/Inf at times during the random edits (sample-rate changes, automation); Triad silenced it each time and no NaN/Inf reached the output |
+
 ## Triad v3 (0.3.1) on macOS — 2026-10-16
 
 GitHub Actions `macos-14` runner (Apple M1, virtualised, 3 cores, no GPU), macOS 14.8, JUCE 8.0.12; commit `c03321e`, run 38902310830.
