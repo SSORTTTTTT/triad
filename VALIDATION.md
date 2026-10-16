@@ -1,14 +1,15 @@
 # Validation — Triad
 
-## Triad 0.2.0 on macOS — 2026-10-15
+## Triad v2 (0.2.1) on macOS — 2026-10-15
 
-GitHub Actions `macos-14` runner (Apple M1, virtualised), macOS 14.8, Xcode 15.4, CMake 4.4, JUCE 8.0.12; `Build-Mac.command` run unmodified (commit `cffb2ab`).
+GitHub Actions `macos-14` runner (Apple M1, virtualised), macOS 14.8, Xcode 15.4, CMake 4.4, JUCE 8.0.12; `Build-Mac.command` run unmodified (commit `384f566`). 0.2.1 renames the installed plug-in to "Triad v2"; the audio code is the same as 0.2.0.
 
 | Check | Result |
 | --- | --- |
 | AU and VST3 build (arm64, Release, macOS 12.0+) | Built |
 | Shipped binary size (stripped) | 2.9 MB per format |
-| Installer `Triad-0.2.0-macOS-AppleSilicon.pkg` | 2.6 MB; AU and VST3 choices; arm64, ad-hoc signed, not relocatable |
+| Installer `Triad-v2-0.2.1-macOS-AppleSilicon.pkg` | 2.6 MB; AU and VST3 choices; arm64, ad-hoc signed, not relocatable |
+| Upgrade over an earlier "Triad" | Old `Triad.vst3` / `Triad.component` removed; `Triad v2` installed; auval lists "Triad v2" |
 | Installed with `sudo installer` | Both bundles in `/Library/Audio/Plug-Ins`; signatures valid |
 | Apple `auval -v aufx Trid Tsrt` | AU VALIDATION SUCCEEDED |
 | pluginval, strictness 5 (GUI tests skipped) | VST3: SUCCESS; AU: SUCCESS |
