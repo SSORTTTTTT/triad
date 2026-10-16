@@ -93,6 +93,21 @@ jobs:
                  "$(cat scanner-path.txt)" \
                  "$PWD/stress-results.txt" 2>&1 | tee stress-log.txt
 
+      - name: Stress test with real third-party plug-ins and every LFO on
+        continue-on-error: true
+        timeout-minutes: 30
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          bash ci/install-free-plugins.sh 2>&1 | tee free-plugins.log
+          exe="$(find build-tests/TriadStress_artefacts -type f -perm -u+x -name 'Triad*Stress' | head -n 1)"
+          "$exe" "$PWD/build-tests/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
+                 "$PWD/build-tests/fixtures/Triad Crash Fixture.vst3" \
+                 "$(cat scanner-path.txt)" \
+                 "$PWD/stress-real.txt" 777 --real 2>&1 | tee stress-real-log.txt
+          exit ${PIPESTATUS[0]}
+
       - name: pluginval (VST3 and AU, strictness 5)
         continue-on-error: true
         run: |
@@ -128,6 +143,9 @@ jobs:
             test-results-mac.txt
             stress-results.txt
             stress-log.txt
+            stress-real.txt
+            stress-real-log.txt
+            free-plugins.log
             pluginval-*.log
             ci-ui/*.png
           if-no-files-found: ignore
@@ -139,7 +157,7 @@ jobs:
         run: |
           set -u
           out="$RUNNER_TEMP/ci-results"; rm -rf "$out"; mkdir -p "$out"
-          cp -f build-mac.log auval.log test-results-mac.txt stress-results.txt stress-log.txt pluginval-*.log "$out/" 2>/dev/null || true
+          cp -f build-mac.log auval.log test-results-mac.txt stress-results.txt stress-log.txt stress-real.txt stress-real-log.txt free-plugins.log pluginval-*.log "$out/" 2>/dev/null || true
           cp -f Installer/*.pkg ci-ui/*.png "$out/" 2>/dev/null || true
           echo "run=${{ github.run_id }} sha=${{ github.sha }} job_status=${{ job.status }}" > "$out/RUN.txt"
           cd "$out"

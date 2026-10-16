@@ -35,6 +35,54 @@ void require (bool ok, const juce::String& message)
 void pump (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); }
 juce::String ms (double v) { return juce::String (v, 2) + " ms"; }
 
+// A DAW transport: playing at 128 BPM in 4/4, so the LFOs follow a song position.
+struct Transport final : juce::AudioPlayHead
+{
+    double ppq = 0.0, bpm = 128.0;
+    bool playing = true;
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setBpm (bpm);
+        info.setPpqPosition (ppq);
+        info.setIsPlaying (playing);
+        info.setTimeInSamples ((juce::int64) (ppq * 60.0 / bpm * 48000.0));
+        info.setTimeSignature (TimeSignature { 4, 4 });
+        return info;
+    }
+    void advance (int samples, double sampleRate) { if (playing) ppq += samples * bpm / 60.0 / sampleRate; }
+};
+
+// Switches on every LFO in every band (each knob gets a moving shape, at musical lengths) and
+// sends each band's LFO to its volume too: the heaviest modulation load Triad can have.
+void activateAllLfos (TriadProcessor& p, juce::Random& r)
+{
+    namespace mod = triad::mod;
+    std::vector<int> musical;
+    for (int i = 0; i < (int) mod::lengths().size(); ++i)
+        if ((mod::lengths()[(size_t) i].column < 3 && mod::lengths()[(size_t) i].beats >= 0.25)
+            || (mod::lengths()[(size_t) i].bars > 0 && mod::lengths()[(size_t) i].bars <= 4))
+            musical.push_back (i);
+    for (int b = 0; b < p.getBandCount(); ++b)
+    {
+        for (int i = 0; i < p.getLfoCount (b); ++i)
+        {
+            auto shape = mod::preset (1 + r.nextInt (mod::numPresets() - 1));
+            if (r.nextBool()) shape = mod::repeated (shape, 2);
+            p.setLfoShape (b, i, shape, false);
+            p.setLfoLength (b, i, musical[(size_t) r.nextInt ((int) musical.size())]);
+        }
+        p.addRoute (b, p.getBandLfo (b), { TriadProcessor::Destination::bandVolume, 0 });
+    }
+}
+int activeRoutes (const TriadProcessor& p)
+{
+    int n = 0;
+    for (int b = 0; b < p.getBandCount(); ++b)
+        for (int r = 0; r < p.getRouteCount (b); ++r) n += p.getRouteInfo (b, r).muted ? 0 : 1;
+    return n;
+}
+
 struct Pool
 {
     std::vector<juce::PluginDescription> effects;
@@ -88,6 +136,59 @@ float peakOf (const juce::AudioBuffer<float>& b, bool& finite)
     return peak;
 }
 
+// Every effect installed on this computer (third-party VST3 and AU, and Apple's), each checked by
+// loading it into Triad once; load time, latency and failures are reported.
+Pool buildRealPool (const juce::File& scanner)
+{
+    Pool pool;
+    PluginCatalog::Options o = PluginCatalog::defaultOptions();
+    o.cacheFolder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadStressReal");
+    o.cacheFolder.deleteRecursively();
+    o.scanner = scanner;
+    o.autoCheck = true;
+    PluginCatalog catalog (o);
+    require (catalog.waitUntilIdle (600000), "Plug-in list of this computer");
+    const auto counts = catalog.getCounts();
+    say ("Installed VST3 bundles: " + juce::String (counts.bundles) + " (" + juce::String (counts.fromModuleInfo) + " read from disk, "
+         + juce::String (counts.fromAudioUnit) + " via their AU, " + juce::String (counts.fromScanner) + " checked by Triad Scanner, "
+         + juce::String (counts.crashed) + " crashed it, " + juce::String (counts.timedOut) + " timed out)");
+    const juce::StringArray skip { "AUNetSend", "AUSoundIsolation", "AURoundTripAAC", "AUSpeechSynthesis" };
+    TriadProcessor probe;
+    probe.prepareToPlay (48000, 256);
+    juce::StringArray rejected;
+    juce::VST3PluginFormat vst3;
+    for (const auto& e : catalog.getEffects())
+    {
+        if (! e.verified || skip.contains (e.name)) continue;
+        auto description = e.description;
+        if (e.format == "VST3" && e.loadByFile)
+        {
+            juce::OwnedArray<juce::PluginDescription> found;
+            vst3.findAllTypesForFile (found, e.description.fileOrIdentifier);
+            for (auto* d : found) if (d->name == e.name && ! d->isInstrument) description = *d;
+        }
+        const int slot = probe.getSlotCount (0);
+        const auto start = juce::Time::getMillisecondCounterHiRes();
+        const auto error = probe.loadEffect (0, slot, description, false);
+        settle (probe);
+        const auto loadMs = juce::Time::getMillisecondCounterHiRes() - start;
+        const auto info = probe.getSlotInfo (0, slot);
+        const auto label = e.name + " (" + e.format + (e.manufacturer.isNotEmpty() ? ", " + e.manufacturer : juce::String()) + ")";
+        if (error.isEmpty() && info.loaded)
+        {
+            pool.effects.push_back (description);
+            pool.names.add (label);
+            say ("  OK   " + label + ": loads in " + ms (loadMs) + ", latency " + juce::String (info.latency) + " samples");
+        }
+        else rejected.add (label + ": " + (error.isNotEmpty() ? error : info.status));
+        if (slot < probe.getSlotCount (0)) probe.removeSlot (0, slot);
+    }
+    for (const auto& r : rejected) say ("  NOT LOADED  " + r);
+    require (! pool.effects.empty(), "At least one effect installed");
+    say ("Effect pool: " + juce::String ((int) pool.effects.size()) + " effects from this computer");
+    return pool;
+}
+
 Pool buildPool (const juce::File& effectFile, const juce::File& scanner)
 {
     Pool pool;
@@ -130,12 +231,14 @@ Pool buildPool (const juce::File& effectFile, const juce::File& scanner)
 }
 
 // ---- 1. Big project ------------------------------------------------------------------------------
-void bigProject (const Pool& pool)
+void bigProject (const Pool& pool, double seconds)
 {
     say ("\n== 1. Big project: 10 bands x 20 slots ==");
     constexpr double rate = 48000.0;
     constexpr int block = 256, slotsPerBand = 20;
     auto p = std::make_unique<TriadProcessor>();
+    Transport transport;
+    p->setPlayHead (&transport);
     p->prepareToPlay (rate, block);
     while (p->addBand()) {}
     auto start = juce::Time::getMillisecondCounterHiRes();
@@ -154,27 +257,41 @@ void bigProject (const Pool& pool)
     juce::Random random (1);
     juce::AudioBuffer<float> audio (2, block);
     juce::MidiBuffer midi;
-    const int blocks = (int) (rate * 20.0 / block);   // 20 seconds of audio
-    double total = 0.0, worst = 0.0;
-    float peak = 0.0f;
-    bool finite = true;
-    for (int i = 0; i < blocks; ++i)
-    {
-        fillNoise (audio, random);
-        const auto t0 = juce::Time::getMillisecondCounterHiRes();
-        p->processBlock (audio, midi);
-        const auto dt = juce::Time::getMillisecondCounterHiRes() - t0;
-        total += dt; worst = juce::jmax (worst, dt);
-        peak = juce::jmax (peak, peakOf (audio, finite));
-    }
+    const int blocks = (int) (rate * seconds / block);
     const double budget = 1000.0 * block / rate;
-    say ("20 s of audio through 200 effects: average " + ms (total / blocks) + " per " + juce::String (block) + "-sample block ("
-         + juce::String (100.0 * total / blocks / budget, 1) + "% of real time), worst " + ms (worst) + ", peak level "
-         + juce::String (juce::Decibels::gainToDecibels (peak), 1) + " dBFS");
-    require (finite, "Big project output is finite (no NaN/Inf)");
+    double plainAverage = 0.0;
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        if (pass == 1)
+        {
+            activateAllLfos (*p, random);
+            say ("Switched on every LFO: " + juce::String (activeRoutes (*p)) + " knobs now move with the song (slot mixes, band mixes, band volumes)");
+        }
+        double total = 0.0, worst = 0.0;
+        float peak = 0.0f;
+        bool finite = true;
+        for (int i = 0; i < blocks; ++i)
+        {
+            fillNoise (audio, random);
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            p->processBlock (audio, midi);
+            const auto dt = juce::Time::getMillisecondCounterHiRes() - t0;
+            transport.advance (block, rate);
+            total += dt; worst = juce::jmax (worst, dt);
+            peak = juce::jmax (peak, peakOf (audio, finite));
+        }
+        say (juce::String (seconds, 0) + " s of audio through 200 effects" + (pass == 1 ? " with every LFO on" : "") + ": average "
+             + ms (total / blocks) + " per " + juce::String (block) + "-sample block (" + juce::String (100.0 * total / blocks / budget, 1)
+             + "% of one core), worst " + ms (worst) + ", peak level " + juce::String (juce::Decibels::gainToDecibels (peak), 1) + " dBFS");
+        require (finite, "Big project output is finite (no NaN/Inf)");
+        if (pass == 0) plainAverage = total / blocks;
+        else say ("LFO cost: " + juce::String (100.0 * (total / blocks - plainAverage) / juce::jmax (1.0e-6, plainAverage), 1)
+                  + "% more processing than the same project without LFOs");
+    }
     start = juce::Time::getMillisecondCounterHiRes();
     juce::MemoryBlock state;
     p->getStateInformation (state);
+    p->setPlayHead (nullptr);
     const auto saveTime = juce::Time::getMillisecondCounterHiRes() - start;
     start = juce::Time::getMillisecondCounterHiRes();
     TriadProcessor reopened;
@@ -184,6 +301,7 @@ void bigProject (const Pool& pool)
     say ("Saved (" + juce::String ((int) (state.getSize() / 1024)) + " KB) in " + ms (saveTime) + ", reopened in "
          + ms (juce::Time::getMillisecondCounterHiRes() - start) + " with " + juce::String (loadedCount (reopened)) + " effects running");
     require (reopened.getBandCount() == triad::maxBands && loadedCount (reopened) == loaded, "Big project reopens complete");
+    require (activeRoutes (reopened) == activeRoutes (*p), "Every LFO comes back with the project");
     for (int b = 0; b < triad::maxBands; ++b) require (reopened.getSlotCount (b) == slotsPerBand, "Every band reopens with its slots");
     start = juce::Time::getMillisecondCounterHiRes();
     p.reset();
@@ -203,21 +321,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
     std::atomic<int> blocks { 0 }, silent { 0 }, automation { 0 };
     std::atomic<double> worstBlock { 0.0 };
     // A DAW transport that plays (and sometimes stops), so the LFOs follow a song position.
-    struct Transport final : juce::AudioPlayHead
-    {
-        double ppq = 0.0, bpm = 128.0;
-        bool playing = true;
-        juce::Optional<PositionInfo> getPosition() const override
-        {
-            PositionInfo info;
-            info.setBpm (bpm);
-            info.setPpqPosition (ppq);
-            info.setIsPlaying (playing);
-            info.setTimeInSamples ((juce::int64) (ppq * 60.0 / bpm * 48000.0));
-            info.setTimeSignature (TimeSignature { 4, 4 });
-            return info;
-        }
-    } transport;
+    Transport transport;
     p.setPlayHead (&transport);
     std::thread audioThread ([&]
     {
@@ -249,7 +353,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
             bool finite = true;
             const auto peak = peakOf (view, finite);
             if (! finite) nonFinite = true;
-            if (peak == 0.0f) ++silent;
+            if (juce::exactlyEqual (peak, 0.0f)) ++silent;
             ++blocks;
             std::this_thread::sleep_for (std::chrono::microseconds (500));
         }
@@ -452,7 +556,9 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
 // ---- 3. Many instances ------------------------------------------------------------------------------
 void manyInstances (const Pool& pool)
 {
-    say ("\n== 3. Many Triad instances (one per track) ==");
+    say ("\n== 3. Many Triad instances (one per track), every LFO on ==");
+    Transport transport;
+    juce::Random lfoRandom (99);
     constexpr int instances = 24, slotsPerBand = 4;
     constexpr double rate = 48000.0;
     constexpr int block = 512;
@@ -468,6 +574,8 @@ void manyInstances (const Pool& pool)
             for (int s = 0; s < slotsPerBand; ++s)
                 require (p.loadEffect (b, s, pool.effects[(size_t) (index++ % (int) pool.effects.size())], false).isEmpty(), "Load into instance");
         settle (p);
+        activateAllLfos (p, lfoRandom);
+        p.setPlayHead (&transport);
     }
     int total = 0;
     for (auto& t : triads) total += loadedCount (*t);
@@ -488,6 +596,7 @@ void manyInstances (const Pool& pool)
             t->processBlock (audio, midi);
             peakOf (audio, finite);
         }
+        transport.advance (block, rate);
         const auto dt = juce::Time::getMillisecondCounterHiRes() - t0;
         totalTime += dt; worst = juce::jmax (worst, dt);
     }
@@ -579,16 +688,25 @@ int main (int argc, char** argv)
     juce::File reportFile;
     try
     {
-        require (argc >= 4, "Usage: TriadStress <Test Effect.vst3> <Crash Fixture.vst3> <Triad Scanner> [report.txt] [seed]");
+        require (argc >= 4, "Usage: TriadStress <Test Effect.vst3> <Crash Fixture.vst3> <Triad Scanner> [report.txt] [seed] [--real]");
         const juce::File effect (juce::String::fromUTF8 (argv[1]));
         const juce::File crashFixture (juce::String::fromUTF8 (argv[2]));
         const juce::File scanner (juce::String::fromUTF8 (argv[3]));
-        if (argc >= 5) reportFile = juce::File (juce::String::fromUTF8 (argv[4]));
-        const juce::int64 seed = argc >= 6 ? juce::String (argv[5]).getLargeIntValue() : 20261015;
-        say ("Triad stress test, Triad " TRIAD_VERSION " (" + juce::SystemStats::getOperatingSystemName() + ", "
-             + juce::SystemStats::getCpuModel() + ", " + juce::String (juce::SystemStats::getNumCpus()) + " cores)");
-        const auto pool = buildPool (effect, scanner);
-        bigProject (pool);
+        // --real: use every effect installed on this computer instead of the test effect + Apple's AUs.
+        bool real = false;
+        juce::int64 seed = 20261015;
+        for (int i = 4; i < argc; ++i)
+        {
+            const auto arg = juce::String::fromUTF8 (argv[i]);
+            if (arg == "--real") real = true;
+            else if (arg.containsOnly ("0123456789")) seed = arg.getLargeIntValue();
+            else reportFile = juce::File (arg);
+        }
+        say ("Triad stress test" + juce::String (real ? " with the plug-ins installed on this computer" : "") + ", Triad " TRIAD_VERSION " ("
+             + juce::SystemStats::getOperatingSystemName() + ", " + juce::SystemStats::getCpuModel() + ", "
+             + juce::String (juce::SystemStats::getNumCpus()) + " cores)");
+        const auto pool = real ? buildRealPool (scanner) : buildPool (effect, scanner);
+        bigProject (pool, real ? 10.0 : 20.0);
         editsWhilePlaying (pool, seed, 3000);
         manyInstances (pool);
         pluginList (effect, crashFixture, scanner);
