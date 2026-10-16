@@ -13,20 +13,30 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginCatalog.h"
 #include "../Source/PluginEditor.h"
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#if ! JUCE_WINDOWS
+ #include <unistd.h>
+#endif
 
 namespace
 {
 std::ostringstream report;
+juce::File reportPath;   // rewritten after every line, so a run that is cut short still leaves its results
+std::recursive_mutex sayLock;
 void say (const juce::String& line)
 {
+    const std::lock_guard<std::recursive_mutex> lock (sayLock);
     std::cout << line << std::endl;
     report << line << "\n";
+    if (reportPath != juce::File()) reportPath.replaceWithText (report.str());
 }
 void require (bool ok, const juce::String& message)
 {
@@ -34,6 +44,100 @@ void require (bool ok, const juce::String& message)
 }
 void pump (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); }
 juce::String ms (double v) { return juce::String (v, 2) + " ms"; }
+
+// Watches the run from its own thread. If one step takes far too long (a hang, or a plug-in waiting
+// on a dialog nobody can see), or the audio thread stops finishing blocks, it says where, saves the
+// call stack of every thread (macOS `sample`), writes the report and ends the run with a failure.
+class Watchdog
+{
+public:
+    Watchdog() : thread ([this] { run(); }) {}
+    ~Watchdog() { quit = true; thread.join(); }
+    void step (const juce::String& what, double limitSeconds)
+    {
+        const std::lock_guard<std::mutex> lock (mutex);
+        current = what; since = now(); limit = limitSeconds;
+    }
+    void watchAudio (const std::atomic<int>* blocks, const std::atomic<bool>* paused)
+    {
+        const std::lock_guard<std::mutex> lock (mutex);
+        audioBlocks = blocks; audioPaused = paused; lastBlocks = -1; lastProgress = now();
+    }
+private:
+    static double now() { return juce::Time::getMillisecondCounterHiRes() / 1000.0; }
+    void run()
+    {
+        while (! quit.load())
+        {
+            std::this_thread::sleep_for (std::chrono::milliseconds (250));
+            juce::String problem;
+            {
+                const std::lock_guard<std::mutex> lock (mutex);
+                if (current.isNotEmpty() && now() - since > limit)
+                    problem = "stuck for " + juce::String (juce::roundToInt (now() - since)) + " s in: " + current;
+                else if (audioBlocks != nullptr)
+                {
+                    const int b = audioBlocks->load();
+                    if (b != lastBlocks || audioPaused->load()) { lastBlocks = b; lastProgress = now(); }
+                    else if (now() - lastProgress > 60.0)
+                        problem = "the audio thread has not finished a block for " + juce::String (juce::roundToInt (now() - lastProgress))
+                                + " s (main thread: " + current + ")";
+                }
+            }
+            if (problem.isNotEmpty()) fail (problem);
+        }
+    }
+    [[noreturn]] static void fail (const juce::String& problem)
+    {
+        say ("\nFAIL (watchdog): " + problem);
+       #if JUCE_MAC
+        const auto file = reportPath != juce::File() ? reportPath.getSiblingFile (reportPath.getFileNameWithoutExtension() + "-hang-sample.txt")
+                                                     : juce::File::getCurrentWorkingDirectory().getChildFile ("stress-hang-sample.txt");
+        const auto command = "/usr/bin/sample " + juce::String ((int) getpid()) + " 3 -mayDie -file '" + file.getFullPathName() + "' >/dev/null 2>&1";
+        if (std::system (command.toRawUTF8()) != 0 || ! file.existsAsFile())
+            std::system (("sudo -n " + command).toRawUTF8());
+        if (file.existsAsFile())
+        {
+            say ("Call stacks of every thread saved to " + file.getFileName());
+            // The main thread and the audio thread, in the log too.
+            juce::StringArray lines;
+            lines.addLines (file.loadFileAsString());
+            for (const char* thread : { "com.apple.main-thread", "TriadStress audio" })
+            {
+                int first = -1;
+                for (int i = 0; i < lines.size() && first < 0; ++i) if (lines[i].contains (thread)) first = i;
+                if (first < 0) continue;
+                std::cout << "---- " << thread << " ----" << std::endl;
+                for (int i = first; i < juce::jmin (lines.size(), first + 250); ++i)
+                {
+                    if (i > first && lines[i].trimStart().startsWith ("Thread_")) break;
+                    std::cout << lines[i].substring (0, 220) << std::endl;
+                }
+            }
+        }
+        else say ("Could not sample the call stacks");
+       #endif
+        std::cout.flush();
+        std::_Exit (3);
+    }
+    std::mutex mutex;
+    juce::String current;
+    double since = 0.0, limit = 0.0, lastProgress = 0.0;
+    const std::atomic<int>* audioBlocks = nullptr;
+    const std::atomic<bool>* audioPaused = nullptr;
+    int lastBlocks = -1;
+    std::atomic<bool> quit { false };
+    std::thread thread;
+};
+Watchdog* watchdog = nullptr;
+// What the run is doing now, and how long that may take before the watchdog calls it a hang.
+void step (const juce::String& what, double limitSeconds = 120.0)
+{
+    // TRIAD_STRESS_STEP_LIMIT (seconds) shortens every limit, to check the watchdog itself.
+    static const double cap = [] { const char* v = std::getenv ("TRIAD_STRESS_STEP_LIMIT"); return v != nullptr ? std::atof (v) : 0.0; }();
+    if (cap > 0.0) limitSeconds = juce::jmin (limitSeconds, cap);
+    if (watchdog != nullptr) watchdog->step (what, limitSeconds);
+}
 
 // A DAW transport: playing at 128 BPM in 4/4, so the LFOs follow a song position.
 struct Transport final : juce::AudioPlayHead
@@ -146,6 +250,7 @@ Pool buildRealPool (const juce::File& scanner)
     o.cacheFolder.deleteRecursively();
     o.scanner = scanner;
     o.autoCheck = true;
+    step ("listing the plug-ins installed on this computer", 900);
     PluginCatalog catalog (o);
     require (catalog.waitUntilIdle (600000), "Plug-in list of this computer");
     const auto counts = catalog.getCounts();
@@ -168,6 +273,7 @@ Pool buildRealPool (const juce::File& scanner)
             for (auto* d : found) if (d->name == e.name && ! d->isInstrument) description = *d;
         }
         const int slot = probe.getSlotCount (0);
+        step ("checking " + e.name + " (" + e.format + ")");
         const auto start = juce::Time::getMillisecondCounterHiRes();
         const auto error = probe.loadEffect (0, slot, description, false);
         settle (probe);
@@ -241,6 +347,7 @@ void bigProject (const Pool& pool, double seconds)
     p->setPlayHead (&transport);
     p->prepareToPlay (rate, block);
     while (p->addBand()) {}
+    step ("big project: loading 200 effects", 900);
     auto start = juce::Time::getMillisecondCounterHiRes();
     int index = 0;
     for (int b = 0; b < triad::maxBands; ++b)
@@ -262,6 +369,7 @@ void bigProject (const Pool& pool, double seconds)
     double plainAverage = 0.0;
     for (int pass = 0; pass < 2; ++pass)
     {
+        step (pass == 0 ? "big project: playing" : "big project: playing with every LFO on", 900);
         if (pass == 1)
         {
             activateAllLfos (*p, random);
@@ -288,6 +396,7 @@ void bigProject (const Pool& pool, double seconds)
         else say ("LFO cost: " + juce::String (100.0 * (total / blocks - plainAverage) / juce::jmax (1.0e-6, plainAverage), 1)
                   + "% more processing than the same project without LFOs");
     }
+    step ("big project: saving and reopening", 900);
     start = juce::Time::getMillisecondCounterHiRes();
     juce::MemoryBlock state;
     p->getStateInformation (state);
@@ -303,13 +412,14 @@ void bigProject (const Pool& pool, double seconds)
     require (reopened.getBandCount() == triad::maxBands && loadedCount (reopened) == loaded, "Big project reopens complete");
     require (activeRoutes (reopened) == activeRoutes (*p), "Every LFO comes back with the project");
     for (int b = 0; b < triad::maxBands; ++b) require (reopened.getSlotCount (b) == slotsPerBand, "Every band reopens with its slots");
+    step ("big project: closing", 600);
     start = juce::Time::getMillisecondCounterHiRes();
     p.reset();
     say ("Closed the 200-effect project in " + ms (juce::Time::getMillisecondCounterHiRes() - start));
 }
 
 // ---- 2. Random edits while audio plays --------------------------------------------------------------
-void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
+void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, double maxSeconds)
 {
     say ("\n== 2. " + juce::String (operations) + " random edits while audio plays on another thread (seed " + juce::String (seed) + ") ==");
     TriadProcessor p;
@@ -325,6 +435,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
     p.setPlayHead (&transport);
     std::thread audioThread ([&]
     {
+        juce::Thread::setCurrentThreadName ("TriadStress audio");
         juce::Random r (seed + 1);
         juce::AudioBuffer<float> audio (2, 4096);
         juce::MidiBuffer midi;
@@ -364,18 +475,28 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
         while (! paused.load()) std::this_thread::sleep_for (std::chrono::microseconds (100));
     };
     auto resumeAudio = [&] { pauseRequest = false; };
+    if (watchdog != nullptr) watchdog->watchAudio (&blocks, &paused);
 
     const bool haveDisplay = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr;
     std::unique_ptr<juce::AudioProcessorEditor> editor;
     juce::Random r (seed);
     std::map<juce::String, int> counts;
-    int peakEffects = 0, failedLoads = 0;
+    struct Timing { double total = 0.0, worst = 0.0; int worstOp = 0; };
+    std::map<juce::String, Timing> timings;
+    int peakEffects = 0, failedLoads = 0, done = 0;
+    bool timeLimit = false;
     constexpr int maxEffects = 120;
     const auto started = juce::Time::getMillisecondCounterHiRes();
     try
     {
         for (int op = 0; op < operations; ++op)
         {
+            const double elapsed = (juce::Time::getMillisecondCounterHiRes() - started) / 1000.0;
+            if (op > 0 && op % 100 == 0)
+                std::cout << "  ... " << op << " edits in " << juce::String (elapsed, 1) << " s, " << loadedCount (p) << " effects loaded, "
+                          << blocks.load() << " audio blocks" << std::endl;
+            if (maxSeconds > 0.0 && elapsed > maxSeconds) { timeLimit = true; break; }
+            const auto opStart = juce::Time::getMillisecondCounterHiRes();
             const int bands = p.getBandCount();
             const int band = r.nextInt (bands);
             const int slots = p.getSlotCount (band);
@@ -384,29 +505,34 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
             int choice = r.nextInt (130);
             if (effects >= maxEffects && choice < 30) choice = 30 + r.nextInt (70);   // full: edit or remove instead
             juce::String name;
+            auto begin = [&] (const char* what)
+            {
+                name = what;
+                step ("edit " + juce::String (op + 1) + ": " + name + " (band " + juce::String (band + 1) + ", slot " + juce::String (slot + 1) + ")");
+            };
             if (choice < 22)
             {
-                name = "load effect (new slot)";
+                begin ("load effect (new slot)");
                 const auto& d = pool.effects[(size_t) r.nextInt ((int) pool.effects.size())];
                 if (p.loadEffect (band, slots, d, false).isNotEmpty()) ++failedLoads;
             }
             else if (choice < 30)
             {
-                name = "replace effect";
+                begin ("replace effect");
                 const auto& d = pool.effects[(size_t) r.nextInt ((int) pool.effects.size())];
                 if (p.loadEffect (band, slot, d, false).isNotEmpty()) ++failedLoads;
             }
-            else if (choice < 40) { name = "remove slot"; p.removeSlot (band, slot); }
-            else if (choice < 44) { name = "remove effect, keep slot"; p.removeEffect (band, slot); }
-            else if (choice < 50) { name = "add empty slot"; p.addSlot (band); }
-            else if (choice < 56) { name = "move slot"; p.moveSlot (band, slot, r.nextBool() ? 1 : -1); }
-            else if (choice < 62) { name = "bypass/enable slot"; p.setSlotEnabled (band, slot, r.nextBool()); }
-            else if (choice < 70) { name = "slot mix"; p.setSlotMix (band, slot, r.nextFloat() * 100.0f); }
-            else if (choice < 75) { name = "add band"; p.addBand (r.nextBool() ? -1.0f : 20.0f * std::pow (1000.0f, r.nextFloat())); }
-            else if (choice < 80) { name = "remove band"; p.removeBand (band); }
+            else if (choice < 40) { begin ("remove slot"); p.removeSlot (band, slot); }
+            else if (choice < 44) { begin ("remove effect, keep slot"); p.removeEffect (band, slot); }
+            else if (choice < 50) { begin ("add empty slot"); p.addSlot (band); }
+            else if (choice < 56) { begin ("move slot"); p.moveSlot (band, slot, r.nextBool() ? 1 : -1); }
+            else if (choice < 62) { begin ("bypass/enable slot"); p.setSlotEnabled (band, slot, r.nextBool()); }
+            else if (choice < 70) { begin ("slot mix"); p.setSlotMix (band, slot, r.nextFloat() * 100.0f); }
+            else if (choice < 75) { begin ("add band"); p.addBand (r.nextBool() ? -1.0f : 20.0f * std::pow (1000.0f, r.nextFloat())); }
+            else if (choice < 80) { begin ("remove band"); p.removeBand (band); }
             else if (choice < 84)
             {
-                name = "drag crossover";
+                begin ("drag crossover");
                 if (auto* c = p.crossoverParameter (r.nextInt (juce::jmax (1, bands - 1))))
                 {
                     c->beginChangeGesture(); c->setValueNotifyingHost (r.nextFloat()); c->endChangeGesture();
@@ -414,14 +540,14 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
             }
             else if (choice < 88)
             {
-                name = "save and reload project";
+                begin ("save and reload project");
                 juce::MemoryBlock state;
                 p.getStateInformation (state);
                 p.setStateInformation (state.getData(), (int) state.getSize());
             }
             else if (choice < 90)
             {
-                name = "sample rate / buffer change";
+                begin ("sample rate / buffer change");
                 pauseAudio();   // hosts stop processing around prepareToPlay
                 p.releaseResources();
                 const double rates[] { 44100.0, 48000.0, 88200.0, 96000.0 };
@@ -433,7 +559,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
             }
             else if (choice < 94)
             {
-                name = "open/close Triad window, switch tabs";
+                begin ("open/close Triad window, switch tabs");
                 if (editor == nullptr)
                 {
                     editor.reset (p.createEditor());
@@ -452,13 +578,13 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
             }
             else if (choice < 98)
             {
-                name = "open effect window";
+                begin ("open effect window");
                 if (haveDisplay && p.getSlotInfo (band, slot).loaded) p.showEffect (band, slot);
             }
-            else if (choice < 100) { name = "close effect windows"; p.closeWindows(); }
+            else if (choice < 100) { begin ("close effect windows"); p.closeWindows(); }
             else if (choice < 108)
             {
-                name = "draw an LFO";
+                begin ("draw an LFO");
                 namespace mod = triad::mod;
                 const int lfo = r.nextInt (juce::jmax (1, p.getLfoCount (band)));
                 auto shape = p.getLfoInfo (band, lfo).shape;
@@ -483,7 +609,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
             }
             else if (choice < 114)
             {
-                name = "matrix edit";
+                begin ("matrix edit");
                 const int routes = p.getRouteCount (band);
                 const int route = routes > 0 ? r.nextInt (routes) : -1;
                 const auto destinations = p.getDestinations (band);
@@ -499,31 +625,37 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
             }
             else if (choice < 117)
             {
-                name = "LFO length";
+                begin ("LFO length");
                 p.setLfoLength (band, r.nextInt (juce::jmax (1, p.getLfoCount (band))), r.nextInt ((int) triad::mod::lengths().size()));
             }
             else if (choice < 120)
             {
-                name = "add/remove an LFO";
+                begin ("add/remove an LFO");
                 if (r.nextBool()) p.addLfo (band);
                 else p.removeLfo (band, r.nextInt (juce::jmax (1, p.getLfoCount (band))));
             }
-            else if (choice < 124) { name = "move a band"; p.moveBand (band, r.nextInt (bands)); }
+            else if (choice < 124) { begin ("move a band"); p.moveBand (band, r.nextInt (bands)); }
             else if (choice < 127)
             {
-                name = "chain preset copy";
+                begin ("chain preset copy");
                 if (effects < maxEffects - 20)
                     if (auto chain = p.createChainXml (band)) p.loadChainXml (r.nextInt (bands), *chain);
             }
             else
             {
-                name = "band volume";
+                begin ("band volume");
                 if (auto* gain = p.parameters.getParameter (TriadProcessor::bandGainID (band))) gain->setValueNotifyingHost (r.nextFloat());
             }
             ++counts[name];
+            step ("edit " + juce::String (op + 1) + ": " + name + ", then waiting for loads and the windows");
             settle (p);
             pump (r.nextInt (3));
             if (auto* e = dynamic_cast<TriadEditor*> (editor.get())) e->refreshNow();
+            const double took = juce::Time::getMillisecondCounterHiRes() - opStart;
+            auto& t = timings[name];
+            t.total += took;
+            if (took > t.worst) { t.worst = took; t.worstOp = op + 1; }
+            done = op + 1;
             checkInvariants (p, name + " (operation " + juce::String (op + 1) + ")");
             require (! nonFinite.load(), "Audio stayed finite (failed after " + name + ", operation " + juce::String (op + 1) + ")");
             peakEffects = juce::jmax (peakEffects, loadedCount (p));
@@ -532,25 +664,38 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
     catch (...)
     {
         stop = true; resumeAudio(); audioThread.join();
+        if (watchdog != nullptr) watchdog->watchAudio (nullptr, nullptr);
         p.setPlayHead (nullptr);
         throw;
     }
+    step ("edits: playing on with the final layout, then closing", 300);
+    if (timeLimit)
+        say ("Time limit (" + juce::String (juce::roundToInt (maxSeconds / 60.0)) + " min) reached after " + juce::String (done) + " edits; the section stops there");
     // Let it play on a little with the final layout.
     pump (500);
     stop = true;
     resumeAudio();
     audioThread.join();
+    if (watchdog != nullptr) watchdog->watchAudio (nullptr, nullptr);
     p.setPlayHead (nullptr);
     editor.reset();
     p.closeWindows();
     require (! nonFinite.load(), "Audio stayed finite");
-    say ("Finished in " + juce::String ((juce::Time::getMillisecondCounterHiRes() - started) / 1000.0, 1) + " s: "
+    say (juce::String (done) + " edits in " + juce::String ((juce::Time::getMillisecondCounterHiRes() - started) / 1000.0, 1) + " s: "
          + juce::String (blocks.load()) + " audio blocks processed alongside the edits (" + juce::String (automation.load())
          + " automation moves), worst block " + ms (worstBlock.load()) + ", up to " + juce::String (peakEffects) + " effects loaded at once");
     say ("Final layout: " + juce::String (p.getBandCount()) + (p.getBandCount() == 1 ? " band, " : " bands, ") + juce::String (loadedCount (p)) + " effects; NaN/Inf output: none");
     juce::StringArray lines;
     for (auto& [k, v] : counts) lines.add (k + " x" + juce::String (v));
     say ("Edits: " + lines.joinIntoString (", ") + (failedLoads > 0 ? "; loads refused " + juce::String (failedLoads) : juce::String()));
+    // The slowest kinds of edit (each including the wait for loads and windows that follows it).
+    std::vector<std::pair<juce::String, Timing>> slowest (timings.begin(), timings.end());
+    std::sort (slowest.begin(), slowest.end(), [] (const auto& a, const auto& b) { return a.second.worst > b.second.worst; });
+    juce::StringArray slow;
+    for (size_t i = 0; i < juce::jmin<size_t> (5, slowest.size()); ++i)
+        slow.add (slowest[i].first + " avg " + ms (slowest[i].second.total / juce::jmax (1, counts[slowest[i].first]))
+                  + ", worst " + ms (slowest[i].second.worst) + " (edit " + juce::String (slowest[i].second.worstOp) + ")");
+    say ("Slowest edits: " + slow.joinIntoString ("; "));
 }
 
 // ---- 3. Many instances ------------------------------------------------------------------------------
@@ -563,6 +708,7 @@ void manyInstances (const Pool& pool)
     constexpr double rate = 48000.0;
     constexpr int block = 512;
     std::vector<std::unique_ptr<TriadProcessor>> triads;
+    step ("many instances: creating 24 Triads", 900);
     auto start = juce::Time::getMillisecondCounterHiRes();
     int index = 0;
     for (int i = 0; i < instances; ++i)
@@ -585,6 +731,7 @@ void manyInstances (const Pool& pool)
     juce::AudioBuffer<float> audio (2, block);
     juce::MidiBuffer midi;
     const int blocks = (int) (rate * 10.0 / block);
+    step ("many instances: playing", 900);
     double totalTime = 0.0, worst = 0.0;
     bool finite = true;
     for (int i = 0; i < blocks; ++i)
@@ -604,6 +751,7 @@ void manyInstances (const Pool& pool)
     say ("10 s of audio through all of them: average " + ms (totalTime / blocks) + " per block for the whole project ("
          + juce::String (100.0 * totalTime / blocks / budget, 1) + "% of one core's real-time budget), worst " + ms (worst));
     require (finite, "Many-instance output is finite");
+    step ("many instances: closing, then 40 open/close cycles", 900);
     start = juce::Time::getMillisecondCounterHiRes();
     triads.clear();
     say ("All instances closed in " + ms (juce::Time::getMillisecondCounterHiRes() - start));
@@ -626,6 +774,7 @@ void manyInstances (const Pool& pool)
 void pluginList (const juce::File& effect, const juce::File& crashFixture, const juce::File& scanner)
 {
     say ("\n== 4. Plug-in list: 60 plug-ins, 20 of which crash when loaded ==");
+    step ("plug-in list with crashing plug-ins", 900);
     auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadStressList");
     temp.deleteRecursively();
     auto folder = temp.getChildFile ("VST3");
@@ -685,6 +834,8 @@ void pluginList (const juce::File& effect, const juce::File& crashFixture, const
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
+    Watchdog guard;
+    watchdog = &guard;
     juce::File reportFile;
     try
     {
@@ -702,22 +853,26 @@ int main (int argc, char** argv)
             else if (arg.containsOnly ("0123456789")) seed = arg.getLargeIntValue();
             else reportFile = juce::File (arg);
         }
+        reportPath = reportFile;
         say ("Triad stress test" + juce::String (real ? " with the plug-ins installed on this computer" : "") + ", Triad " TRIAD_VERSION " ("
              + juce::SystemStats::getOperatingSystemName() + ", " + juce::SystemStats::getCpuModel() + ", "
              + juce::String (juce::SystemStats::getNumCpus()) + " cores)");
         const auto pool = real ? buildRealPool (scanner) : buildPool (effect, scanner);
         bigProject (pool, real ? 10.0 : 20.0);
-        editsWhilePlaying (pool, seed, 3000);
+        // Real plug-ins load and reopen far more slowly than the test effect: that section gets 15 minutes.
+        editsWhilePlaying (pool, seed, 3000, real ? 900.0 : 0.0);
         manyInstances (pool);
         pluginList (effect, crashFixture, scanner);
+        step ({}, 0);
         say ("\nPASS: no crashes, no NaN/Inf output, all checks held");
-        if (reportFile != juce::File()) reportFile.replaceWithText (report.str());
+        watchdog = nullptr;
         return 0;
     }
     catch (const std::exception& e)
     {
+        step ({}, 0);
         say (juce::String ("\nFAIL: ") + e.what());
-        if (reportFile != juce::File()) reportFile.replaceWithText (report.str());
+        watchdog = nullptr;
         return 1;
     }
 }

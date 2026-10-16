@@ -69,6 +69,7 @@ public:
         juce::String name, status, format, maker;
         bool loaded = false, hasContent = false, enabled = true, pending = false, modulated = false;
         int latency = 0;
+        int channels = 2;                        // channels the effect processes (more than 2: an extra bus fed silence)
         float mix = 100.0f, liveMix = 100.0f;   // knob, and the value playing now (with LFOs)
     };
     int getSlotCount (int band) const;
@@ -80,6 +81,8 @@ public:
     // `slot` may equal getSlotCount (band): the slot is then appended.
     // Returns an error message, or an empty string on success / when an async load started.
     juce::String loadEffect (int band, int slot, const juce::PluginDescription&, bool openEditor);
+    // Hosts an effect instance that was created elsewhere (used by the tests).
+    juce::String loadInstance (int band, int slot, std::unique_ptr<juce::AudioPluginInstance>);
     // Loads from a bundle/file; `preferredName` picks one plug-in from a multi-plug-in bundle.
     juce::String loadFile (int band, int slot, const juce::File&, bool openEditor = false, const juce::String& preferredName = {});
     juce::String loadFile (int band, const juce::File& file) { return loadFile (band, 0, file, false); }
@@ -199,6 +202,7 @@ private:
         juce::String error;
         bool enabled = true;
         int latency = 0;            // latency compensated for this slot (0 when inactive)
+        int channels = 2;           // channels the effect processes: stereo, plus any always-on extra bus (fed silence)
         juce::int64 pendingRequest = 0;
         std::atomic<float> mixPercent { 100.0f };
         std::atomic<float> liveMix { 100.0f };
@@ -234,6 +238,7 @@ private:
     juce::AudioPluginFormatManager formats;
     std::array<std::unique_ptr<Band>, triad::maxBands> bands;
     std::array<juce::AudioBuffer<float>, triad::maxBands> split;
+    juce::AudioBuffer<float> wide;   // for effects with an extra bus that cannot be switched off (e.g. a sidechain)
     triad::Splitter splitter;
     triad::StereoDelay bypassDelay;
     juce::MidiBuffer childMidi;

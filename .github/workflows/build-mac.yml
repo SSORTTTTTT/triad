@@ -12,7 +12,7 @@ jobs:
   build:
     name: Build, package and validate (Apple Silicon)
     runs-on: macos-14            # Apple Silicon runner
-    timeout-minutes: 90
+    timeout-minutes: 130
     steps:
       - uses: actions/checkout@v4
 
@@ -95,7 +95,7 @@ jobs:
 
       - name: Stress test with real third-party plug-ins and every LFO on
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 50
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -145,6 +145,7 @@ jobs:
             stress-log.txt
             stress-real.txt
             stress-real-log.txt
+            stress-*hang-sample.txt
             free-plugins.log
             pluginval-*.log
             ci-ui/*.png
@@ -157,7 +158,7 @@ jobs:
         run: |
           set -u
           out="$RUNNER_TEMP/ci-results"; rm -rf "$out"; mkdir -p "$out"
-          cp -f build-mac.log auval.log test-results-mac.txt stress-results.txt stress-log.txt stress-real.txt stress-real-log.txt free-plugins.log pluginval-*.log "$out/" 2>/dev/null || true
+          cp -f build-mac.log auval.log test-results-mac.txt stress-results.txt stress-log.txt stress-real.txt stress-real-log.txt stress-*hang-sample.txt free-plugins.log pluginval-*.log "$out/" 2>/dev/null || true
           cp -f Installer/*.pkg ci-ui/*.png "$out/" 2>/dev/null || true
           echo "run=${{ github.run_id }} sha=${{ github.sha }} job_status=${{ job.status }}" > "$out/RUN.txt"
           cd "$out"

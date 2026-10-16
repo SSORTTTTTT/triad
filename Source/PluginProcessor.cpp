@@ -45,6 +45,26 @@ void storeMax (std::atomic<float>& target, float value)
 {
     if (value > target.load (std::memory_order_relaxed)) target.store (value, std::memory_order_relaxed);
 }
+// The channels a hosted effect processes, or 0 when Triad cannot host its layout. The main buses must
+// be stereo; an extra bus that the format cannot switch off (an AU sidechain input, say) is fed silence.
+constexpr int maxEffectChannels = 16;
+int effectChannels (const juce::AudioPluginInstance& e)
+{
+    if (e.getMainBusNumInputChannels() != 2 || e.getMainBusNumOutputChannels() != 2) return 0;
+    const int width = juce::jmax (e.getTotalNumInputChannels(), e.getTotalNumOutputChannels());
+    return width <= maxEffectChannels ? width : 0;
+}
+juce::String describeLayout (const juce::AudioProcessor::BusesLayout& layout)
+{
+    auto list = [] (const juce::Array<juce::AudioChannelSet>& buses)
+    {
+        juce::StringArray names;
+        for (auto& b : buses) names.add (b.isDisabled() ? "off" : b.getDescription());
+        return names.isEmpty() ? juce::String ("none") : names.joinIntoString (" + ");
+    };
+    return "in: " + list (layout.inputBuses) + ", out: " + list (layout.outputBuses);
+}
+
 float peakOf (const juce::AudioBuffer<float>& b, int channels)
 {
     float peak = 0.0f;
@@ -279,6 +299,7 @@ void TriadProcessor::prepareToPlay (double sr, int block)
     readCrossovers (cuts.data());
     splitter.setBandCount (numBands, cuts.data());
     for (auto& buffer : split) buffer.setSize (2, capacity);
+    wide.setSize (maxEffectChannels, capacity);
     childMidi.ensureSize (4096);
     for (int b = 0; b < triad::maxBands; ++b) prepareBand (b, true);
     fadeLength = juce::jmax (1, (int) (sr * 0.01));
@@ -329,7 +350,9 @@ void TriadProcessor::alignLatency()
             if (s.effect)
             {
                 const auto reported = s.effect->getLatencySamples();
-                const bool stereo = s.effect->getTotalNumInputChannels() == 2 && s.effect->getTotalNumOutputChannels() == 2;
+                const int width = effectChannels (*s.effect);
+                const bool stereo = width > 0;
+                if (stereo) s.channels = width;
                 if (! stereo) s.error = "Unsupported channel layout; effect bypassed";
                 else if (s.error.startsWith ("Unsupported channel layout")) s.error.clear();
                 if (s.error.isEmpty() || s.error.startsWith ("Latency exceeds"))
@@ -428,9 +451,7 @@ void TriadProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBu
     // Never emit misaligned audio while a hosted effect changes its reported latency.
     for (int b = 0; b < numBands; ++b)
         for (auto& s : bands[(size_t) b]->slots)
-            if (s->isActive() && (s->effect->getLatencySamples() != s->latency
-                                  || s->effect->getTotalNumInputChannels() != 2
-                                  || s->effect->getTotalNumOutputChannels() != 2))
+            if (s->isActive() && (s->effect->getLatencySamples() != s->latency || effectChannels (*s->effect) != s->channels))
             { audio.clear(); return; }
     process (audio);
     storeMax (outputPeak, peakOf (audio, 2));
@@ -458,11 +479,24 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
                 auto& slot = *slotPtr;
                 if (! slot.isActive()) { slot.mix.skip (n); continue; }
                 for (int ch = 0; ch < 2; ++ch) band.slotDry.copyFrom (ch, 0, buffer, ch, 0, n);
-                juce::AudioBuffer<float> view (buffer.getArrayOfWritePointers(), 2, n);
                 childMidi.clear();
                 slot.effect->setPlayHead (getPlayHead());
                 slot.effect->setNonRealtime (isNonRealtime());
-                slot.effect->processBlock (view, childMidi);
+                if (slot.channels > 2)
+                {
+                    // An effect with an extra bus that stays on: give it silence there.
+                    for (int ch = 0; ch < slot.channels; ++ch)
+                        if (ch < 2) wide.copyFrom (ch, 0, buffer, ch, 0, n);
+                        else wide.clear (ch, 0, n);
+                    juce::AudioBuffer<float> view (wide.getArrayOfWritePointers(), slot.channels, n);
+                    slot.effect->processBlock (view, childMidi);
+                    for (int ch = 0; ch < 2; ++ch) buffer.copyFrom (ch, 0, wide, ch, 0, n);
+                }
+                else
+                {
+                    juce::AudioBuffer<float> view (buffer.getArrayOfWritePointers(), 2, n);
+                    slot.effect->processBlock (view, childMidi);
+                }
                 if (slot.effect->getLatencySamples() != slot.latency)
                 { audio.clear(); return; }
                 // Slot dry/wet (knob, moved by its LFOs); the dry signal is delayed by the slot's latency.
@@ -731,6 +765,7 @@ void TriadProcessor::publishInfo()
             n.enabled = s.enabled;
             n.pending = s.pendingRequest != 0;
             n.latency = s.latency;
+            n.channels = s.effect != nullptr ? s.channels : 2;
             n.mix = s.mixPercent.load();
             next[(size_t) b].push_back (std::move (n));
         }
@@ -830,6 +865,18 @@ juce::String TriadProcessor::loadEffect (int band, int slot, const juce::PluginD
     setStatus (result.isEmpty() ? "Loaded " + desc.name : result);
     return result;
 }
+juce::String TriadProcessor::loadInstance (int band, int slot, std::unique_ptr<juce::AudioPluginInstance> instance)
+{
+    if (instance == nullptr) return "No effect.";
+    if (band < 0 || band >= getBandCount()) return "That band does not exist.";
+    const bool append = slot == getSlotCount (band);
+    if (append) slot = addSlot (band);
+    if (slot < 0 || slot >= getSlotCount (band)) return "That slot does not exist.";
+    const auto desc = instance->getPluginDescription();
+    const auto result = finishInstall (band, slot, desc, {}, std::move (instance), {}, false);
+    if (result.isNotEmpty() && append) removeSlot (band, slot);
+    return result;
+}
 juce::String TriadProcessor::loadFile (int band, int slot, const juce::File& file, bool openEditor, const juce::String& preferredName)
 {
     juce::OwnedArray<juce::PluginDescription> descriptions;
@@ -925,16 +972,28 @@ juce::String TriadProcessor::finishInstall (int band, int slotIndex, const juce:
     if (isTriad (actual)) return "Triad cannot host itself.";
     if (desc.isInstrument || actual.isInstrument) return "Choose an audio effect, not an instrument.";
     instance->disableNonMainBuses();
-    auto layout = instance->getBusesLayout();
-    for (int j = 1; j < layout.inputBuses.size(); ++j) layout.inputBuses.getReference (j) = juce::AudioChannelSet::disabled();
-    for (int j = 1; j < layout.outputBuses.size(); ++j) layout.outputBuses.getReference (j) = juce::AudioChannelSet::disabled();
-    if (layout.inputBuses.isEmpty() || layout.outputBuses.isEmpty()) return "This effect has no audio input or output.";
-    layout.inputBuses.getReference (0) = juce::AudioChannelSet::stereo();
-    layout.outputBuses.getReference (0) = juce::AudioChannelSet::stereo();
-    if (! instance->setBusesLayout (layout)) return "This version supports stereo-in / stereo-out effects.";
+    const auto offered = instance->getBusesLayout();
+    if (offered.inputBuses.isEmpty() || offered.outputBuses.isEmpty()) return "This effect has no audio input or output.";
+    auto stereoMain = [] (juce::AudioProcessor::BusesLayout layout, bool extrasOff)
+    {
+        if (extrasOff)
+        {
+            for (int j = 1; j < layout.inputBuses.size(); ++j) layout.inputBuses.getReference (j) = juce::AudioChannelSet::disabled();
+            for (int j = 1; j < layout.outputBuses.size(); ++j) layout.outputBuses.getReference (j) = juce::AudioChannelSet::disabled();
+        }
+        layout.inputBuses.getReference (0) = juce::AudioChannelSet::stereo();
+        layout.outputBuses.getReference (0) = juce::AudioChannelSet::stereo();
+        return layout;
+    };
+    // Stereo in/out with any extra buses (sidechains) off. Some formats cannot switch an extra bus
+    // off (an AU's sidechain input, say); then it stays on and Triad feeds it silence.
+    if (! instance->setBusesLayout (stereoMain (offered, true)))
+        instance->setBusesLayout (stereoMain (instance->getBusesLayout(), false));
+    if (effectChannels (*instance) == 0)
+        return "Triad hosts stereo effects; this one offers " + describeLayout (offered) + ".";
     if (state.getSize() > 0) instance->setStateInformation (state.getData(), (int) state.getSize());
-    if (instance->getTotalNumInputChannels() != 2 || instance->getTotalNumOutputChannels() != 2)
-        return "The effect changed to an unsupported channel layout.";
+    if (effectChannels (*instance) == 0)
+        return "The effect changed to an unsupported channel layout (" + describeLayout (instance->getBusesLayout()) + ").";
     std::unique_ptr<juce::AudioPluginInstance> old;
     std::unique_ptr<juce::DocumentWindow> oldWindow;
     {
@@ -953,6 +1012,7 @@ juce::String TriadProcessor::finishInstall (int band, int slotIndex, const juce:
         s->savedState = state;
         s->error.clear();
         s->pendingRequest = 0;
+        s->channels = effectChannels (*s->effect);
         s->dryDelay.reset();
         alignLatency();
     }

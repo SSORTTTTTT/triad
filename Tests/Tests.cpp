@@ -71,6 +71,64 @@ void runAudioCase (TriadProcessor& p, double sr, const std::vector<float>& gains
     compare (signal, expected, name);
     require (p.getLatencySamples() == latency, "Host latency reporting");
 }
+// A hosted-effect stand-in with a stereo sidechain input that cannot be switched off (or, with
+// monoOnly, an effect that only works in mono). Gain 0.25 and 73 samples of latency, like the test effect.
+class SidechainEffect final : public juce::AudioPluginInstance
+{
+public:
+    explicit SidechainEffect (bool monoOnly = false)
+        : AudioPluginInstance (BusesProperties().withInput ("In", monoOnly ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo(), true)
+                                                .withOutput ("Out", monoOnly ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo(), true)
+                                                .withInput ("Sidechain", juce::AudioChannelSet::stereo(), true)),
+          mono (monoOnly)
+    {
+        setLatencySamples (73);
+    }
+    void fillInPluginDescription (juce::PluginDescription& d) const override
+    {
+        d.name = mono ? "Mono Only" : "Sidechain Effect"; d.pluginFormatName = "Test"; d.manufacturerName = "Triad Tests";
+        d.numInputChannels = 2; d.numOutputChannels = 2;
+    }
+    bool isBusesLayoutSupported (const BusesLayout& b) const override
+    {
+        const auto main = mono ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo();
+        return b.inputBuses.size() == 2 && b.inputBuses[1] == juce::AudioChannelSet::stereo()
+            && b.getMainInputChannelSet() == main && b.getMainOutputChannelSet() == main;
+    }
+    const juce::String getName() const override { return mono ? "Mono Only" : "Sidechain Effect"; }
+    void prepareToPlay (double, int) override { delay.setSize (2, 74); delay.clear(); pos = 0; }
+    void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+    {
+        if (b.getNumChannels() < 4) { b.clear(); return; }
+        for (int s = 0; s < b.getNumSamples(); ++s)
+        {
+            for (int c = 0; c < 2; ++c)
+            {
+                delay.setSample (c, pos, b.getSample (c, s));
+                b.setSample (c, s, delay.getSample (c, (pos + 1) % 74) * 0.25f + b.getSample (c + 2, s));
+            }
+            pos = (pos + 1) % 74;
+        }
+    }
+    double getTailLengthSeconds() const override { return 0; }
+    bool acceptsMidi() const override { return false; }
+    bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+private:
+    bool mono;
+    juce::AudioBuffer<float> delay;
+    int pos = 0;
+};
+
 float maxError (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b, int from, int to)
 {
     float error = 0;
@@ -214,6 +272,22 @@ int main (int argc, char** argv)
         bandMix (p, 0); runAudioCase (p, 96000, { 1, 1, 1 }, 73, "All bands dry with latency retained");
         bandMix (p, 50); runAudioCase (p, 44100, { .625f, .625f, .625f }, 73, "50 percent band mix");
         bandMix (p, 100);
+
+        // ---- An effect whose sidechain input cannot be switched off (as some Audio Units) -------
+        {
+            // VST3 lets a host switch any bus off, so a format that cannot do so is stood in for by an
+            // instance made here: gain 0.25, latency 73, plus whatever arrives on its sidechain.
+            TriadProcessor sidechain;
+            const auto error = sidechain.loadInstance (1, 0, std::make_unique<SidechainEffect>());
+            require (error.isEmpty(), ("Effect with an always-on sidechain loads (" + error + ")").toRawUTF8());
+            require (sidechain.getSlotInfo (1, 0).channels == 4,
+                     ("Its sidechain input stays on (channels: " + juce::String (sidechain.getSlotInfo (1, 0).channels) + ")").toRawUTF8());
+            runAudioCase (sidechain, 48000, { 1, 0.25f, 1 }, 73, "Always-on sidechain input is fed silence");
+            // An effect Triad cannot host says what layout it offers.
+            const auto refused = sidechain.loadInstance (0, 0, std::make_unique<SidechainEffect> (true));
+            require (refused.contains ("Mono"), ("A mono-only effect is refused with its layout named (" + refused + ")").toRawUTF8());
+            std::cout << "Mono-only effect refused: " << refused << std::endl;
+        }
 
         // ---- Per-slot mix (FL-style slot knobs) ----------------------------------------------
         for (int b = 0; b < 3; ++b) p.setSlotMix (b, 0, 50);
