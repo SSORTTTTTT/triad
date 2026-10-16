@@ -84,7 +84,7 @@ public:
         : AudioPluginInstance (BusesProperties().withInput ("In", monoOnly ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo(), true)
                                                 .withOutput ("Out", monoOnly ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo(), true)
                                                 .withInput ("Sidechain", juce::AudioChannelSet::stereo(), true)),
-          mono (monoOnly)
+          mono (monoOnly), posts (postOnLoad)
     {
         setLatencySamples (73);
         live().insert (this);
@@ -94,6 +94,17 @@ public:
     ~SidechainEffect() override { live().erase (this); }
     static std::set<const void*>& live() { static std::set<const void*> s; return s; }
     static inline int delivered = 0, deliveredAfterDeletion = 0;
+    // Its editor does the same when it opens.
+    struct PostingEditor final : juce::GenericAudioProcessorEditor
+    {
+        explicit PostingEditor (juce::AudioProcessor& p) : GenericAudioProcessorEditor (p)
+        {
+            live().insert (this);
+            juce::MessageManager::callAsync ([self = this] { ++(live().count (self) > 0 ? editorDelivered : editorDeliveredAfterDeletion); });
+        }
+        ~PostingEditor() override { live().erase (this); }
+    };
+    static inline int editorDelivered = 0, editorDeliveredAfterDeletion = 0;
     void fillInPluginDescription (juce::PluginDescription& d) const override
     {
         d.name = mono ? "Mono Only" : "Sidechain Effect"; d.pluginFormatName = "Test"; d.manufacturerName = "Triad Tests";
@@ -124,8 +135,8 @@ public:
     double getTailLengthSeconds() const override { return 0; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
-    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
-    bool hasEditor() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return posts ? new PostingEditor (*this) : nullptr; }
+    bool hasEditor() const override { return posts; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram (int) override {}
@@ -134,7 +145,7 @@ public:
     void getStateInformation (juce::MemoryBlock&) override {}
     void setStateInformation (const void*, int) override {}
 private:
-    bool mono;
+    bool mono, posts = false;
     juce::AudioBuffer<float> delay;
     int pos = 0;
 };
@@ -348,6 +359,20 @@ int main (int argc, char** argv)
             juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
             require (SidechainEffect::delivered == 2 && SidechainEffect::deliveredAfterDeletion == 0 && SidechainEffect::live().empty(),
                      "After Triad closes, its effects get their messages and are then deleted");
+            // An effect window closed (with its slot removed) right after it opened.
+            if (juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr)
+            {
+                TriadProcessor w;
+                w.prepareToPlay (48000, 512);
+                require (w.loadInstance (0, 0, std::make_unique<SidechainEffect> (false, true)).isEmpty(), "Load an effect whose editor posts a message");
+                w.showEffect (0, 0);
+                w.removeSlot (0, 0);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
+                require (SidechainEffect::editorDelivered == 1 && SidechainEffect::editorDeliveredAfterDeletion == 0,
+                         "A window closed right after opening gets its editor's message before it is deleted");
+            }
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
+            require (SidechainEffect::live().empty(), "Everything is deleted in the end");
             std::cout << "Removed effects are deleted after their pending messages: passed" << std::endl;
         }
         // ---- An effect that outputs NaN cannot break the mix ------------------------------------
