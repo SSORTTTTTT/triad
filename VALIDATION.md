@@ -1,5 +1,33 @@
 # Validation — Triad
 
+## Triad v3 (0.3.1) on macOS — 2026-10-16
+
+GitHub Actions `macos-14` runner (Apple M1, virtualised, 3 cores, no GPU), macOS 14.8, JUCE 8.0.12; commit `c03321e`, run 38902310830.
+
+| Check | Result |
+| --- | --- |
+| AU and VST3 build, installer `Triad-v3-0.3.1-macOS-AppleSilicon.pkg` | Built; 3.2 MB per format, helper 326 KB, package 3.2 MB |
+| Apple `auval -v aufx Trid Tsrt` | AU VALIDATION SUCCEEDED |
+| pluginval, strictness 5 (GUI tests skipped) | VST3: SUCCESS; AU: SUCCESS |
+| Integration tests | All passed, including: an effect whose sidechain input cannot be switched off (fed silence), an effect that outputs NaN (silenced, restarted 3 times, bypassed), effects and windows deleted only after their own pending messages (removed, or Triad closed) |
+| Standard stress test (test effect + Apple AUs) | Passed: 200 effects with all 220 LFO routes on (LFO cost 5%), 3,000 random edits while playing, 24 instances, 60-plug-in scan with 20 crashing |
+| Real third-party plug-ins | 51 effects (VST3 + AU): Surge XT Effects, BYOD, ChowCentaur, ChowMatrix, ChowMultiTool, ChowPhaser Mono/Stereo, CHOW Tape Model, Dragonfly ER/Plate/Room/Hall, Airwindows Consolidated, GATE-12, TIME-12, FILT-R, REEV-R, wolf-shaper, 16 Apple AUs. Every one loaded and opened its window on top of Triad |
+| Real plug-ins: big project | 200 effects, all LFOs on: no NaN; saved (3 MB) and reopened in 5.8 s |
+| Real plug-ins: 5 x 3,000 random edits | Run 38898025628: all five sequences passed (15,000 edits). Run 38902310830: four passed; the fifth crashed once inside FILT-R's own message handling (see below) |
+| Real plug-ins: 24 instances, plug-in list | Passed (run 38898025628) |
+
+Problems found with real plug-ins and fixed in 0.3.1:
+
+- Surge XT Effects (AU) was refused: its sidechain input cannot be switched off. It now loads; the sidechain is fed silence.
+- ChowMatrix crashed (pure virtual call) when deleted before a message it had posted to itself arrived — after loading, playing, or when a whole Triad was closed. Removed effects, closed effect windows and the effects of a closed Triad now go to a shared "graveyard" and are deleted about a second later.
+- FILT-R sometimes outputs NaN. Triad now silences invalid audio from any effect, restarts the effect up to three times, then bypasses it with a message.
+- The integration test process crashed at exit when the graveyard was deleted after singletons it needs; an empty graveyard now deletes itself so the next one is made after them.
+
+Still open:
+
+- Rare crash inside FILT-R / REEV-R (tiagolr) message handling (`juce::MessageQueue::runLoopSourceCallback`, SIGSEGV), seen twice in about 30,000 machine-speed edits, right after the last instance of the plug-in was deleted. It looks like the plug-in shutting its own JUCE copy down while one of its messages is being delivered. Possible Triad-side workaround: keep one idle instance of each plug-in loaded for the session.
+- Plug-in windows drawn with OpenGL (Dragonfly) are opened but not left on screen on the CI Mac, which has no GPU (software OpenGL stalls for minutes).
+
 ## Triad v2 (0.2.2) on macOS — 2026-10-15
 
 GitHub Actions `macos-14` runner (Apple M1, virtualised, 3 cores), macOS 14.8, Xcode 15.4, JUCE 8.0.12; `Build-Mac.command` run unmodified (commit `8f6a818`). Also built and tested on Linux (debug) before the Mac run.
