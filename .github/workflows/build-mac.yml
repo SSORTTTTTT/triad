@@ -106,7 +106,18 @@ jobs:
                  "$PWD/build-tests/fixtures/Triad Crash Fixture.vst3" \
                  "$(cat scanner-path.txt)" \
                  "$PWD/stress-real.txt" 777 --real 2>&1 | tee stress-real-log.txt
-          exit ${PIPESTATUS[0]}
+          status=${PIPESTATUS[0]}
+          echo "Stress test exit code: $status" | tee -a stress-real-log.txt
+          if [ "$status" -ne 0 ]; then
+            # macOS writes a crash report with every thread's call stack a few seconds after a crash.
+            sleep 15
+            i=0
+            for f in "$HOME"/Library/Logs/DiagnosticReports/*Stress* /Library/Logs/DiagnosticReports/*Stress*; do
+              [ -f "$f" ] || continue
+              i=$((i + 1)); cp "$f" "stress-real-crash-$i.txt"; echo "Crash report: $f"
+            done
+          fi
+          exit $status
 
       - name: pluginval (VST3 and AU, strictness 5)
         continue-on-error: true
@@ -146,6 +157,7 @@ jobs:
             stress-real.txt
             stress-real-log.txt
             stress-*hang-sample.txt
+            stress-real-crash-*.txt
             free-plugins.log
             pluginval-*.log
             ci-ui/*.png
@@ -158,7 +170,7 @@ jobs:
         run: |
           set -u
           out="$RUNNER_TEMP/ci-results"; rm -rf "$out"; mkdir -p "$out"
-          cp -f build-mac.log auval.log test-results-mac.txt stress-results.txt stress-log.txt stress-real.txt stress-real-log.txt stress-*hang-sample.txt free-plugins.log pluginval-*.log "$out/" 2>/dev/null || true
+          cp -f build-mac.log auval.log test-results-mac.txt stress-results.txt stress-log.txt stress-real.txt stress-real-log.txt stress-*hang-sample.txt stress-real-crash-*.txt free-plugins.log pluginval-*.log "$out/" 2>/dev/null || true
           cp -f Installer/*.pkg ci-ui/*.png "$out/" 2>/dev/null || true
           echo "run=${{ github.run_id }} sha=${{ github.sha }} job_status=${{ job.status }}" > "$out/RUN.txt"
           cd "$out"

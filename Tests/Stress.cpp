@@ -25,6 +25,9 @@
 #include <thread>
 #if ! JUCE_WINDOWS
  #include <unistd.h>
+ #include <csignal>
+ #include <cstring>
+ #include <execinfo.h>
 #endif
 
 #if JUCE_MAC
@@ -143,9 +146,49 @@ private:
     std::thread thread;
 };
 Watchdog* watchdog = nullptr;
+bool verbose = false;   // print every step (real plug-ins: so the log shows what led up to a problem)
+
+// If the run crashes, the crash handler prints the step it was in and the four before it.
+char stepTrail[5][400] {};
+std::atomic<int> stepCount { 0 };
+#if ! JUCE_WINDOWS
+void writeText (const char* text) { const auto ignored = ::write (2, text, std::strlen (text)); juce::ignoreUnused (ignored); }
+void onCrash (int signal)
+{
+    writeText ("\n*** CRASH (");
+    writeText (signal == SIGSEGV ? "SIGSEGV" : signal == SIGBUS ? "SIGBUS" : signal == SIGABRT ? "SIGABRT" : signal == SIGILL ? "SIGILL" : signal == SIGFPE ? "SIGFPE" : "signal");
+    writeText (") while the stress test was in:\n");
+    const int n = stepCount.load();
+    for (int i = juce::jmax (0, n - 5); i < n; ++i)
+    {
+        writeText (i == n - 1 ? "  now:    " : "  before: ");
+        writeText (stepTrail[i % 5]);
+        writeText ("\n");
+    }
+    writeText ("Call stack of the crashing thread:\n");
+    void* frames[128];
+    backtrace_symbols_fd (frames, backtrace (frames, 128), 2);
+    std::signal (signal, SIG_DFL);
+    std::raise (signal);
+}
+void installCrashHandler()
+{
+    for (int signal : { SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE }) std::signal (signal, onCrash);
+}
+#else
+void installCrashHandler() {}
+#endif
+
 // What the run is doing now, and how long that may take before the watchdog calls it a hang.
 void step (const juce::String& what, double limitSeconds = 120.0)
 {
+    if (what.isNotEmpty())
+    {
+        const int n = stepCount.load();
+        what.copyToUTF8 (stepTrail[n % 5], sizeof (stepTrail[0]));
+        stepCount = n + 1;
+        if (verbose) std::cout << "  > " << what << std::endl;
+    }
     // TRIAD_STRESS_STEP_LIMIT (seconds) shortens every limit, to check the watchdog itself.
     static const double cap = [] { const char* v = std::getenv ("TRIAD_STRESS_STEP_LIMIT"); return v != nullptr ? std::atof (v) : 0.0; }();
     if (cap > 0.0) limitSeconds = juce::jmin (limitSeconds, cap);
@@ -592,21 +635,23 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             int choice = r.nextInt (130);
             if (effects >= maxEffects && choice < 30) choice = 30 + r.nextInt (70);   // full: edit or remove instead
             juce::String name;
-            auto begin = [&] (const char* what)
+            auto begin = [&] (const char* what, const juce::String& extra = {})
             {
                 name = what;
-                step ("edit " + juce::String (op + 1) + ": " + name + " (band " + juce::String (band + 1) + ", slot " + juce::String (slot + 1) + ")");
+                const auto there = slot < p.getSlotCount (band) ? p.getSlotInfo (band, slot) : TriadProcessor::SlotInfo {};
+                step ("edit " + juce::String (op + 1) + ": " + name + " (band " + juce::String (band + 1) + ", slot " + juce::String (slot + 1)
+                      + (there.name.isNotEmpty() ? ": " + there.name + " " + there.format : juce::String()) + ")" + extra);
             };
             if (choice < 22)
             {
-                begin ("load effect (new slot)");
                 const auto& d = pool.effects[(size_t) r.nextInt ((int) pool.effects.size())];
+                begin ("load effect (new slot)", ", loading " + d.name + " (" + d.pluginFormatName + ")");
                 if (p.loadEffect (band, slots, d, false).isNotEmpty()) ++failedLoads;
             }
             else if (choice < 30)
             {
-                begin ("replace effect");
                 const auto& d = pool.effects[(size_t) r.nextInt ((int) pool.effects.size())];
+                begin ("replace effect", ", with " + d.name + " (" + d.pluginFormatName + ")");
                 if (p.loadEffect (band, slot, d, false).isNotEmpty()) ++failedLoads;
             }
             else if (choice < 40) { begin ("remove slot"); p.removeSlot (band, slot); }
@@ -938,6 +983,7 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI gui;
     Watchdog guard;
     watchdog = &guard;
+    installCrashHandler();
     juce::File reportFile;
     try
     {
@@ -956,6 +1002,7 @@ int main (int argc, char** argv)
             else reportFile = juce::File (arg);
         }
         reportPath = reportFile;
+        verbose = real;
         say ("Triad stress test" + juce::String (real ? " with the plug-ins installed on this computer" : "") + ", Triad " TRIAD_VERSION " ("
              + juce::SystemStats::getOperatingSystemName() + ", " + juce::SystemStats::getCpuModel() + ", "
              + juce::String (juce::SystemStats::getNumCpus()) + " cores)");
