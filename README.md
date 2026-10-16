@@ -1,8 +1,8 @@
 # Triad — multiband effects host
 
-Version 0.3.0 ("Triad v3") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
+Version 0.3.1 ("Triad v3") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
 
-**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v3-0.3.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
+**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v3-0.3.1-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
 
 ## What it does
 
@@ -50,7 +50,7 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
    - **CMake 3.22+**: uses one from Homebrew or `/Applications/CMake.app` if present; otherwise it downloads the official CMake 3.31.9 into `deps/` (checksum-verified) for this build only.
    - **JUCE 8.0.12**: downloaded into `deps/JUCE` at the pinned commit on the first run.
    - An internet connection is needed for the first run. A full log is written to `build-mac.log`.
-4. When it finishes, Finder shows `Installer/Triad-v3-0.3.0-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
+4. When it finishes, Finder shows `Installer/Triad-v3-0.3.1-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
    - `/Library/Audio/Plug-Ins/Components/Triad v3.component` (AU)
    - `/Library/Audio/Plug-Ins/VST3/Triad v3.vst3` (VST3)
 
@@ -116,7 +116,8 @@ The point-based mix LFO is deferred until after testing the multiband host; see 
 - Bands, crossovers and their parameters are positional (Band 1 is always the lowest). Adding a band in the middle shifts the bands above it up by one, and their mix values move with them; DAW automation lanes stay attached to positions, so re-check automation after changing the band layout.
 - Frequencies are kept in order in the DSP. If typed values or automation cross, the higher crossover keeps priority and lower ones are limited 1% below it; the display shows the effective frequencies. The top crossover is limited to 45% of the sample rate.
 - The spectrum shows the input (before the bands are split), with a +3 dB/octave tilt so typical music reads level.
-- Stereo effects only. No VST2, instruments, sidechain inputs, MIDI routing or mono layouts; hosted effects' parameters are not re-exposed for DAW automation.
+- Stereo effects only. No VST2, instruments, MIDI routing or mono layouts; hosted effects' parameters are not re-exposed for DAW automation. An effect whose sidechain input cannot be switched off (some Audio Units, e.g. Surge XT Effects) is hosted with that input fed silence.
+- Protection against misbehaving effects: if an effect outputs invalid audio (NaN/Inf), Triad silences it, restarts it (up to three times) and then bypasses it with a message, so it cannot break the DAW's mix. Removed effects, closed effect windows and the effects of a closed Triad are deleted about a second later, after messages the plug-ins posted to themselves have arrived (some plug-ins otherwise crash the DAW when removed right after loading or playing).
 - Building the effect list is crash-isolated (see above). Effects you load still run inside the DAW process, as in any host: a plug-in that crashes while playing can still take the DAW down. Loading/replacing plugins and opening some plugin editors can briefly interrupt audio. Do initial compatibility checks in a test project.
 - Latency compensation assumes each effect reports its latency correctly. Changes are reconciled on the message thread, with a brief silent interval instead of misaligned audio. Up to 262,144 samples per effect and per band chain; beyond that the effect is bypassed with a status message.
 - Projects restored from a background thread are instantiated on the message thread; audio stays silent until restoration completes. Missing plugins keep their identity and state for later recovery, and their slots pass audio through.
@@ -126,7 +127,7 @@ The point-based mix LFO is deferred until after testing the multiband host; see 
 
 ## Tests
 
-With `TRIAD_BUILD_TESTS=ON` (the default), CMake builds real VST3 fixtures — an effect that applies stored gain with 73 samples of latency, an instrument, and a "plug-in" that crashes (or hangs) the moment it is loaded — plus two programs. `TriadTests` loads, processes and recalls actual plug-ins rather than mocking the host boundary: crossover reconstruction for 1–10 bands, a 16-effect chain on one band, slot and band mixes, bypass, moving/adding/removing slots, adding/removing bands with effects loaded, Triad 0.1 and 0.2 project migration, the effects-only list (instruments excluded; the crashing and hanging fixtures only ever take down Triad Scanner, never the test process), Audio Unit hosting on macOS, editor windows and UI snapshots. `TriadStress` loads 200 effects into one Triad, makes 3,000 random edits while another thread plays audio through it, runs 24 instances at once, and scans 60 plug-ins of which 20 crash; it reports timings and fails on any crash or NaN/Inf output.
+With `TRIAD_BUILD_TESTS=ON` (the default), CMake builds real VST3 fixtures — an effect that applies stored gain with 73 samples of latency, an instrument, and a "plug-in" that crashes (or hangs) the moment it is loaded — plus two programs. `TriadTests` loads, processes and recalls actual plug-ins rather than mocking the host boundary: crossover reconstruction for 1–10 bands, a 16-effect chain on one band, slot and band mixes, bypass, moving/adding/removing slots, adding/removing bands with effects loaded, Triad 0.1 and 0.2 project migration, the effects-only list (instruments excluded; the crashing and hanging fixtures only ever take down Triad Scanner, never the test process), Audio Unit hosting on macOS, editor windows and UI snapshots. `TriadStress` loads 200 effects into one Triad, makes 3,000 random edits while another thread plays audio through it, runs 24 instances at once, and scans 60 plug-ins of which 20 crash; it reports timings and fails on any crash or NaN/Inf output. On the CI Mac it also runs with `--real`: free third-party effects are installed (Surge XT Effects, the Chowdhury DSP effects, Dragonfly reverbs, Airwindows Consolidated, tiagolr's GATE-12, TIME-12, FILT-R and REEV-R, wolf-shaper) and every installed effect is loaded, its window opened, and used in all sections, with five different random-edit sequences. A watchdog names any step that hangs and samples every thread's stack; a crash prints the steps that led to it.
 
 ```sh
 cmake --build build --config Release --target TriadTests TriadStress TriadScanner TriadCrashFixture \

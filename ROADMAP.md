@@ -1,6 +1,13 @@
 # Triad roadmap
 
-## Current testing version — 0.3.0 ("Triad v3")
+## Current testing version — 0.3.1 ("Triad v3")
+
+0.3.1 (2026-10-16) is 0.3.0 hardened by stress tests with 51 real third-party effects on the cloud Mac:
+Surge XT Effects (AU) now loads; removed effects, closed effect windows and the effects of a closed
+Triad are deleted a moment later (ChowMatrix and REEV-R crashed when deleted right after loading or
+opening); effects that output NaN/Inf (FILT-R did) are silenced, restarted and then bypassed.
+
+### 0.3.0
 
 Built from the notes below (2026-10-15/16):
 

@@ -910,7 +910,7 @@ void TriadProcessor::publishInfo()
             n.pending = s.pendingRequest != 0;
             n.latency = s.latency;
             n.channels = s.effect != nullptr ? s.channels : 2;
-            n.invalidAudio = s.invalidBlocks.load (std::memory_order_relaxed);
+            n.invalidAudio = s.effect != nullptr ? s.invalidBlocks.load (std::memory_order_relaxed) : 0;
             n.mix = s.mixPercent.load();
             next[(size_t) b].push_back (std::move (n));
         }

@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$PWD"
 
-VERSION="0.3.0"
+VERSION="0.3.1"
 PRODUCT="Triad v3"                 # bundle and display name (plug-in IDs unchanged from Triad 0.1)
 JUCE_COMMIT="29396c22c93392d6738e021b83196283d6e4d850"   # JUCE 8.0.12
 CMAKE_FALLBACK_VERSION="3.31.9"
