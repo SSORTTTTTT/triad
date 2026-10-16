@@ -1012,8 +1012,11 @@ int main (int argc, char** argv)
              + juce::String (juce::SystemStats::getNumCpus()) + " cores)");
         const auto pool = real ? buildRealPool (scanner) : buildPool (effect, scanner);
         bigProject (pool, real ? 10.0 : 20.0);
-        // Real plug-ins load and reopen far more slowly than the test effect: that section gets 15 minutes.
-        editsWhilePlaying (pool, seed, 3000, real ? 900.0 : 0.0);
+        // With real plug-ins: five different random sequences, each given up to 8 minutes.
+        if (real)
+            for (int i = 0; i < 5; ++i) editsWhilePlaying (pool, seed + i, 3000, 480.0);
+        else
+            editsWhilePlaying (pool, seed, 3000, 0.0);
         manyInstances (pool);
         pluginList (effect, crashFixture, scanner);
         step ({}, 0);

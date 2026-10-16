@@ -15,6 +15,15 @@ plugins=(
   "Chowdhury-DSP/ChowMatrix|mac.*\.(dmg|pkg)$"
   "michaelwillis/dragonfly-reverb|(mac|osx).*\.(zip|dmg|pkg)$"
   "baconpaul/airwin2rack|(mac|darwin).*\.(dmg|pkg|zip)$"
+  "Chowdhury-DSP/BYOD|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
+  "jatinchowdhury18/ChowPhaser|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
+  "jatinchowdhury18/KlonCentaur|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
+  "Chowdhury-DSP/ChowMultiTool|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
+  "tiagolr/gate12|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
+  "tiagolr/time12|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
+  "tiagolr/filtr|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
+  "tiagolr/reevr|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
+  "wolf-plugins/wolf-shaper|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
 )
 
 asset_url()   # repository regex
@@ -26,12 +35,15 @@ try:
     releases = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
+seen = []
 for release in releases if isinstance(releases, list) else []:
     if release.get("draft"): continue
     for asset in release.get("assets", []):
         name = asset["name"]
+        seen.append(name)
         if pattern.search(name) and not re.search(r"(intel|x86_64|x64|arm64-only-debug|source|clap-only|lv2)", name, re.I):
             print(asset["browser_download_url"]); sys.exit(0)
+print("  assets offered: " + (", ".join(seen[:12]) or "none"), file=sys.stderr)
 ' "$2"
 }
 
