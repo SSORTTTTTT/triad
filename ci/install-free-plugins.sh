@@ -12,7 +12,7 @@ auth=()
 plugins=(
   "surge-synthesizer/releases-xt|mac.*\.dmg$"
   "jatinchowdhury18/AnalogTapeModel|mac.*\.(dmg|pkg)$"
-  "jatinchowdhury18/ChowMatrix|mac.*\.(dmg|pkg)$"
+  "Chowdhury-DSP/ChowMatrix|mac.*\.(dmg|pkg)$"
   "michaelwillis/dragonfly-reverb|(mac|osx).*\.(zip|dmg|pkg)$"
   "baconpaul/airwin2rack|(mac|darwin).*\.(dmg|pkg|zip)$"
 )
@@ -22,7 +22,11 @@ asset_url()   # repository regex
   curl -fsSL "${auth[@]}" "https://api.github.com/repos/$1/releases?per_page=6" 2>/dev/null | python3 -c '
 import json, re, sys
 pattern = re.compile(sys.argv[1], re.I)
-for release in json.load(sys.stdin):
+try:
+    releases = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for release in releases if isinstance(releases, list) else []:
     if release.get("draft"): continue
     for asset in release.get("assets", []):
         name = asset["name"]
@@ -62,7 +66,8 @@ for entry in "${plugins[@]}"; do
     *.pkg) sudo installer -pkg "$file" -target / >/dev/null && echo "    installed" ;;
     *.dmg)
       mount="$work/mount-$(basename "$file")"; mkdir -p "$mount"
-      if yes | hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mount" "$file" >/dev/null; then
+      # "yes" accepts a licence prompt if the image has one (its broken pipe is not an error).
+      if (set +o pipefail; yes | hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$mount" "$file" >/dev/null 2>&1); then
         install_from_dir "$mount"
         hdiutil detach "$mount" -quiet || hdiutil detach "$mount" -force -quiet || true
       else echo "  could not open the disk image, skipped"; fi ;;
