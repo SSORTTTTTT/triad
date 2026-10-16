@@ -89,7 +89,7 @@ The source archive deliberately omits Linux binaries: they cannot be installed i
 
 Audio tests exercised 44.1, 48, and 96 kHz; crossover controls were also checked at 8 kHz for their sample-rate guard. Mouse interaction was tested by dispatching JUCE mouse callbacks; native pointer interaction in a Mac DAW is still pending. The fixture is a real stereo VST3 effect with stored gain and 73 samples of latency. Test output is in `test-results.txt`.
 
-The default native UI snapshot is `Triad-preview.png`. A narrow-band snapshot is included in `Tests/UI/`. These were rendered by the compiled JUCE editor, not generated as mockups.
+The 0.1.1 snapshots have since been replaced by 0.2.0 ones (`Triad-preview.png`, `Tests/UI/`). These were rendered by the compiled JUCE editor, not generated as mockups.
 
 ## Not yet validated
 
