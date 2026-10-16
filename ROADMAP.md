@@ -68,7 +68,12 @@ Today each crossover is a fixed, steep Linkwitz-Riley 24 dB/octave split, so an 
 - A **readout** next to the dot shows the slope in dB per octave (e.g. "12 dB/oct"); double-click resets it to 24.
 - Steps: 6, 12, 24, 36 and 48 dB/oct (Linkwitz-Riley-type filters at each step, so the bands still add back to the
   original sound when no effects are loaded). Per crossover, saved with projects and presets, automatable.
-- Thomas will send a picture of ShaperBox's multiband band splitting as the visual reference.
+- Visual reference from Thomas: `docs/reference/shaperbox-multiband-slope.jpg` (ShaperBox 3 multiband: dashed line
+  per crossover, a slope label such as "6dB" above the frequency label "228Hz", the selected band shaded).
+- **Band colours overlap across the slope:** each band's region is tinted in its own colour (the per-band colours
+  Thomas likes), and across a crossover the two colours fade into each other. A gentle slope gives a wide overlap,
+  a hard cut a narrow one, so you can see at a glance how much of one band bleeds into the next.
+- ShaperBox picks the slope from a dropdown; Triad does both: drag the dot, or click the dB readout to pick from a list.
 
 ### 3. Knobs inside third-party effects (detail)
 
