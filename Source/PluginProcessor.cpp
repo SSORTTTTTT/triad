@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "PlatformWindows.h"
+#include <cstring>
 #include <map>
 #include <numeric>
 #include <set>
@@ -103,6 +104,24 @@ juce::String describeLayout (const juce::AudioProcessor::BusesLayout& layout)
         return names.isEmpty() ? juce::String ("none") : names.joinIntoString (" + ");
     };
     return "in: " + list (layout.inputBuses) + ", out: " + list (layout.outputBuses);
+}
+
+// True when every sample is a finite number (checked on the bits, so it holds even with fast math).
+bool allFinite (const juce::AudioBuffer<float>& b, int channels, int samples)
+{
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        const auto* data = b.getReadPointer (ch);
+        juce::uint32 bad = 0;
+        for (int i = 0; i < samples; ++i)
+        {
+            juce::uint32 bits;
+            std::memcpy (&bits, data + i, sizeof (bits));
+            bad |= (juce::uint32) ((bits & 0x7f800000u) == 0x7f800000u);
+        }
+        if (bad != 0) return false;
+    }
+    return true;
 }
 
 float peakOf (const juce::AudioBuffer<float>& b, int channels)
@@ -433,6 +452,48 @@ void TriadProcessor::timerCallback()
         const juce::ScopedTryLock lock (gate);
         if (lock.isLocked()) alignLatency();
     }
+    handleInvalidAudio();
+}
+void TriadProcessor::handleInvalidAudio()
+{
+    // The structure only changes on this (message) thread, so it can be read here without the lock.
+    bool any = false;
+    for (int b = 0; b < numBands && ! any; ++b)
+        for (auto& s : bands[(size_t) b]->slots)
+            any |= s->effect != nullptr && s->invalidBlocks.load (std::memory_order_relaxed) != s->invalidHandled;
+    if (! any) return;
+    juce::String message;
+    {
+        const juce::ScopedLock lock (gate);
+        for (int b = 0; b < numBands; ++b)
+            for (auto& slotPtr : bands[(size_t) b]->slots)
+            {
+                auto& s = *slotPtr;
+                const int bad = s.invalidBlocks.load (std::memory_order_relaxed);
+                if (s.effect == nullptr || bad == s.invalidHandled) continue;
+                s.invalidHandled = bad;
+                // Its state probably holds NaN now: restart it (as a host does), up to three times.
+                if (++s.invalidResets <= 3)
+                {
+                    if (prepared)
+                    {
+                        s.effect->releaseResources();
+                        s.effect->setRateAndBufferSizeDetails (rate.load(), capacity);
+                        s.effect->prepareToPlay (rate.load(), capacity);
+                    }
+                    s.dryDelay.reset();
+                    message = s.description.name + " produced invalid audio (NaN); Triad silenced it and restarted it";
+                }
+                else
+                {
+                    s.error = "Produced invalid audio (NaN) repeatedly; bypassed";
+                    message = s.description.name + " kept producing invalid audio (NaN); Triad bypassed it";
+                }
+            }
+        alignLatency();
+        publishInfo();
+    }
+    setStatus (message);
 }
 void TriadProcessor::retire (std::unique_ptr<juce::AudioPluginInstance> effect)
 {
@@ -548,6 +609,12 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
                 {
                     juce::AudioBuffer<float> view (buffer.getArrayOfWritePointers(), 2, n);
                     slot.effect->processBlock (view, childMidi);
+                }
+                // An effect that outputs NaN/Inf would break the whole mix in the DAW: silence it.
+                if (! allFinite (buffer, 2, n))
+                {
+                    for (int ch = 0; ch < 2; ++ch) buffer.clear (ch, 0, n);
+                    slot.invalidBlocks.fetch_add (1, std::memory_order_relaxed);
                 }
                 if (slot.effect->getLatencySamples() != slot.latency)
                 { audio.clear(); return; }
@@ -818,6 +885,7 @@ void TriadProcessor::publishInfo()
             n.pending = s.pendingRequest != 0;
             n.latency = s.latency;
             n.channels = s.effect != nullptr ? s.channels : 2;
+            n.invalidAudio = s.invalidBlocks.load (std::memory_order_relaxed);
             n.mix = s.mixPercent.load();
             next[(size_t) b].push_back (std::move (n));
         }
@@ -1065,6 +1133,7 @@ juce::String TriadProcessor::finishInstall (int band, int slotIndex, const juce:
         s->error.clear();
         s->pendingRequest = 0;
         s->channels = effectChannels (*s->effect);
+        s->invalidBlocks = 0; s->invalidHandled = 0; s->invalidResets = 0;
         s->dryDelay.reset();
         alignLatency();
     }

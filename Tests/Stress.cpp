@@ -308,6 +308,21 @@ bool usesOpenGL (juce::Component* window)
    #endif
     return false;
 }
+// Effects that produced invalid audio (NaN/Inf), which Triad silenced (then restarted or bypassed).
+std::map<juce::String, int> invalidEffects;
+void noteInvalidAudio (const TriadProcessor& p)
+{
+    for (int b = 0; b < p.getBandCount(); ++b)
+        for (int s = 0; s < p.getSlotCount (b); ++s)
+        {
+            const auto info = p.getSlotInfo (b, s);
+            if (info.invalidAudio > 0)
+            {
+                auto& worst = invalidEffects[info.name + " (" + info.format + ")"];
+                worst = juce::jmax (worst, info.invalidAudio);
+            }
+        }
+}
 int loadedCount (const TriadProcessor& p)
 {
     int n = 0;
@@ -524,6 +539,7 @@ void bigProject (const Pool& pool, double seconds)
              + ms (total / blocks) + " per " + juce::String (block) + "-sample block (" + juce::String (100.0 * total / blocks / budget, 1)
              + "% of one core), worst " + ms (worst) + ", peak level " + juce::String (juce::Decibels::gainToDecibels (peak), 1) + " dBFS");
         require (finite, "Big project output is finite (no NaN/Inf)");
+        noteInvalidAudio (*p);
         if (pass == 0) plainAverage = total / blocks;
         else say ("LFO cost: " + juce::String (100.0 * (total / blocks - plainAverage) / juce::jmax (1.0e-6, plainAverage), 1)
                   + "% more processing than the same project without LFOs");
@@ -804,6 +820,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             if (took > t.worst) { t.worst = took; t.worstOp = op + 1; }
             done = op + 1;
             checkInvariants (p, name + " (operation " + juce::String (op + 1) + ")");
+            noteInvalidAudio (p);
             require (! nonFinite.load(), "Audio stayed finite (failed after " + name + ", operation " + juce::String (op + 1) + ")");
             peakEffects = juce::jmax (peakEffects, loadedCount (p));
         }
@@ -902,6 +919,7 @@ void manyInstances (const Pool& pool)
     say ("10 s of audio through all of them: average " + ms (totalTime / blocks) + " per block for the whole project ("
          + juce::String (100.0 * totalTime / blocks / budget, 1) + "% of one core's real-time budget), worst " + ms (worst));
     require (finite, "Many-instance output is finite");
+    for (auto& t : triads) noteInvalidAudio (*t);
     step ("many instances: closing, then 40 open/close cycles", 900);
     start = juce::Time::getMillisecondCounterHiRes();
     triads.clear();
@@ -1021,6 +1039,13 @@ int main (int argc, char** argv)
         manyInstances (pool);
         pluginList (effect, crashFixture, scanner);
         step ({}, 0);
+        if (! invalidEffects.empty())
+        {
+            juce::StringArray list;
+            for (auto& [effect, blocks] : invalidEffects) list.add (effect + ": " + juce::String (blocks) + (blocks == 1 ? " block" : " blocks"));
+            say ("\nHosted effects that produced invalid audio (NaN/Inf), which Triad silenced and then restarted or bypassed: "
+                 + list.joinIntoString ("; "));
+        }
         say ("\nPASS: no crashes, no NaN/Inf output, all checks held");
         watchdog = nullptr;
         return 0;

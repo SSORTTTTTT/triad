@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <set>
 #include <stdexcept>
 
@@ -136,6 +137,36 @@ private:
     bool mono;
     juce::AudioBuffer<float> delay;
     int pos = 0;
+};
+
+// A broken effect: its output is NaN. Counts how often the host restarts it.
+class NanEffect final : public juce::AudioPluginInstance
+{
+public:
+    NanEffect() : AudioPluginInstance (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true)
+                                                       .withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+    void fillInPluginDescription (juce::PluginDescription& d) const override { d.name = "NaN Effect"; d.pluginFormatName = "Test"; }
+    const juce::String getName() const override { return "NaN Effect"; }
+    void prepareToPlay (double, int) override { ++prepares; }
+    void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+    {
+        for (int c = 0; c < b.getNumChannels(); ++c)
+            for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (c, i, std::numeric_limits<float>::quiet_NaN());
+    }
+    double getTailLengthSeconds() const override { return 0; }
+    bool acceptsMidi() const override { return false; }
+    bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+    static inline int prepares = 0;
 };
 
 float maxError (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b, int from, int to)
@@ -318,6 +349,38 @@ int main (int argc, char** argv)
             require (SidechainEffect::delivered == 2 && SidechainEffect::deliveredAfterDeletion == 0 && SidechainEffect::live().empty(),
                      "After Triad closes, its effects get their messages and are then deleted");
             std::cout << "Removed effects are deleted after their pending messages: passed" << std::endl;
+        }
+        // ---- An effect that outputs NaN cannot break the mix ------------------------------------
+        {
+            TriadProcessor q;
+            q.prepareToPlay (48000, 512);
+            require (q.loadInstance (1, 0, std::make_unique<NanEffect>()).isEmpty(), "Load an effect that outputs NaN");
+            const int preparesAtLoad = NanEffect::prepares;
+            juce::AudioBuffer<float> audio (2, 512);
+            juce::MidiBuffer midi;
+            juce::Random random (5);
+            float peak = 0.0f;
+            for (int round = 0; round < 6; ++round)
+            {
+                for (int block = 0; block < 4; ++block)
+                {
+                    for (int c = 0; c < 2; ++c)
+                        for (int i = 0; i < 512; ++i) audio.setSample (c, i, random.nextFloat() - 0.5f);
+                    q.processBlock (audio, midi);
+                    for (int c = 0; c < 2; ++c)
+                        for (int i = 0; i < 512; ++i)
+                        {
+                            require (std::isfinite (audio.getSample (c, i)), "Triad's output stays finite while a hosted effect outputs NaN");
+                            peak = juce::jmax (peak, std::abs (audio.getSample (c, i)));
+                        }
+                }
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
+            }
+            const auto info = q.getSlotInfo (1, 0);
+            require (info.invalidAudio > 0 && NanEffect::prepares - preparesAtLoad == 3, "The effect is silenced and restarted three times");
+            require (info.status.contains ("bypassed"), "Then it is bypassed");
+            require (peak > 0.01f, "The other bands keep playing");
+            std::cout << "NaN from a hosted effect: silenced, restarted 3 times, then bypassed (" << info.status << ")" << std::endl;
         }
 
         // ---- Per-slot mix (FL-style slot knobs) ----------------------------------------------

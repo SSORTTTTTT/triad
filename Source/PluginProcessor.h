@@ -70,6 +70,7 @@ public:
         bool loaded = false, hasContent = false, enabled = true, pending = false, modulated = false;
         int latency = 0;
         int channels = 2;                        // channels the effect processes (more than 2: an extra bus fed silence)
+        int invalidAudio = 0;                    // blocks of NaN/Inf output Triad silenced
         float mix = 100.0f, liveMix = 100.0f;   // knob, and the value playing now (with LFOs)
     };
     int getSlotCount (int band) const;
@@ -203,6 +204,9 @@ private:
         bool enabled = true;
         int latency = 0;            // latency compensated for this slot (0 when inactive)
         int channels = 2;           // channels the effect processes: stereo, plus any always-on extra bus (fed silence)
+        // Blocks of invalid audio (NaN/Inf) the effect produced; Triad silences them, then resets or bypasses it.
+        std::atomic<int> invalidBlocks { 0 };
+        int invalidHandled = 0, invalidResets = 0;
         juce::int64 pendingRequest = 0;
         std::atomic<float> mixPercent { 100.0f };
         std::atomic<float> liveMix { 100.0f };
@@ -239,6 +243,7 @@ private:
     std::array<std::unique_ptr<Band>, triad::maxBands> bands;
     // Removed effects (and those of a closed Triad) are deleted a moment later; see EffectGraveyard.
     static void retire (std::unique_ptr<juce::AudioPluginInstance>);
+    void handleInvalidAudio();   // message thread: reset (or bypass) effects that produced NaN/Inf
     std::array<juce::AudioBuffer<float>, triad::maxBands> split;
     juce::AudioBuffer<float> wide;   // for effects with an extra bus that cannot be switched off (e.g. a sidechain)
     triad::Splitter splitter;
