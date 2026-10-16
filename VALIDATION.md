@@ -1,8 +1,55 @@
-# Validation — Triad 0.1.1
+# Validation — Triad
+
+## Triad 0.2.0 on macOS — 2026-10-15
+
+GitHub Actions `macos-14` runner (Apple M1, virtualised), macOS 14.8, Xcode 15.4, CMake 4.4, JUCE 8.0.12; `Build-Mac.command` run unmodified (commit `7b52a14`).
+
+| Check | Result |
+| --- | --- |
+| AU and VST3 build (arm64, Release, macOS 12.0+) | Built |
+| Shipped binary size (stripped) | 2.9 MB per format |
+| Installer `Triad-0.2.0-macOS-AppleSilicon.pkg` | 2.6 MB; AU and VST3 choices; arm64, ad-hoc signed, not relocatable |
+| Installed with `sudo installer` | Both bundles in `/Library/Audio/Plug-Ins`; signatures valid |
+| Apple `auval -v aufx Trid Tsrt` | AU VALIDATION SUCCEEDED |
+| pluginval, strictness 5 (GUI tests skipped) | VST3: SUCCESS; AU: SUCCESS |
+| Crossover reconstruction, 1–10 bands | Max error 2.7e-7 against a cascade of JUCE all-pass filters |
+| Built-in Linkwitz–Riley filter vs JUCE | Max error 0 at 44.1, 48 and 96 kHz |
+| One effect per band, band mix 0/50/100% | Max error ≤ 3e-8 |
+| Slot mix 50%, slot + band mix together | Max error ≤ 6e-8 |
+| Three-effect chain on one band, other bands latency-aligned (219 samples) | Max error 2.2e-8 |
+| Bypassed slot (latency and processing removed), slot at 0%, moving a slot | Max error 1.5e-8; mix knob travels with the effect |
+| Add a band at 1 kHz with effects loaded; remove a band | Effects and mixes stay with their bands; max error ≤ 3e-8 |
+| Ten bands with a ten-effect chain (730 samples), save and recall | Max error 3e-8 |
+| Project recall with edited hosted state; outer Triad VST3 with nested effects | Max error ≤ 6e-8 |
+| Triad 0.1 project opened in 0.2 | Effect in band 2, crossovers 300 Hz / 3 kHz; max error 3e-8 |
+| Missing plug-ins | Reported; slots pass audio; stored state preserved |
+| Effects-only list | Test effect listed; test instrument and a metadata-less instrument excluded; crash-marked plug-in skipped; cache reused |
+| Audio Unit hosting | Apple AUDelay listed as an effect and hosted in a slot |
+| Effect windows | Open on load and on click; close cleanly |
+| Interface | Rendered with 3, 5 and 10 bands, live spectrum visible |
+
+## Triad 0.1.1 on macOS — 2026-10-15
+
+GitHub Actions `macos-14` runner (Apple M1, virtualised), macOS 14.8, Xcode 15.4 / Apple clang 15, CMake 4.4, JUCE 8.0.12 at the pinned commit; `Build-Mac.command` run unmodified, commit `443b180`.
+
+| Check | Result |
+| --- | --- |
+| AU and VST3 build (arm64, Release, macOS 12.0+) | Built |
+| Shipped binary size (stripped) | 2.6 MB per format (was 3.5 MB before the size work) |
+| Installer `Triad-0.1.1-macOS-AppleSilicon.pkg` | 2.4 MB; AU and VST3 choices; payload verified arm64, ad-hoc signed, not relocatable |
+| `sudo installer -pkg ... -target /` | Installed to `/Library/Audio/Plug-Ins/Components` and `/Library/Audio/Plug-Ins/VST3`; signatures valid |
+| Apple `auval -v aufx Trid Tsrt` | AU VALIDATION SUCCEEDED |
+| pluginval, strictness 5 (GUI tests skipped) | VST3: SUCCESS; AU: SUCCESS |
+| Integration tests (native arm64) | All passed, including the native hosted-effect editor window, which is skipped on headless Linux |
+| Built-in Linkwitz–Riley filter vs JUCE `dsp::LinkwitzRileyFilter` | Max error 0 at 44.1, 48 and 96 kHz |
+
+Still to check by hand: Ableton Live and FL Studio scanning, playback, automation, project recall and offline rendering with your own third-party effects. The installer is ad hoc signed, not Developer ID signed or notarized.
+
+## Triad 0.1.1 source validation (Linux)
 
 Completed 2026-09-29 (Los Angeles time) / 2026-09-30 UTC.
 
-## Built successfully
+### Built successfully
 
 Ubuntu x86-64; GCC 13.3; CMake 3.28.3; JUCE 8.0.12 at commit `29396c22c93392d6738e021b83196283d6e4d850`; Release configuration.
 
@@ -15,7 +62,7 @@ Ubuntu x86-64; GCC 13.3; CMake 3.28.3; JUCE 8.0.12 at commit `29396c22c93392d673
 
 The source archive deliberately omits Linux binaries: they cannot be installed into the user's Mac DAWs.
 
-## Passed
+### Passed
 
 | Check | Result |
 | --- | --- |
@@ -44,26 +91,10 @@ Audio tests exercised 44.1, 48, and 96 kHz; crossover controls were also checked
 
 The default native UI snapshot is `Triad-preview.png`. A narrow-band snapshot is included in `Tests/UI/`. These were rendered by the compiled JUCE editor, not generated as mockups.
 
-## macOS build and installer — 2026-10-15
-
-GitHub Actions `macos-14` runner (Apple M1, virtualised), macOS 14.8, Xcode 15.4 / Apple clang 15, CMake 4.4, JUCE 8.0.12 at the pinned commit; `Build-Mac.command` run unmodified, commit `443b180`.
-
-| Check | Result |
-| --- | --- |
-| AU and VST3 build (arm64, Release, macOS 12.0+) | Built |
-| Shipped binary size (stripped) | 2.6 MB per format (was 3.5 MB before the size work) |
-| Installer `Triad-0.1.1-macOS-AppleSilicon.pkg` | 2.4 MB; AU and VST3 choices; payload verified arm64, ad-hoc signed, not relocatable |
-| `sudo installer -pkg ... -target /` | Installed to `/Library/Audio/Plug-Ins/Components` and `/Library/Audio/Plug-Ins/VST3`; signatures valid |
-| Apple `auval -v aufx Trid Tsrt` | AU VALIDATION SUCCEEDED |
-| pluginval, strictness 5 (GUI tests skipped) | VST3: SUCCESS; AU: SUCCESS |
-| Integration tests (native arm64) | All passed, including the native hosted-effect editor window, which is skipped on headless Linux |
-| Built-in Linkwitz–Riley filter vs JUCE `dsp::LinkwitzRileyFilter` | Max error 0 at 44.1, 48 and 96 kHz |
-
-Still to check by hand: Ableton Live and FL Studio scanning, playback, automation, project recall and offline rendering with your own third-party effects. The installer is ad hoc signed, not Developer ID signed or notarized.
-
 ## Not yet validated
 
-- Ableton Live and FL Studio scanning, playback, automation, bypass, project recall, and offline rendering on the user's Mac.
+- Ableton Live and FL Studio scanning, playback, automation (including after adding/removing bands), bypass, project recall, and offline rendering on the user's Mac.
+- The effect list against the user's full plug-in collection (hundreds of VST3/AU effects and instruments).
 - Native hosted-plugin editor windows. This environment cannot create a display-server socket; the native-window test explicitly skipped. The main plugin interface was rendered and inspected offscreen.
 - Compatibility with specific commercial third-party plugins, shell bundles, license managers, or plugins that change latency dynamically.
 - Realtime stress testing, very large plugin states, and long sessions.

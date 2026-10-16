@@ -15,10 +15,13 @@ inline juce::Colour bandColour (int band)
 const juce::Colour background (0xff252729), panel (0xff1b1e1c), textColour (0xffe7eae5), dimTextColour (0xffa6afa5),
                    slotRow (0xff2e3230), slotRowHover (0xff363b38), ledColour (0xff8fe04a);
 
+// Readable frequency labels: "37.6 Hz", "133 Hz", "2.5 kHz", "10.95 kHz".
 inline juce::String formatHz (float hz)
 {
-    return (hz >= 1000.0f ? juce::String (hz / 1000.0f, 3) : juce::String (hz, 2))
-        .trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + (hz >= 1000.0f ? " kHz" : " Hz");
+    auto trimmed = [] (const juce::String& s) { return s.containsChar ('.') ? s.trimCharactersAtEnd ("0").trimCharactersAtEnd (".") : s; };
+    if (hz >= 1000.0f) return trimmed (juce::String (hz / 1000.0f, 2)) + " kHz";
+    if (hz >= 100.0f) return juce::String (juce::roundToInt (hz)) + " Hz";
+    return trimmed (juce::String (hz, 1)) + " Hz";
 }
 // Accepts "250", "250 Hz", "2.5k", "2.5 kHz". Returns <= 0 if the text is not a frequency.
 inline float parseHz (const juce::String& text)

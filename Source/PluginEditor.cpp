@@ -39,9 +39,9 @@ void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
     const auto v = slider.getValue();
     const auto label = (v >= 99.95 ? juce::String ("100") : juce::String (juce::roundToInt (v))) + "%";
     g.setColour (textColour.withAlpha (slider.isEnabled() ? 0.95f : 0.5f));
-    g.setFont (small ? juce::FontOptions (8.5f, juce::Font::bold) : juce::FontOptions (juce::jmax (11.0f, radius * 0.46f), juce::Font::bold));
-    const auto inner = juce::Rectangle<float> ((arcRadius - stroke) * 1.9f, radius).withCentre (centre).toNearestInt();
-    g.drawFittedText (label, inner, juce::Justification::centred, 1, 0.75f);
+    g.setFont (small ? juce::FontOptions (9.5f, juce::Font::bold) : juce::FontOptions (juce::jmax (11.0f, radius * 0.46f), juce::Font::bold));
+    const auto inner = juce::Rectangle<float> ((arcRadius - stroke * 0.5f) * 2.0f, radius).withCentre (centre).toNearestInt();
+    g.drawFittedText (label, inner, juce::Justification::centred, 1, 0.68f);
 }
 
 TriadEditor::TriadEditor (TriadProcessor& p) : AudioProcessorEditor (p), processor (p), frequencyDisplay (p)
