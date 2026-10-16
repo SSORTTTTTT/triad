@@ -25,7 +25,55 @@ Built from the notes below (2026-10-15/16):
 - Settings gear: sort by company or A-Z, auto-check for new plug-ins, extra plug-in folders, window size. Favourites at the top of the effect list.
 - Presets: whole-Triad presets and per-band chain presets.
 
-Still to come: see "Later" below (parameters inside third-party effects, randomizer, most-used sorting, routing between bands).
+Still to come: see "Next update" below (LFO randomizer, soft crossovers, knobs inside third-party effects) and "Later" (most-used sorting, routing between bands).
+
+## Next update — notes from Thomas (2026-10-16, after using 0.3.2)
+
+Thomas: 0.3.2 "seems to be working really good"; the LFO editor feels like ShaperBox, which he likes.
+Order: **1. LFO randomizer and presets first**, then 2. soft crossovers, then 3. knobs inside third-party effects.
+
+### 1. LFO randomizer ("Generate") — do this first
+
+A dice/Generate control in the LFO tab toolbar that draws a new shape for the selected LFO, with controls that
+rein the randomness in, so results are usable rhythms rather than noise:
+
+- **Style: Wavy <-> Hard.** Wavy = smooth curves between points; Hard = straight lines and steps on the grid
+  (gate/stutter shapes, like Gross Beat volume patterns). In between mixes the two.
+- **Density: Simple <-> Busy.** How many points/steps per cycle — from a few slow moves to a crazier rhythm.
+- **Randomness: Subtle <-> Wild.** Low = a variation of the current shape (or of a preset); high = a completely new shape.
+- Follows the grid (1/16, triplet, ...) and SNAP, so hard shapes land on the beat; one click Undo, like every edit.
+- Generator presets, e.g. Wavy, Gated, Stutter, Pump, Glitch — each a starting setting of the three controls.
+- **Trained on Thomas's own presets ("My style").** The generator learns from a library of shapes Thomas likes:
+  which step lengths, gaps, ramps and curve shapes they use, and builds new shapes from those habits (recombining
+  and varying rhythms from the library) instead of pure random numbers. Thomas will provide:
+  - Gross Beat banks/presets (.fst or the bank files), ShaperBox presets, Infiltrator presets — any he actually uses;
+    if a format can't be read, screenshots of each preset's LFO/envelope screen (the shapes are traced from those).
+  - A short note on favourites. 20–50 or more shapes is a good start; more makes it closer to his style.
+  - Later: a "Save to my library" button in Triad, so shapes he draws or keeps from Generate train it further.
+  - Used as a private style reference on his Mac; other companies' factory presets are not copied into Triad as-is.
+- **More preset shapes** in the palette (gates, stutters, pumps, triplet and dotted patterns, ramps), organised by type.
+- **Smoother LFO visuals** and a **Smooth** amount per LFO that rounds hard corners (also avoids clicks).
+
+### 2. Soft crossovers ("bleed" between bands)
+
+Today each crossover is a fixed, steep Linkwitz-Riley 24 dB/octave split, so an effect stops sharply at the band edge
+(e.g. at 2.5 kHz). Add a **slope handle**: a small circle on each crossover line in the spectrum display, dragged up or
+down to go from a hard cut (48 dB/oct) to a broad, gentle one (12 or 6 dB/oct) where the effect fades into the
+neighbouring bands, like ShaperBox. Per crossover, saved with the project and presets. With Linkwitz-Riley-type
+filters at each slope, the bands still add back to the original sound when no effects are loaded. Thomas may send a
+picture of what he means.
+
+### 3. Knobs inside third-party effects (detail)
+
+Possible, and planned (see "Later" further down):
+
+- **Learn:** click Learn on an LFO or matrix row, move a knob in the effect's own window, and it is linked; or pick
+  from a list of the effect's parameters. The matrix shows the parameter's real name ("Band 1 · Slot 2 · KHS
+  Distortion · Drive"). Every LFO can then drive any knob in any hosted effect, as well as the mix knobs.
+- **DAW automation of hosted knobs:** FL Studio and Ableton cannot see inside Triad, so Triad would offer a set of
+  assignable macro parameters (e.g. 16) that the DAW can automate, each linked to any hosted knob.
+- Limits: a few plug-ins don't announce knob moves (Learn then falls back to the list); knobs are moved at Triad's
+  control rate (every 32 samples, smoothed), and some plug-ins click or use more CPU when a knob moves constantly.
 
 ## Notes from Thomas (2026-10-15) — built in 0.3.0 except where marked "Later"
 
