@@ -1,6 +1,11 @@
 # Triad roadmap
 
-## Current testing version — 0.3.1 ("Triad v3")
+## Current testing version — 0.3.2 ("Triad v3")
+
+0.3.2 (2026-10-16): one idle copy of each third-party effect stays loaded for the session, so a
+plug-in's last copy is never deleted mid-session (FILT-R and REEV-R occasionally crashed then).
+
+### 0.3.1
 
 0.3.1 (2026-10-16) is 0.3.0 hardened by stress tests with 51 real third-party effects on the cloud Mac:
 Surge XT Effects (AU) now loads; removed effects, closed effect windows and the effects of a closed

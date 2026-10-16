@@ -82,6 +82,9 @@ public:
     // `slot` may equal getSlotCount (band): the slot is then appended.
     // Returns an error message, or an empty string on success / when an async load started.
     juce::String loadEffect (int band, int slot, const juce::PluginDescription&, bool openEditor);
+    // Third-party effects kept loaded, idle, after their last copy was removed (one per effect, for the
+    // session): deleting a plug-in's last copy makes it shut down, which crashes some plug-ins.
+    static int getIdleEffectCount();
     // Hosts an effect instance that was created elsewhere (used by the tests).
     juce::String loadInstance (int band, int slot, std::unique_ptr<juce::AudioPluginInstance>);
     // Loads from a bundle/file; `preferredName` picks one plug-in from a multi-plug-in bundle.

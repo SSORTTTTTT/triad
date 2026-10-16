@@ -370,10 +370,11 @@ int main (int argc, char** argv)
             q.prepareToPlay (48000, 512);
             require (q.loadInstance (0, 0, std::make_unique<SidechainEffect> (false, true)).isEmpty(), "Load an effect that posts itself a message");
             q.removeSlot (0, 0);   // straight away, before its message has arrived
-            require (! SidechainEffect::live().empty(), "The removed effect is not deleted on the spot");
+            const auto liveAfterRemoval = SidechainEffect::live().size();
+            require (liveAfterRemoval >= 1, "The removed effect is not deleted on the spot");
             juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
             require (SidechainEffect::delivered == 1 && SidechainEffect::deliveredAfterDeletion == 0, "Its message arrives while it still exists");
-            require (SidechainEffect::live().empty(), "It is deleted a moment later");
+            require (SidechainEffect::live().size() == 1, "A moment later only one idle copy of the effect is left");
             // The same when Triad itself is closed (a project closed, Triad removed from a track).
             {
                 TriadProcessor closing;
@@ -382,8 +383,8 @@ int main (int argc, char** argv)
             }
             require (! SidechainEffect::live().empty(), "Closing Triad does not delete its effects on the spot");
             juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
-            require (SidechainEffect::delivered == 2 && SidechainEffect::deliveredAfterDeletion == 0 && SidechainEffect::live().empty(),
-                     "After Triad closes, its effects get their messages and are then deleted");
+            require (SidechainEffect::delivered == 2 && SidechainEffect::deliveredAfterDeletion == 0 && SidechainEffect::live().size() == 1,
+                     "After Triad closes, its effects get their messages and are then deleted (one idle copy is kept)");
             // An effect window closed (with its slot removed) right after it opened.
             if (juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr)
             {
@@ -396,8 +397,16 @@ int main (int argc, char** argv)
                 require (SidechainEffect::editorDelivered == 1 && SidechainEffect::editorDeliveredAfterDeletion == 0,
                          "A window closed right after opening gets its editor's message before it is deleted");
             }
+            // Many copies removed at once: still only one idle copy stays loaded.
+            {
+                TriadProcessor many;
+                many.prepareToPlay (48000, 512);
+                for (int i = 0; i < 4; ++i)
+                    require (many.loadInstance (0, i == 0 ? 0 : many.getSlotCount (0), std::make_unique<SidechainEffect>()).isEmpty(), "Load copies");
+            }
             juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
-            require (SidechainEffect::live().empty(), "Everything is deleted in the end");
+            require (SidechainEffect::live().size() == 1, "One idle copy of each effect is kept, the rest are deleted");
+            require (TriadProcessor::getIdleEffectCount() >= 1, "Idle copies are counted");
             std::cout << "Removed effects are deleted after their pending messages: passed" << std::endl;
         }
         // ---- An effect that outputs NaN cannot break the mix ------------------------------------

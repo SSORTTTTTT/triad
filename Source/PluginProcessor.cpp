@@ -12,58 +12,85 @@ namespace
 // effect's editor) are deleted about a second later on the message thread. Some plug-ins and their
 // editors post themselves messages (when they load or open, or from the audio thread) and crash if
 // one arrives after they were deleted. Entries are deleted oldest first, so an editor always goes
-// before its effect. Shared by every Triad instance, so it
-// outlives the one that removed them; anything left is deleted when the plug-in shuts down.
+// before its effect.
+//
+// One idle copy of each third-party effect is also kept loaded for the rest of the session (its
+// "keeper"). Deleting the last copy of a plug-in makes it shut down its own internals, and some
+// plug-ins (seen with FILT-R and REEV-R) occasionally crash doing that; with a keeper that only
+// happens once, when the DAW unloads Triad.
+//
+// Shared by every Triad instance (message thread only). Whenever something new is loaded the
+// graveyard is re-made, so at shutdown (when JUCE deletes the newest objects first) it is deleted
+// before the plug-in format caches and window managers that its contents need.
 class EffectGraveyard final : private juce::Timer, public juce::DeletedAtShutdown
 {
 public:
+    static EffectGraveyard* get()
+    {
+        if (current == nullptr) current = new EffectGraveyard();
+        return current;
+    }
+    static void renew()
+    {
+        if (current == nullptr) return;
+        auto* old = current;
+        auto* fresh = new EffectGraveyard();   // registered for shutdown after everything that exists now
+        fresh->entries = std::move (old->entries);
+        fresh->keepers = std::move (old->keepers);
+        old->entries.clear();
+        old->keepers.clear();
+        current = fresh;
+        delete old;
+        if (! fresh->entries.empty()) fresh->startTimer (250);
+    }
+    static int keeperCount() { return current != nullptr ? (int) current->keepers.size() : 0; }
     ~EffectGraveyard() override
     {
         stopTimer();
-        clearSingletonInstance();
-        const juce::ScopedLock lock (mutex);
+        if (current == this) current = nullptr;
         for (auto& e : entries) { e.window.reset(); e.effect.reset(); }   // oldest first, editor before effect
         entries.clear();
+        keepers.clear();
     }
     void add (std::unique_ptr<juce::AudioPluginInstance> effect, std::unique_ptr<juce::DocumentWindow> window)
     {
-        const juce::ScopedLock lock (mutex);
         entries.push_back ({ std::move (effect), std::move (window), juce::Time::getMillisecondCounter() });
         if (! isTimerRunning()) startTimer (250);
     }
-    JUCE_DECLARE_SINGLETON_INLINE (EffectGraveyard, false)
 private:
+    EffectGraveyard() = default;
     struct Entry
     {
         std::unique_ptr<juce::AudioPluginInstance> effect;
         std::unique_ptr<juce::DocumentWindow> window;   // declared after the effect: deleted first
         juce::uint32 since = 0;
     };
+    static juce::String keeperKey (const juce::AudioPluginInstance& effect)
+    {
+        const auto d = effect.getPluginDescription();
+        if (d.manufacturerName.startsWithIgnoreCase ("Apple")) return {};   // macOS's own effects need no keeper
+        return d.pluginFormatName + "|" + d.fileOrIdentifier + "|" + d.name;
+    }
     void timerCallback() override
     {
-        std::vector<Entry> due;
+        const auto now = juce::Time::getMillisecondCounter();
+        auto keep = std::find_if (entries.begin(), entries.end(), [now] (const Entry& e) { return now - e.since < 1000; });
+        std::vector<Entry> due (std::make_move_iterator (entries.begin()), std::make_move_iterator (keep));
+        entries.erase (entries.begin(), keep);
+        if (entries.empty()) stopTimer();
+        for (auto& e : due)
         {
-            const juce::ScopedLock lock (mutex);
-            const auto now = juce::Time::getMillisecondCounter();
-            auto keep = std::find_if (entries.begin(), entries.end(), [now] (const Entry& e) { return now - e.since < 1000; });
-            due.assign (std::make_move_iterator (entries.begin()), std::make_move_iterator (keep));
-            entries.erase (entries.begin(), keep);
-            if (entries.empty()) stopTimer();
+            e.window.reset();
+            if (e.effect == nullptr) continue;
+            const auto key = keeperKey (*e.effect);
+            if (key.isNotEmpty() && keepers.find (key) == keepers.end()) keepers[key] = std::move (e.effect);   // kept idle
+            else e.effect.reset();
         }
-        // Deleted outside the lock (a plug-in may take a while to close), oldest first.
-        for (auto& e : due) { e.window.reset(); e.effect.reset(); }
-        // An empty graveyard goes away. The next one is made after whatever its effects and windows
-        // needed (plug-in format caches, window managers), so if the plug-in shuts down it is
-        // deleted before those, not after.
-        bool empty = false;
-        {
-            const juce::ScopedLock lock (mutex);
-            empty = entries.empty();
-        }
-        if (empty) deleteInstance();   // `this` is gone after this line
+        if (entries.empty() && keepers.empty()) delete this;   // `this` is gone after this line
     }
-    juce::CriticalSection mutex;
     std::vector<Entry> entries;
+    std::map<juce::String, std::unique_ptr<juce::AudioPluginInstance>> keepers;
+    static inline EffectGraveyard* current = nullptr;
 };
 
 // A hosted effect's window. It stays in front of Triad's window, and keys the effect does not use
@@ -513,18 +540,19 @@ void TriadProcessor::handleInvalidAudio()
     }
     setStatus (message);
 }
+int TriadProcessor::getIdleEffectCount() { return EffectGraveyard::keeperCount(); }
 void TriadProcessor::retire (std::unique_ptr<juce::AudioPluginInstance> effect)
 {
     if (effect == nullptr) return;
     effect->setPlayHead (nullptr);
-    if (auto* graveyard = EffectGraveyard::getInstance()) graveyard->add (std::move (effect), {});
+    EffectGraveyard::get()->add (std::move (effect), {});
 }
 void TriadProcessor::retire (std::unique_ptr<juce::DocumentWindow> window)
 {
     if (window == nullptr) return;
     triad::platform::release (*window);
     window->setVisible (false);
-    if (auto* graveyard = EffectGraveyard::getInstance()) graveyard->add ({}, std::move (window));
+    EffectGraveyard::get()->add ({}, std::move (window));
 }
 void TriadProcessor::startFadeIn() { fadeRemaining = fadeLength; }
 
@@ -1164,6 +1192,7 @@ juce::String TriadProcessor::finishInstall (int band, int slotIndex, const juce:
     }
     retire (std::move (oldWindow));   // an editor must be deleted before its processor (it is: oldest first)
     retire (std::move (old));
+    EffectGraveyard::renew();   // after whatever this effect's format needed
     stateChanged();
     if (openEditor) showEffect (band, slotIndex);
     return {};
@@ -1262,6 +1291,7 @@ void TriadProcessor::showEffect (int band, int slot)
     s->window->setVisible (true);
     triad::platform::keepAbove (*s->window, triadWindow);
     s->window->toFront (true);
+    EffectGraveyard::renew();   // after the window managers this window needed
 }
 void TriadProcessor::refreshWindowTitles()
 {
