@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_audio_basics/juce_audio_basics.h>
 
 namespace triad::ui
 {
@@ -13,7 +14,17 @@ inline juce::Colour bandColour (int band)
     return colours[juce::jlimit (0, 9, band)];
 }
 const juce::Colour background (0xff252729), panel (0xff1b1e1c), textColour (0xffe7eae5), dimTextColour (0xffa6afa5),
-                   slotRow (0xff2e3230), slotRowHover (0xff363b38), ledColour (0xff8fe04a);
+                   slotRow (0xff2e3230), slotRowHover (0xff363b38), ledColour (0xff8fe04a), accent (0xff9bd85c),
+                   headerColour (0xff303235), gridBackground (0xff111312);
+// Text with non-ASCII characters (middle dot, arrows) written as UTF-8 in the source.
+inline juce::String u8 (const char* text) { return juce::String::fromUTF8 (text); }
+// Decibels for meters and readouts: "-6.0 dB", "-inf".
+inline juce::String formatDb (float gain)
+{
+    if (gain < 1.0e-4f) return "-inf";
+    const auto db = juce::Decibels::gainToDecibels (gain);
+    return (db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB";
+}
 
 // Readable frequency labels: "37.6 Hz", "133 Hz", "2.5 kHz", "10.95 kHz".
 inline juce::String formatHz (float hz)

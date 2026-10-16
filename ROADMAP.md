@@ -1,13 +1,21 @@
 # Triad roadmap
 
-## Current testing version — 0.2.2 ("Triad v2")
+## Current testing version — 0.3.0 ("Triad v3")
 
-- Multiband effects host: opens with 3 bands, add up to 10 while working, remove any.
-- Effect slots per band in processing order (FL Studio mixer style), as many as needed: each band starts with Slot 1 and a "+ ADD SLOT" row underneath; every slot has its own dry/wet knob (value shown inside) and on/off light.
-- Band Mix per band. VST3 and Audio Unit effects; effects-only plug-in list built without loading plug-ins inside the DAW (Triad Scanner helper for the rest).
-- Live spectrum behind draggable crossovers; effect windows open on load.
+Built from the notes below (2026-10-15/16):
 
-## Notes for the next version (from Thomas, 2026-10-15) — not started
+- Tabs **BANDS | LFO | MATRIX** at the top.
+- LFO tab: a point/grid LFO for every effect's mix knob and every Band Mix (pre-linked, on as soon as you draw), extra LFOs, ShaperBox-style length menu (triplet / straight / dotted / free), 2x, 1/2, reverse, flip, snap, triplet grid, curves, copy/paste, undo/redo, shape palette, routing list.
+- MATRIX tab: per band, SOURCE | AMOUNT | INV | DESTINATION with on/off lights, scrolling sideways like the bands.
+- Effect windows stay in front of Triad; unused keys (spacebar) go back to the DAW (macOS).
+- Drag a band's header to move its chain to another band; right-click the spectrum to remove a band.
+- Band Volume with level meter; IN/OUT meters; smaller, wider window with a size setting.
+- Settings gear: sort by company or A-Z, auto-check for new plug-ins, extra plug-in folders, window size. Favourites at the top of the effect list.
+- Presets: whole-Triad presets and per-band chain presets.
+
+Still to come: see "Later" below (parameters inside third-party effects, randomizer, most-used sorting, routing between bands).
+
+## Notes from Thomas (2026-10-15) — built in 0.3.0 except where marked "Later"
 
 Do these with the LFO/routing work, once Thomas has tried 0.2.2 with his own plug-ins and sent the LFO and routing prompts. Guiding rule from Thomas: **make everyday use easy, with as few clicks as possible and nothing finicky.**
 
@@ -37,7 +45,7 @@ Do these with the LFO/routing work, once Thomas has tried 0.2.2 with his own plu
 - **Organising the effect list** (setting, in the gear menu):
   - Sort by **company** (today's layout, the default) or **A–Z by plug-in name** (one flat alphabetical list, company shown next to each name).
   - **Favourites**: mark an effect as a favourite (e.g. a star or right-click "Add to favourites" in the list); favourites appear in their own group at the top of the effect menu. Colour tags could come later.
-  - Later: **most used** first, from how often each effect is loaded in Triad (counted on this Mac only).
+  - **Later:** **most used** first, from how often each effect is loaded in Triad (counted on this Mac only).
 - **Plug-in catalog**: already a saved file (`~/Library/Application Support/Triad/PluginCache-v2.xml`) that is reused instead of re-scanning; only new or changed plug-ins are checked. Possible setting: "check for new plug-ins automatically" on/off, so the folder check only runs when Rescan is pressed (like FL Studio / Ableton).
 
 ### Keep as they are (Thomas likes these)

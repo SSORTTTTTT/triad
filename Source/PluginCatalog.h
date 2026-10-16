@@ -32,6 +32,7 @@ public:
         juce::File cacheFolder;
         juce::File scanner;                 // the helper; empty = look inside Triad's own bundle
         bool includeAudioUnits = true;
+        bool autoCheck = true;              // false: use the saved list until Rescan is pressed
         int timeoutMs = 30000;              // per plug-in, for the helper
     };
     static Options defaultOptions();
@@ -45,6 +46,7 @@ public:
     bool isScanning() const noexcept { return scanning.load(); }
     juce::String getProgress() const;
     void refresh();                        // pick up new, changed or removed plug-ins
+    void configure (const juce::StringArray& extraFolders, bool autoCheck);   // from the settings
     void rescanAll();                      // forget the cache (including plug-ins that crashed)
     bool waitUntilIdle (int timeoutMs);    // tests: true once a scan pass has finished
 
@@ -64,7 +66,7 @@ private:
         juce::String name, maker;          // for plug-ins that could not be checked
     };
     void run() override;
-    void scanPass (bool forget);
+    void scanPass (bool forget, bool cacheOnly);
     void listAudioUnits();
     FileRecord classify (const juce::File& bundle);
     bool readModuleInfo (const juce::File& bundle, FileRecord&) const;
@@ -75,7 +77,8 @@ private:
     void publish();
     juce::File cacheFile() const { return options.cacheFolder.getChildFile ("PluginCache-v2.xml"); }
 
-    const Options options;
+    Options options;                     // guarded by lock
+    Options active;                      // the scan thread's copy for the current pass
     juce::File scanner;
     // Owned by the scan thread.
     std::map<juce::String, std::pair<int, juce::String>> auKinds;   // normalised AU name -> (1 effect / 2 instrument, maker)
@@ -88,6 +91,6 @@ private:
     Counts counts;
     juce::String current;
     int processed = 0, queued = 0;
-    std::atomic<bool> scanning { true }, passRequested { true }, forgetRequested { false };
+    std::atomic<bool> scanning { true }, passRequested { true }, forgetRequested { false }, forcedPass { false };
     std::atomic<int> passesFinished { 0 };
 };

@@ -4,8 +4,9 @@
 //
 //  1. A big project: 10 bands x 20 slots (200 hosted effects, VST3 + Apple's Audio Units),
 //     timed against the real-time budget, saved and reopened.
-//  2. Thousands of random edits (bands, slots, effects, mixes, windows, project reloads,
-//     sample-rate changes) while a separate thread plays audio through Triad, as a DAW does.
+//  2. Thousands of random edits (bands, slots, effects, mixes, LFO drawing, the matrix, moving
+//     bands, chain presets, windows, project reloads, sample-rate changes) while a separate thread
+//     plays audio through Triad with a moving song position, as a DAW does.
 //  3. Many Triad instances at once, like one on every track of a project.
 //  4. The plug-in list with dozens of plug-ins that crash or need checking.
 // Any crash ends the program; NaN/Inf output or a broken invariant fails it.
@@ -201,6 +202,23 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
     std::atomic<bool> nonFinite { false };
     std::atomic<int> blocks { 0 }, silent { 0 }, automation { 0 };
     std::atomic<double> worstBlock { 0.0 };
+    // A DAW transport that plays (and sometimes stops), so the LFOs follow a song position.
+    struct Transport final : juce::AudioPlayHead
+    {
+        double ppq = 0.0, bpm = 128.0;
+        bool playing = true;
+        juce::Optional<PositionInfo> getPosition() const override
+        {
+            PositionInfo info;
+            info.setBpm (bpm);
+            info.setPpqPosition (ppq);
+            info.setIsPlaying (playing);
+            info.setTimeInSamples ((juce::int64) (ppq * 60.0 / bpm * 48000.0));
+            info.setTimeSignature (TimeSignature { 4, 4 });
+            return info;
+        }
+    } transport;
+    p.setPlayHead (&transport);
     std::thread audioThread ([&]
     {
         juce::Random r (seed + 1);
@@ -221,9 +239,11 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
                 params[r.nextInt (params.size())]->setValue (r.nextFloat());
                 ++automation;
             }
+            if (r.nextInt (400) == 0) transport.playing = ! transport.playing;
             const auto t0 = juce::Time::getMillisecondCounterHiRes();
             if (r.nextInt (50) == 0) p.processBlockBypassed (view, midi);
             else p.processBlock (view, midi);
+            if (transport.playing) transport.ppq += n * transport.bpm / 60.0 / rate.load();
             const auto dt = juce::Time::getMillisecondCounterHiRes() - t0;
             if (dt > worstBlock.load()) worstBlock = dt;
             bool finite = true;
@@ -257,7 +277,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
             const int slots = p.getSlotCount (band);
             const int slot = r.nextInt (slots);
             const int effects = loadedCount (p);
-            int choice = r.nextInt (100);
+            int choice = r.nextInt (130);
             if (effects >= maxEffects && choice < 30) choice = 30 + r.nextInt (70);   // full: edit or remove instead
             juce::String name;
             if (choice < 22)
@@ -309,13 +329,20 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
             }
             else if (choice < 94)
             {
-                name = "open/close Triad window";
-                if (! haveDisplay) name = "open/close Triad window (no display: skipped)";
-                else if (editor == nullptr)
+                name = "open/close Triad window, switch tabs";
+                if (editor == nullptr)
                 {
                     editor.reset (p.createEditor());
                     editor->setVisible (true);
                     if (auto* e = dynamic_cast<TriadEditor*> (editor.get())) e->refreshNow();
+                }
+                else if (r.nextBool())
+                {
+                    if (auto* e = dynamic_cast<TriadEditor*> (editor.get()))
+                    {
+                        e->setTab ((TriadEditor::Tab) r.nextInt (3));
+                        if (e->getTab() == TriadEditor::Tab::lfo) e->showLfo (band, r.nextBool() ? -1 : slot);
+                    }
                 }
                 else editor.reset();
             }
@@ -324,7 +351,71 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
                 name = "open effect window";
                 if (haveDisplay && p.getSlotInfo (band, slot).loaded) p.showEffect (band, slot);
             }
-            else { name = "close effect windows"; p.closeWindows(); }
+            else if (choice < 100) { name = "close effect windows"; p.closeWindows(); }
+            else if (choice < 108)
+            {
+                name = "draw an LFO";
+                namespace mod = triad::mod;
+                const int lfo = r.nextInt (juce::jmax (1, p.getLfoCount (band)));
+                auto shape = p.getLfoInfo (band, lfo).shape;
+                switch (r.nextInt (6))
+                {
+                    case 0: shape = mod::preset (r.nextInt (mod::numPresets())); break;
+                    case 1: shape = mod::repeated (shape, 2 + r.nextInt (2)); break;
+                    case 2: shape = mod::halved (shape); break;
+                    case 3: shape = mod::reversed (shape); break;
+                    case 4: shape = mod::flippedVertical (shape); break;
+                    default:
+                    {
+                        mod::Shape random;
+                        const int points = 2 + r.nextInt (12);
+                        for (int i = 0; i < points; ++i)
+                            random.push_back ({ i == 0 ? 0.0f : i == points - 1 ? 1.0f : r.nextFloat(), r.nextFloat(), (r.nextFloat() - 0.5f) * 12.0f });
+                        shape = random;
+                    }
+                }
+                p.setLfoShape (band, lfo, shape, true);
+                if (r.nextInt (4) == 0) p.undoLfo (band, lfo);
+            }
+            else if (choice < 114)
+            {
+                name = "matrix edit";
+                const int routes = p.getRouteCount (band);
+                const int route = routes > 0 ? r.nextInt (routes) : -1;
+                const auto destinations = p.getDestinations (band);
+                switch (r.nextInt (6))
+                {
+                    case 0: p.addRoute (band, r.nextInt (juce::jmax (1, p.getLfoCount (band))), destinations[(size_t) r.nextInt ((int) destinations.size())].first); break;
+                    case 1: if (route >= 0) p.removeRoute (band, route); break;
+                    case 2: if (route >= 0) p.setRouteMuted (band, route, r.nextBool()); break;
+                    case 3: if (route >= 0) p.setRouteAmount (band, route, r.nextFloat()); break;
+                    case 4: if (route >= 0) p.setRouteInvert (band, route, r.nextBool()); break;
+                    default: if (route >= 0) p.setRouteDestination (band, route, destinations[(size_t) r.nextInt ((int) destinations.size())].first); break;
+                }
+            }
+            else if (choice < 117)
+            {
+                name = "LFO length";
+                p.setLfoLength (band, r.nextInt (juce::jmax (1, p.getLfoCount (band))), r.nextInt ((int) triad::mod::lengths().size()));
+            }
+            else if (choice < 120)
+            {
+                name = "add/remove an LFO";
+                if (r.nextBool()) p.addLfo (band);
+                else p.removeLfo (band, r.nextInt (juce::jmax (1, p.getLfoCount (band))));
+            }
+            else if (choice < 124) { name = "move a band"; p.moveBand (band, r.nextInt (bands)); }
+            else if (choice < 127)
+            {
+                name = "chain preset copy";
+                if (effects < maxEffects - 20)
+                    if (auto chain = p.createChainXml (band)) p.loadChainXml (r.nextInt (bands), *chain);
+            }
+            else
+            {
+                name = "band volume";
+                if (auto* gain = p.parameters.getParameter (TriadProcessor::bandGainID (band))) gain->setValueNotifyingHost (r.nextFloat());
+            }
             ++counts[name];
             settle (p);
             pump (r.nextInt (3));
@@ -337,6 +428,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
     catch (...)
     {
         stop = true; resumeAudio(); audioThread.join();
+        p.setPlayHead (nullptr);
         throw;
     }
     // Let it play on a little with the final layout.
@@ -344,6 +436,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations)
     stop = true;
     resumeAudio();
     audioThread.join();
+    p.setPlayHead (nullptr);
     editor.reset();
     p.closeWindows();
     require (! nonFinite.load(), "Audio stayed finite");

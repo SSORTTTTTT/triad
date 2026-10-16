@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.2.2 LANGUAGES C CXX)
-# Installed as "Triad v2.vst3" / "Triad v2.component"; the plug-in IDs are unchanged from Triad 0.1,
-# so projects made with the earlier "Triad" open with Triad v2.
-set(TRIAD_PRODUCT_NAME "Triad v2")
+project(Triad VERSION 0.3.0 LANGUAGES C CXX)
+# Installed as "Triad v3.vst3" / "Triad v3.component"; the plug-in IDs are unchanged from Triad 0.1,
+# so projects made with the earlier "Triad" and "Triad v2" open with Triad v3.
+set(TRIAD_PRODUCT_NAME "Triad v3")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(TRIAD_BUILD_TESTS "Build integration tests and a test effect" ON)
@@ -33,7 +33,11 @@ juce_add_plugin(Triad
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "Triad uses audio input to process your sound.")
 target_sources(Triad PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/CrossoverDisplay.cpp
-    Source/BandStrip.cpp Source/PluginCatalog.cpp Source/AudioUnitList.cpp)
+    Source/BandStrip.cpp Source/PluginCatalog.cpp Source/AudioUnitList.cpp Source/Modulation.cpp Source/Settings.cpp
+    Source/Widgets.cpp Source/LfoPage.cpp Source/MatrixPage.cpp Source/PlatformWindows.cpp)
+if(APPLE)
+    target_sources(Triad PRIVATE Source/PlatformWindowsMac.mm)
+endif()
 target_compile_definitions(Triad PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=$<IF:$<PLATFORM_ID:Darwin>,1,0> JUCE_PLUGINHOST_VST=0

@@ -57,17 +57,42 @@ void compare (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>&
     std::cout << label << ": max error " << error << std::endl;
     require (error < 2.0e-5f, label);
 }
+// `skip`: samples ignored at the start (an LFO-moved knob glides to its value in a few milliseconds).
 void runAudioCase (TriadProcessor& p, double sr, const std::vector<float>& gains, int latency, const char* name,
-                   const std::vector<float>& cuts = threeBandCuts)
+                   const std::vector<float>& cuts = threeBandCuts, int skip = 0)
 {
     p.prepareToPlay (sr, 128);
     auto signal = input (8192);
     auto expected = reference (signal, sr, gains, latency, cuts);
     juce::MidiBuffer midi;
     p.processBlock (signal, midi);   // deliberately larger than the prepared block size
+    if (skip > 0)
+        for (int c = 0; c < 2; ++c) { signal.clear (c, 0, skip); expected.clear (c, 0, skip); }
     compare (signal, expected, name);
     require (p.getLatencySamples() == latency, "Host latency reporting");
 }
+float maxError (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b, int from, int to)
+{
+    float error = 0;
+    for (int c = 0; c < 2; ++c)
+        for (int s = from; s < to; ++s) error = juce::jmax (error, std::abs (a.getSample (c, s) - b.getSample (c, s)));
+    return error;
+}
+// A DAW transport for the tests: playing from bar 1 at 120 BPM, 4/4.
+struct TestPlayHead final : juce::AudioPlayHead
+{
+    double ppq = 0.0, bpm = 120.0;
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setBpm (bpm);
+        info.setPpqPosition (ppq);
+        info.setTimeInSamples ((juce::int64) 0);
+        info.setIsPlaying (true);
+        info.setTimeSignature (TimeSignature { 4, 4 });
+        return info;
+    }
+};
 std::vector<juce::XmlElement*> slotNodes (juce::XmlElement& root)
 {
     std::vector<juce::XmlElement*> result;
@@ -192,7 +217,7 @@ int main (int argc, char** argv)
 
         // ---- Per-slot mix (FL-style slot knobs) ----------------------------------------------
         for (int b = 0; b < 3; ++b) p.setSlotMix (b, 0, 50);
-        require (p.getParameters().size() == triad::maxCrossovers + triad::maxBands, "Slot mixes are not DAW parameters");
+        require (p.getParameters().size() == triad::maxCrossovers + 2 * triad::maxBands, "Slot mixes are not DAW parameters (band volumes are)");
         runAudioCase (p, 48000, { .625f, .625f, .625f }, 73, "50 percent slot mix");
         bandMix (p, 50);
         runAudioCase (p, 48000, { .8125f, .8125f, .8125f }, 73, "Slot mix and band mix together");
@@ -240,7 +265,7 @@ int main (int argc, char** argv)
         juce::MemoryBlock editedChildState;
         fixture->getStateInformation (editedChildState);
         auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), (int) saved.getSize());
-        require (xml->getIntAttribute ("version") == 3 && xml->getIntAttribute ("bands") == 3, "State version 3 with band count");
+        require (xml->getIntAttribute ("version") == 4 && xml->getIntAttribute ("bands") == 3, "State version 4 with band count");
         require (slotNodes (*xml).size() == 3, "One saved slot per loaded effect");
         for (auto* node : slotNodes (*xml))
         {
@@ -396,6 +421,119 @@ int main (int argc, char** argv)
             require (tenRestored.getBandCount() == 10 && tenRestored.getSlotCount (9) == chainLength
                      && tenRestored.getSlotInfo (9, chainLength - 1).loaded, "Ten bands and sixteen slots recall");
             runAudioCase (tenRestored, 48000, gains, 73 * chainLength, "Ten-band project recall", ten);
+        }
+
+        // ---- LFO shapes: 2x and 1/2 undo each other; reverse and flip are exact ---------------------
+        {
+            namespace mod = triad::mod;
+            const mod::Shape shape { { 0, 1, 0 }, { 0.3f, 0.2f, 2.5f }, { 0.6f, 0.9f, -1.5f }, { 1, 0, 0 } };
+            auto difference = [] (const mod::Shape& a, const std::function<float (float)>& f)
+            {
+                float error = 0;
+                for (int i = 0; i <= 2000; ++i)
+                {
+                    const float x = (float) i / 2000.0f * 0.99999f;
+                    error = juce::jmax (error, std::abs (mod::evaluate (a, x) - f (x)));
+                }
+                return error;
+            };
+            const auto twice = mod::repeated (shape, 2);
+            require (difference (twice, [&] (float x) { return mod::evaluate (shape, std::fmod (2.0f * x, 1.0f)); }) < 1.0e-4f, "2x repeats the pattern");
+            require (difference (mod::halved (twice), [&] (float x) { return mod::evaluate (shape, x); }) < 1.0e-4f, "1/2 undoes 2x");
+            require (difference (mod::halved (shape), [&] (float x) { return mod::evaluate (shape, x * 0.5f); }) < 1.0e-4f, "1/2 stretches the first half");
+            require (difference (mod::reversed (shape), [&] (float x) { return mod::evaluate (shape, 1.0f - x); }) < 1.0e-4f, "Reverse mirrors the shape, curves included");
+            require (difference (mod::flippedVertical (shape), [&] (float x) { return 1.0f - mod::evaluate (shape, x); }) < 1.0e-6f, "Flip vertical");
+            require (std::abs (mod::curveFraction (0.5f, mod::curveForMidpoint (0.25f)) - 0.25f) < 1.0e-4f, "Dragging a curve puts its middle under the mouse");
+            mod::Table table;
+            table.render (shape);
+            float tableError = 0;
+            for (int i = 0; i < 1000; ++i) tableError = juce::jmax (tableError, std::abs (table.lookup (i / 1000.0) - mod::evaluate (shape, i / 1000.0f)));
+            require (tableError < 2.0e-3f, "The audio thread's table follows the shape");
+            require (mod::fromText (mod::toText (shape)).size() == shape.size(), "Copy and paste a wave");
+            require (juce::String (mod::lengths()[(size_t) mod::defaultLength()].label) == "1 Bar", "LFOs start at 1 bar");
+            std::cout << "PASS: LFO shape editing (2x, 1/2, reverse, flip, curves, copy/paste); table error " << tableError << std::endl;
+        }
+
+        // ---- LFOs move the knobs ---------------------------------------------------------------------------
+        juce::MemoryBlock lfoState;
+        {
+            namespace mod = triad::mod;
+            TriadProcessor q;
+            q.prepareToPlay (48000, 128);
+            require (q.loadFile (1, effect).isEmpty(), "Load effect for LFO tests");
+            const int slotLfo = q.getSlotLfo (1, 0);
+            require (slotLfo >= 0 && q.getLfoInfo (1, slotLfo).slot == 0 && ! q.getLfoInfo (1, slotLfo).active, "Each slot has its own LFO, off until drawn");
+            require (q.getLfoInfo (1, slotLfo).target == "Triad Test Effect", "The LFO is named after its effect");
+            require (q.getRouteCount (1) == 2 && q.getRouteInfo (1, 1).destinationName == juce::String::fromUTF8 ("1 \xc2\xb7 Triad Test Effect Mix"), "Band Mix and slot LFOs are routed already");
+            runAudioCase (q, 48000, { 1, .25f, 1 }, 73, "Untouched LFOs change nothing");
+            q.setLfoShape (1, slotLfo, mod::flat (0.5f), true);
+            require (q.getLfoInfo (1, slotLfo).active && q.getSlotInfo (1, 0).modulated, "Drawing an LFO switches it on");
+            runAudioCase (q, 48000, { 1, .625f, 1 }, 73, "LFO at 50% sets the slot mix to 50%", threeBandCuts, 2048);
+            const int route = q.getRoutesFrom (1, slotLfo).front();
+            q.setRouteAmount (1, route, 0.5f);
+            runAudioCase (q, 48000, { 1, .4375f, 1 }, 73, "LFO amount 50%", threeBandCuts, 2048);
+            q.setRouteAmount (1, route, 1.0f);
+            q.setRouteInvert (1, route, true);
+            q.setLfoShape (1, slotLfo, mod::flat (0.2f), true);
+            runAudioCase (q, 48000, { 1, .4f, 1 }, 73, "Inverted LFO", threeBandCuts, 2048);
+            q.setRouteMuted (1, route, true);
+            runAudioCase (q, 48000, { 1, .25f, 1 }, 73, "Route switched off", threeBandCuts, 2048);
+            q.setRouteMuted (1, route, false);
+            q.setRouteInvert (1, route, false);
+            require (q.undoLfo (1, slotLfo) && juce::exactlyEqual (q.getLfoInfo (1, slotLfo).shape.front().y, 0.5f), "Undo an LFO edit");
+            require (q.redoLfo (1, slotLfo) && juce::exactlyEqual (q.getLfoInfo (1, slotLfo).shape.front().y, 0.2f), "Redo an LFO edit");
+            q.setLfoShape (1, slotLfo, mod::flat (1.0f), true);
+            setParam (q, TriadProcessor::bandGainID (0), -6.0f);
+            runAudioCase (q, 48000, { juce::Decibels::decibelsToGain (-6.0f), .25f, 1 }, 73, "Band volume -6 dB");
+            setParam (q, TriadProcessor::bandGainID (0), 0.0f);
+            // An LFO on band 3's volume: a square wave, 1/4 note at 120 BPM, following the song position.
+            const int extra = q.addLfo (2);
+            require (extra >= 0 && q.addRoute (2, extra, { TriadProcessor::Destination::bandVolume, 0 }) >= 0, "Add an LFO and route it");
+            q.setLfoShape (2, extra, { { 0, 1, 0 }, { 0.5f, 1, 0 }, { 0.5f, 0, 0 }, { 1, 0, 0 } }, true);
+            int quarter = 0;
+            while (juce::String (mod::lengths()[(size_t) quarter].label) != "1/4") ++quarter;
+            q.setLfoLength (2, extra, quarter);
+            TestPlayHead head;
+            q.setPlayHead (&head);
+            q.prepareToPlay (48000, 512);
+            auto signal = input (24000);
+            const auto on = reference (signal, 48000, { 1, .25f, 1 }, 73), off = reference (signal, 48000, { 1, .25f, 0 }, 73);
+            juce::MidiBuffer events;
+            q.processBlock (signal, events);
+            const float firstHalf = maxError (signal, on, 73 + 600, 12000 + 73 - 600), secondHalf = maxError (signal, off, 12000 + 73 + 600, 24000 - 600);
+            std::cout << "Square LFO on band volume, in time with the song: errors " << firstHalf << " / " << secondHalf << std::endl;
+            require (firstHalf < 2.0e-5f && secondHalf < 2.0e-5f, "A tempo-synced LFO shapes the band in time");
+            require (std::abs (q.getLfoPhase (2, extra)) < 0.01f || std::abs (q.getLfoPhase (2, extra) - 1.0f) < 0.01f, "LFO position follows the song");
+            q.setPlayHead (nullptr);
+            q.getStateInformation (lfoState);
+            // Moving a band's chain.
+            setParam (q, TriadProcessor::bandMixID (1), 60.0f);
+            require (q.moveBand (1, 2), "Move band 2's effects to band 3");
+            require (! q.getSlotInfo (1, 0).hasContent && q.getSlotInfo (2, 0).loaded, "The chain moved with its effects");
+            require (std::abs (getParam (q, TriadProcessor::bandMixID (2)) - 60.0f) < 0.01f && std::abs (getParam (q, TriadProcessor::bandMixID (1)) - 100.0f) < 0.01f,
+                     "Band mixes move with their chains");
+            require (q.getLfoCount (1) == 3 && q.getLfoCount (2) == 2, "LFOs move with their chains");
+            require (q.moveBand (2, 1), "Move it back");
+            // Chain presets: band 2's chain into band 3 of another Triad.
+            auto chain = q.createChainXml (1);
+            TriadProcessor other;
+            other.prepareToPlay (48000, 128);
+            require (chain != nullptr && other.loadChainXml (2, *chain).isEmpty(), "Load a chain preset");
+            require (other.getSlotInfo (2, 0).loaded && other.getLfoCount (2) == 2 && std::abs (getParam (other, TriadProcessor::bandMixID (2)) - 60.0f) < 0.01f,
+                     "Chain preset brings effects, LFOs and mixes");
+            std::cout << "PASS: LFOs on slot mixes and band volume, moving bands, chain presets" << std::endl;
+        }
+        {
+            // Everything comes back with the project.
+            TriadProcessor r;
+            r.setStateInformation (lfoState.getData(), (int) lfoState.getSize());
+            r.prepareToPlay (48000, 128);
+            require (r.getLfoCount (2) == 3 && r.getRouteCount (2) == 3, "LFOs and routes recalled");
+            const auto info = r.getLfoInfo (2, 2);
+            require (info.shape.size() == 4 && juce::String (triad::mod::lengths()[(size_t) info.length].label) == "1/4", "LFO shape and length recalled");
+            require (r.getRouteInfo (2, 2).destination.kind == TriadProcessor::Destination::bandVolume && ! r.getRouteInfo (2, 2).muted, "Route recalled");
+            require (r.getLfoInfo (1, r.getSlotLfo (1, 0)).active, "Slot LFO recalled switched on");
+            std::cout << "PASS: LFO project recall" << std::endl;
         }
 
         // ---- Effects-only plug-in list, without ever loading a plug-in inside Triad ----------------
@@ -570,6 +708,19 @@ int main (int argc, char** argv)
             require (editor->getStrip (1)->getNumRows() == 1, "A removed slot row disappears");
             preview.setSlotMix (1, 0, 100);
             require (editor->getStrip (1)->getMixKnob().getValue() == 80.0, "Band knob shows its mix");
+            // Drag band 1's header onto band 3: its three effects move there.
+            {
+                auto* first = editor->getStrip (0);
+                auto* holder = first->getParentComponent();
+                const float step = (float) (first->getWidth() + 10);
+                const float y = 12.0f, x = (float) first->getX() + 40.0f;
+                editor->bandDrag (0, mouseAt (holder, x, y), 0);
+                for (int i = 1; i <= 10; ++i) editor->bandDrag (0, mouseAt (holder, x + step * 0.2f * (float) i, y, true), 1);
+                editor->bandDrag (0, mouseAt (holder, x + step * 2.0f, y, true), 2);
+                require (preview.getSlotCount (2) == 3 && preview.getSlotCount (0) == 1, "Dragging a band moves its effects");
+                require (preview.moveBand (2, 0), "And back");
+                editor->refreshNow();
+            }
             // Feed music-like noise so the live spectrum has something to draw.
             juce::Random random (7);
             juce::MidiBuffer midi;
@@ -604,6 +755,48 @@ int main (int argc, char** argv)
                 require (editor->getNumStrips() == 10, "Ten strips");
                 std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-10bands.png"),
                                                            editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+            }
+            // The LFO tab: the slot's ~ opens its LFO; double-click adds a point.
+            {
+                namespace mod = triad::mod;
+                editor->showLfo (0, 1);
+                editor->refreshNow();
+                const int lfoIndex = preview.getSlotLfo (0, 1);
+                auto& page = editor->getLfoPage();
+                require (editor->getTab() == TriadEditor::Tab::lfo && page.getBand() == 0 && page.getLfo() == lfoIndex, "The slot's LFO opens");
+                auto& shapeEditor = page.getEditor();
+                const auto plot = shapeEditor.plot();
+                const auto before = preview.getLfoInfo (0, lfoIndex).shape.size();
+                shapeEditor.mouseDoubleClick (mouseAt (&shapeEditor, plot.getX() + plot.getWidth() * 0.5f, plot.getY() + plot.getHeight() * 0.75f));
+                const auto after = preview.getLfoInfo (0, lfoIndex).shape;
+                require (after.size() == before + 1 && preview.getLfoInfo (0, lfoIndex).active, "Double-click adds a point and switches the LFO on");
+                require (std::abs (mod::evaluate (after, 0.5f) - 0.25f) < 0.01f, "The point lands on the grid where clicked");
+                // Drag it up to 75%.
+                const auto point = shapeEditor.toScreen ({ 0.5f, 0.25f, 0.0f });
+                shapeEditor.mouseDown (mouseAt (&shapeEditor, point.x, point.y));
+                shapeEditor.mouseDrag (mouseAt (&shapeEditor, point.x, point.y - plot.getHeight() * 0.5f, true));
+                shapeEditor.mouseUp (mouseAt (&shapeEditor, point.x, point.y - plot.getHeight() * 0.5f));
+                require (std::abs (mod::evaluate (preview.getLfoInfo (0, lfoIndex).shape, 0.5f) - 0.75f) < 0.01f, "Dragging a point moves it");
+                shapeEditor.apply ([] (const mod::Shape& s) { return mod::repeated (s, 2); });
+                require (preview.getLfoInfo (0, lfoIndex).shape.size() >= 5, "2x from the toolbar");
+                preview.setLfoShape (0, lfoIndex, mod::preset (7), true);
+                preview.setLfoShape (1, preview.getSlotLfo (1, 0), mod::preset (4), true);
+                juce::MidiBuffer more;
+                for (int block = 0; block < 4; ++block) { juce::AudioBuffer<float> audio (2, 512); audio.clear(); preview.processBlock (audio, more); }
+                editor->showLfo (0, 1);
+                editor->refreshNow();
+                if (screenshotFile != juce::File())
+                    std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-lfo.png"),
+                                                               editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+                editor->setTab (TriadEditor::Tab::matrix);
+                editor->refreshNow();
+                require (editor->getMatrixPage().getNumPanels() == preview.getBandCount(), "A matrix per band");
+                require (editor->getMatrixPage().getPanel (0)->getNumRows() == preview.getRouteCount (0), "A row per route");
+                if (screenshotFile != juce::File())
+                    std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-matrix.png"),
+                                                               editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+                editor->setTab (TriadEditor::Tab::bands);
+                editor->refreshNow();
             }
             editor.reset();
         }

@@ -14,7 +14,13 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
     void refresh();
+    void setMeters (float input, float output);   // peak levels since the last call (linear)
+    void showBandMenu (int band, float hz);
+    void showCrossoverMenu (int index);
+    int bandAt (float x) const;
+    std::function<void (int band)> onEditBandLfo;
     float xForFrequency (float) const;
     float frequencyForX (float) const;
     juce::Rectangle<float> plotBounds() const;
@@ -51,6 +57,7 @@ private:
     };
     void timerCallback() override;
     float constrainValue (int, float) const;
+    void paintMeters (juce::Graphics&);
     float pillTop (int index) const;
     void layoutPills();
 
@@ -60,7 +67,9 @@ private:
     int activeHandle = -1;
     std::vector<float> cuts;
     std::vector<int> pillRows;
-    static constexpr float pillWidth = 78.0f;
+    static constexpr float pillWidth = 78.0f, meterWidth = 64.0f;
+    struct Meter { float level = 0.0f, hold = 0.0f; int holdFrames = 0; void push (float v); };
+    Meter inputMeter, outputMeter;
 
     static constexpr int fftSize = 4096;
     std::vector<float> samples, window, levels;

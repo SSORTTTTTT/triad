@@ -4,61 +4,135 @@ using namespace triad::ui;
 
 namespace
 {
-constexpr int editorWidth = 1000, editorHeight = 786, margin = 24, stripGap = 10, minStripWidth = 196, maxStripWidth = 420;
+constexpr int margin = 24, headerHeight = 52, stripGap = 10, minStripWidth = 196, maxStripWidth = 420;
+constexpr int displayHeight = 174;
 enum MenuIds { scanningId = 1000001, noneId, browseId, refreshId, rescanId, emptySlotId };
+juce::Array<juce::File> filesIn (const juce::File& folder, const juce::String& pattern)
+{
+    auto files = folder.findChildFiles (juce::File::findFiles, false, pattern);
+    files.sort();
+    return files;
+}
 }
 
-TriadLook::TriadLook()
+// ---- Name prompt ----------------------------------------------------------------------------------
+NamePrompt::NamePrompt()
 {
-    setColour (juce::TextButton::buttonColourId, juce::Colour (0xff303331));
-    setColour (juce::TextButton::textColourOffId, textColour);
-    setColour (juce::Label::textColourId, dimTextColour);
-    setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff202420));
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colour (0xff3d4a36));
-    setColour (juce::TooltipWindow::backgroundColourId, juce::Colour (0xff111312));
-    setColour (juce::TooltipWindow::textColourId, textColour);
-    setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff4a504c));
+    setInterceptsMouseClicks (true, true);
+    text.setFont (juce::FontOptions (15.0f));
+    text.setJustification (juce::Justification::centredLeft);
+    text.onReturnKey = [this] { finish (true); };
+    text.onEscapeKey = [this] { finish (false); };
+    addAndMakeVisible (text);
+    saveButton.onClick = [this] { finish (true); };
+    cancelButton.onClick = [this] { finish (false); };
+    addAndMakeVisible (saveButton);
+    addAndMakeVisible (cancelButton);
 }
-void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float start, float end, juce::Slider& slider)
+void NamePrompt::show (const juce::String& t, const juce::String& initial, std::function<void (const juce::String&)> onSave)
 {
-    const bool small = juce::jmin (w, h) < 40;
-    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (small ? 1.5f : 5.0f);
-    const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
-    const float stroke = small ? 2.5f : 4.5f;
-    const auto centre = bounds.getCentre();
-    // Dark body like FL's slot knobs, with the value arc in the band colour around it.
-    g.setColour (juce::Colour (0xff131615));
-    g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (centre));
-    const auto arcRadius = radius - stroke * 0.5f;
-    juce::Path track, value;
-    track.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0, start, end, true);
-    value.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0, start, start + pos * (end - start), true);
-    g.setColour (juce::Colour (0xff3b413a)); g.strokePath (track, juce::PathStrokeType (stroke));
-    g.setColour (slider.findColour (juce::Slider::rotarySliderFillColourId)); g.strokePath (value, juce::PathStrokeType (stroke));
-    // The percentage, inside the circle.
-    const auto v = slider.getValue();
-    const auto label = (v >= 99.95 ? juce::String ("100") : juce::String (juce::roundToInt (v))) + "%";
-    g.setColour (textColour.withAlpha (slider.isEnabled() ? 0.95f : 0.5f));
-    g.setFont (small ? juce::FontOptions (9.5f, juce::Font::bold) : juce::FontOptions (juce::jmax (11.0f, radius * 0.46f), juce::Font::bold));
-    const auto inner = juce::Rectangle<float> ((arcRadius - stroke * 0.5f) * 2.0f, radius).withCentre (centre).toNearestInt();
-    g.drawFittedText (label, inner, juce::Justification::centred, 1, 0.68f);
+    title = t;
+    callback = std::move (onSave);
+    text.setText (initial, false);
+    text.selectAll();
+    setVisible (true);
+    toFront (true);
+    if (isShowing()) text.grabKeyboardFocus();
+    repaint();
+}
+void NamePrompt::finish (bool save)
+{
+    const auto name = juce::File::createLegalFileName (text.getText().trim());
+    setVisible (false);
+    if (save && name.isNotEmpty() && callback) callback (name);
+}
+void NamePrompt::paint (juce::Graphics& g)
+{
+    g.fillAll (juce::Colours::black.withAlpha (0.55f));
+    const auto box = getLocalBounds().withSizeKeepingCentre (380, 150).toFloat();
+    g.setColour (panel); g.fillRoundedRectangle (box, 8.0f);
+    g.setColour (accent); g.drawRoundedRectangle (box, 8.0f, 1.2f);
+    g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+    g.drawText (title, box.reduced (18.0f, 14.0f).removeFromTop (20.0f), juce::Justification::centredLeft);
+}
+void NamePrompt::resized()
+{
+    auto box = getLocalBounds().withSizeKeepingCentre (380, 150).reduced (18, 14);
+    box.removeFromTop (28);
+    text.setBounds (box.removeFromTop (34));
+    box.removeFromTop (14);
+    auto buttons = box.removeFromTop (30);
+    saveButton.setBounds (buttons.removeFromRight (90));
+    buttons.removeFromRight (8);
+    cancelButton.setBounds (buttons.removeFromRight (90));
 }
 
-TriadEditor::TriadEditor (TriadProcessor& p) : AudioProcessorEditor (p), processor (p), frequencyDisplay (p)
+// ---- Header buttons ---------------------------------------------------------------------------------
+void TriadEditor::TabButton::paintButton (juce::Graphics& g, bool over, bool)
+{
+    const bool on = getToggleState();
+    g.setColour (on ? juce::Colour (0xff242826) : over ? juce::Colour (0xff383c3a) : juce::Colours::transparentBlack);
+    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 5.0f);
+    g.setColour (on ? accent : over ? textColour : dimTextColour);
+    g.setFont (juce::FontOptions (13.5f, juce::Font::bold));
+    g.drawText (getName(), getLocalBounds(), juce::Justification::centred);
+    if (on) { g.setColour (accent); g.fillRoundedRectangle (getLocalBounds().toFloat().removeFromBottom (3.0f).reduced (10.0f, 0.0f), 1.5f); }
+}
+void TriadEditor::PresetButton::paintButton (juce::Graphics& g, bool over, bool)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (over ? juce::Colour (0xff1f2321) : juce::Colour (0xff1a1d1c));
+    g.fillRoundedRectangle (r, 5.0f);
+    auto area = getLocalBounds().reduced (10, 0);
+    g.setColour (dimTextColour);
+    g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+    g.drawText ("PRESET", area.removeFromLeft (52), juce::Justification::centredLeft);
+    juce::Path arrow;
+    const float ax = (float) getWidth() - 18.0f, ay = (float) getHeight() * 0.5f;
+    arrow.addTriangle (ax - 5.0f, ay - 2.5f, ax + 5.0f, ay - 2.5f, ax, ay + 3.5f);
+    g.fillPath (arrow);
+    g.setColour (textColour);
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    g.drawFittedText (presetName.isNotEmpty() ? presetName : "Init", area.withTrimmedRight (20), juce::Justification::centredLeft, 1, 0.8f);
+}
+
+// ---- Editor -----------------------------------------------------------------------------------------
+TriadEditor::TriadEditor (TriadProcessor& p)
+    : AudioProcessorEditor (p), processor (p), frequencyDisplay (p), lfoPage (p), matrixPage (p)
 {
     setLookAndFeel (&look);
-    setSize (editorWidth, editorHeight);
-    addAndMakeVisible (frequencyDisplay);
+    addAndMakeVisible (content);
+    for (int i = 0; i < 3; ++i)
+    {
+        tabButtons[(size_t) i]->onClick = [this, i] { setTab ((Tab) i); };
+        content.addAndMakeVisible (*tabButtons[(size_t) i]);
+    }
+    tabButtons[0]->setTooltip ("Bands: crossovers, effects, mixes and volumes");
+    tabButtons[1]->setTooltip ("LFO: draw how each mix knob moves over time");
+    tabButtons[2]->setTooltip ("Matrix: which LFO moves which knob, and how much");
+    presetButton.onClick = [this] { showPresetMenu(); };
+    content.addAndMakeVisible (presetButton);
+    gearButton.onClick = [this] { showGearMenu(); };
+    content.addAndMakeVisible (gearButton);
+    content.addAndMakeVisible (bandsPage);
+    bandsPage.addAndMakeVisible (frequencyDisplay);
+    frequencyDisplay.onEditBandLfo = [this] (int band) { showLfo (band, -1); };
     viewport.setViewedComponent (&stripHolder, false);
     viewport.setScrollBarsShown (false, true);
     viewport.setScrollBarThickness (8);
-    addAndMakeVisible (viewport);
+    bandsPage.addAndMakeVisible (viewport);
+    content.addChildComponent (lfoPage);
+    content.addChildComponent (matrixPage);
+    matrixPage.onEditLfo = [this] (int band, int lfo) { setTab (Tab::lfo); lfoPage.select (band, lfo); };
     status.setFont (juce::FontOptions (12.0f));
-    addAndMakeVisible (status);
+    content.addAndMakeVisible (status);
+    content.addChildComponent (prompt);
     catalog->addChangeListener (this);
     rebuildStrips();
+    setTab (Tab::bands);
+    setScale (settings->getScale());
     timerCallback();
-    startTimerHz (10);
+    startTimerHz (20);
 }
 TriadEditor::~TriadEditor()
 {
@@ -67,22 +141,52 @@ TriadEditor::~TriadEditor()
     processor.closeWindows();
     setLookAndFeel (nullptr);
 }
-void TriadEditor::paint (juce::Graphics& g)
+void TriadEditor::setScale (double s)
 {
-    g.fillAll (background);
-    g.setColour (juce::Colour (0xff303235)); g.fillRect (0, 0, getWidth(), 56);
-    g.setColour (juce::Colour (0xff9bd85c)); g.setFont (juce::FontOptions (28.0f, juce::Font::bold));
-    g.drawText ("TRIAD", margin, 9, 150, 38, juce::Justification::centredLeft);
-    g.setColour (juce::Colour (0xffaeb6ab)); g.setFont (juce::FontOptions (12.0f));
-    g.drawText ("MULTIBAND EFFECT HOST", 168, 15, 360, 26, juce::Justification::centredLeft);
-    g.drawText (juce::String ("VST3 + AU EFFECTS  /  V2  ") + TRIAD_VERSION, getWidth() - 300, 15, 276, 26, juce::Justification::centredRight);
+    scale = juce::jlimit (0.75, 1.5, s);
+    content.setTransform (juce::AffineTransform::scale ((float) scale));
+    setSize (juce::roundToInt (logicalWidth * scale), juce::roundToInt (logicalHeight * scale));
 }
+void TriadEditor::paint (juce::Graphics& g) { g.fillAll (background); }
 void TriadEditor::resized()
 {
-    frequencyDisplay.setBounds (margin, 66, getWidth() - 2 * margin, 204);
-    viewport.setBounds (margin, 280, getWidth() - 2 * margin, BandStrip::preferredHeight + 10);
-    status.setBounds (margin, getHeight() - 30, getWidth() - 2 * margin, 24);
+    content.setBounds (0, 0, logicalWidth, logicalHeight);
+    layoutContent();
+}
+void TriadEditor::paintContent (juce::Graphics& g)
+{
+    g.fillAll (background);
+    g.setColour (headerColour); g.fillRect (0, 0, logicalWidth, headerHeight);
+    g.setColour (accent); g.setFont (juce::FontOptions (28.0f, juce::Font::bold));
+    g.drawText ("TRIAD", margin, 7, 110, 38, juce::Justification::centredLeft);
+    g.setColour (juce::Colour (0xffaeb6ab)); g.setFont (juce::FontOptions (11.5f));
+    g.drawText (juce::String ("VST3 + AU  /  V3  ") + TRIAD_VERSION, logicalWidth - margin - 170, 13, 170, 26, juce::Justification::centredRight);
+}
+void TriadEditor::layoutContent()
+{
+    int x = 140;
+    for (auto* t : tabButtons) { t->setBounds (x, 11, 84, 30); x += 88; }
+    presetButton.setBounds (420, 11, 260, 30);
+    gearButton.setBounds (logicalWidth - margin - 170 - 40, 12, 30, 28);
+    const auto page = juce::Rectangle<int> (margin, headerHeight + 8, logicalWidth - 2 * margin, logicalHeight - headerHeight - 8 - 30);
+    bandsPage.setBounds (page);
+    lfoPage.setBounds (page);
+    matrixPage.setBounds (page);
+    frequencyDisplay.setBounds (0, 0, page.getWidth(), displayHeight);
+    viewport.setBounds (0, displayHeight + 8, page.getWidth(), page.getHeight() - displayHeight - 8);
+    status.setBounds (margin, logicalHeight - 28, logicalWidth - 2 * margin, 24);
+    prompt.setBounds (0, 0, logicalWidth, logicalHeight);
     layoutStrips();
+}
+void TriadEditor::setTab (Tab t)
+{
+    tab = t;
+    for (int i = 0; i < 3; ++i) tabButtons[(size_t) i]->setToggleState ((int) t == i, juce::dontSendNotification);
+    bandsPage.setVisible (t == Tab::bands);
+    lfoPage.setVisible (t == Tab::lfo);
+    matrixPage.setVisible (t == Tab::matrix);
+    if (t == Tab::lfo) lfoPage.refresh();
+    if (t == Tab::matrix) matrixPage.refresh();
 }
 void TriadEditor::rebuildStrips()
 {
@@ -102,16 +206,35 @@ void TriadEditor::layoutStrips()
     const int n = juce::jmax (1, (int) strips.size());
     const int width = juce::jlimit (minStripWidth, maxStripWidth, (available - stripGap * (n - 1)) / n);
     const int total = n * width + stripGap * (n - 1);
-    stripHolder.setSize (juce::jmax (total, available), BandStrip::preferredHeight);
+    const int height = juce::jmax (100, viewport.getHeight() - 8);
+    stripHolder.setSize (juce::jmax (total, available), height);
+    // While a band is dragged, the others make room where it would land.
+    int position = 0;
     for (int i = 0; i < (int) strips.size(); ++i)
-        strips[(size_t) i]->setBounds (i * (width + stripGap), 0, width, BandStrip::preferredHeight);
+    {
+        if (drag.active && i == drag.band) continue;
+        if (drag.active && position == drag.target) ++position;
+        strips[(size_t) i]->setBounds (position * (width + stripGap), 0, width, height);
+        ++position;
+    }
+    if (drag.active && drag.band >= 0 && drag.band < (int) strips.size())
+        strips[(size_t) drag.band]->setSize (width, height);
 }
 void TriadEditor::timerCallback()
 {
     if (processor.getBandCount() != builtCount) rebuildStrips();
-    const auto cuts = processor.effectiveCrossovers();
-    for (auto& strip : strips) strip->update (cuts, builtCount, processor.nyquistFrequency());
-    frequencyDisplay.refresh();
+    const auto meters = processor.takeMeters();
+    frequencyDisplay.setMeters (meters.input, meters.output);
+    if (tab == Tab::bands)
+    {
+        const auto cuts = processor.effectiveCrossovers();
+        for (auto& strip : strips) strip->update (cuts, builtCount, processor.nyquistFrequency(), meters.bands[(size_t) strip->getBand()]);
+        frequencyDisplay.refresh();
+    }
+    else if (tab == Tab::lfo) lfoPage.refresh();
+    else matrixPage.refresh();
+    presetButton.presetName = processor.getPresetName();
+    presetButton.repaint();
     juce::String text;
     for (int b = 0; b < builtCount && text.isEmpty(); ++b)
         for (int s = 0; s < processor.getSlotCount (b); ++s)
@@ -119,38 +242,131 @@ void TriadEditor::timerCallback()
             { text = "Band " + juce::String (b + 1) + " / Slot " + juce::String (s + 1) + ": " + info.status; break; }
     if (text.isEmpty() && catalog->isScanning()) text = catalog->getProgress();
     if (text.isEmpty()) text = processor.getStatus();
-    if (text.isEmpty()) text = "Click a slot to load an effect, + to add a slot, a loaded slot to open it. Double-click the display to add a band.";
+    if (text.isEmpty())
+        text = tab == Tab::lfo ? "Each knob has its own LFO: draw on the grid and the knob follows it in time with your song."
+             : tab == Tab::matrix ? "Each row: an LFO (source), how much it moves its destination (amount), and the knob it moves."
+             : "Click a slot to load an effect, + to add a slot, ~ for its LFO. Drag a band's header to move its effects to another band.";
     status.setText (text, juce::dontSendNotification);
 }
 void TriadEditor::changeListenerCallback (juce::ChangeBroadcaster*) { timerCallback(); }
 void TriadEditor::setCrossoverFrequency (int index, float hz) { frequencyDisplay.setCrossoverValue (index, hz); }
 
+void TriadEditor::showLfo (int band, int slot)
+{
+    setTab (Tab::lfo);
+    lfoPage.select (band, slot < 0 ? processor.getBandLfo (band) : processor.getSlotLfo (band, slot));
+}
+
+// ---- Moving bands -------------------------------------------------------------------------------------
+void TriadEditor::bandDrag (int band, const juce::MouseEvent& e, int phase)
+{
+    auto* strip = getStrip (band);
+    if (strip == nullptr) return;
+    const auto position = e.getEventRelativeTo (&stripHolder).position;
+    if (phase == 0)
+    {
+        drag = Drag { band, position.x, strip->getX(), false, band };
+        return;
+    }
+    if (drag.band != band) return;
+    if (phase == 1)
+    {
+        if (! drag.active && std::abs (position.x - drag.startMouse) < 6.0f) return;
+        if (! drag.active) { drag.active = true; strip->setLifted (true); strip->toFront (false); }
+        const int x = juce::jlimit (0, juce::jmax (0, stripHolder.getWidth() - strip->getWidth()),
+                                    drag.startX + juce::roundToInt (position.x - drag.startMouse));
+        strip->setTopLeftPosition (x, 0);
+        drag.target = juce::jlimit (0, (int) strips.size() - 1, juce::roundToInt ((float) x / (float) (strip->getWidth() + stripGap)));
+        layoutStrips();
+        const auto inView = e.getEventRelativeTo (&viewport).getPosition();
+        viewport.autoScroll (inView.x, inView.y, 40, 14);
+        return;
+    }
+    const bool moved = drag.active && drag.target != band && drag.target >= 0;
+    const int target = drag.target;
+    strip->setLifted (false);
+    drag = {};
+    if (moved) processor.moveBand (band, target);
+    layoutStrips();
+    timerCallback();
+}
+
+// ---- Effect list --------------------------------------------------------------------------------------
+bool TriadEditor::isFavourite (const juce::String& format, const juce::String& name)
+{
+    return settings->isFavourite (TriadSettings::favouriteKey (format, name));
+}
+void TriadEditor::setFavourite (const juce::String& format, const juce::String& name, bool on)
+{
+    settings->setFavourite (TriadSettings::favouriteKey (format, name), on);
+    processor.setStatus ((on ? "Added to favourites: " : "Removed from favourites: ") + name);
+}
 void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
 {
     auto list = std::make_shared<std::vector<EffectEntry>> (catalog->getEffects());
     const bool newSlot = slot >= processor.getSlotCount (band);
+    const bool alphabetical = settings->getSort() == TriadSettings::Sort::alphabetical;
     juce::PopupMenu menu;
     menu.addSectionHeader ("Band " + juce::String (band + 1) + "  /  " + (newSlot ? juce::String ("New slot") : "Slot " + juce::String (slot + 1)));
+    // Favourites first: one click away.
+    const auto favourites = settings->getFavourites();
+    std::vector<int> favouriteItems;
+    for (int i = 0; i < (int) list->size(); ++i)
+        if (const auto& e = (*list)[(size_t) i]; e.verified && favourites.contains (TriadSettings::favouriteKey (e.format, e.name)))
+            favouriteItems.push_back (i);
+    if (! favouriteItems.empty())
+    {
+        menu.addSectionHeader ("FAVOURITES");
+        for (int i : favouriteItems) menu.addItem (i + 1, (*list)[(size_t) i].name + "  (" + (*list)[(size_t) i].format + ")");
+        menu.addSeparator();
+    }
     for (const juce::String format : { "VST3", "AU" })
     {
-        juce::PopupMenu formatMenu, makerMenu;
-        juce::String maker;
-        bool any = false;
-        auto flush = [&]
-        {
-            if (makerMenu.containsAnyActiveItems()) formatMenu.addSubMenu (maker.isNotEmpty() ? maker : "Other", makerMenu);
-            makerMenu = juce::PopupMenu();
-        };
+        juce::PopupMenu formatMenu;
+        std::vector<int> items;
         for (int i = 0; i < (int) list->size(); ++i)
+            if (const auto& e = (*list)[(size_t) i]; e.format == format && e.verified) items.push_back (i);
+        if (items.empty()) continue;
+        if (alphabetical)
         {
-            const auto& e = (*list)[(size_t) i];
-            if (e.format != format || ! e.verified) continue;
-            if (! any || e.manufacturer != maker) { flush(); maker = e.manufacturer; }
-            makerMenu.addItem (i + 1, e.name);
-            any = true;
+            // A to Z by plug-in name; long lists are split by first letter.
+            std::sort (items.begin(), items.end(), [&list] (int a, int b) { return (*list)[(size_t) a].name.compareIgnoreCase ((*list)[(size_t) b].name) < 0; });
+            const bool byLetter = items.size() > 40;
+            juce::PopupMenu letterMenu;
+            juce::String letter;
+            auto flush = [&] { if (letterMenu.getNumItems() > 0) formatMenu.addSubMenu (letter, letterMenu); letterMenu = juce::PopupMenu(); };
+            for (int i : items)
+            {
+                const auto& e = (*list)[(size_t) i];
+                const auto label = e.name + (e.manufacturer.isNotEmpty() ? "  -  " + e.manufacturer : juce::String());
+                if (! byLetter) { formatMenu.addItem (i + 1, label); continue; }
+                auto first = e.name.substring (0, 1).toUpperCase();
+                if (! juce::CharacterFunctions::isLetter (first[0])) first = "#";
+                if (first != letter) { flush(); letter = first; }
+                letterMenu.addItem (i + 1, label);
+            }
+            if (byLetter) flush();
         }
-        flush();
-        if (any) menu.addSubMenu (format == "AU" ? "Audio Units" : "VST3", formatMenu);
+        else
+        {
+            juce::PopupMenu makerMenu;
+            juce::String maker;
+            bool any = false;
+            auto flush = [&]
+            {
+                if (makerMenu.containsAnyActiveItems()) formatMenu.addSubMenu (maker.isNotEmpty() ? maker : "Other", makerMenu);
+                makerMenu = juce::PopupMenu();
+            };
+            for (int i : items)
+            {
+                const auto& e = (*list)[(size_t) i];
+                if (! any || e.manufacturer != maker) { flush(); maker = e.manufacturer; }
+                makerMenu.addItem (i + 1, e.name);
+                any = true;
+            }
+            flush();
+        }
+        menu.addSubMenu (format == "AU" ? "Audio Units" : "VST3", formatMenu);
     }
     {
         // Plug-ins Triad could not check (no time, or they crashed its scanner) are kept apart.
@@ -195,4 +411,170 @@ void TriadEditor::browse (int band, int slot)
             safe->processor.loadFile (band, slot, c.getResult(), true);
             safe->timerCallback();
         });
+}
+
+// ---- Presets ------------------------------------------------------------------------------------------
+bool TriadEditor::savePreset (const juce::String& name)
+{
+    const auto folder = TriadSettings::presetFolder();
+    folder.createDirectory();
+    processor.setPresetName (name);
+    const bool ok = processor.createPresetXml()->writeTo (folder.getChildFile (name + ".triadpreset"));
+    processor.setStatus (ok ? "Saved preset " + name : "Could not save the preset in " + folder.getFullPathName());
+    return ok;
+}
+bool TriadEditor::loadPreset (const juce::File& file)
+{
+    auto xml = juce::XmlDocument::parse (file);
+    if (xml == nullptr || ! xml->hasTagName ("TriadState")) { processor.setStatus ("This is not a Triad preset."); return false; }
+    xml->setAttribute ("preset", file.getFileNameWithoutExtension());
+    processor.loadPresetXml (*xml);
+    rebuildStrips();
+    return true;
+}
+bool TriadEditor::saveChain (int band, const juce::String& name)
+{
+    auto xml = processor.createChainXml (band);
+    if (xml == nullptr) return false;
+    xml->setAttribute ("name", name);
+    const auto folder = TriadSettings::chainFolder();
+    folder.createDirectory();
+    const bool ok = xml->writeTo (folder.getChildFile (name + ".triadchain"));
+    processor.setStatus (ok ? "Saved band " + juce::String (band + 1) + " chain as " + name : "Could not save the chain");
+    return ok;
+}
+bool TriadEditor::loadChain (int band, const juce::File& file)
+{
+    auto xml = juce::XmlDocument::parse (file);
+    const auto error = xml != nullptr ? processor.loadChainXml (band, *xml) : juce::String ("This is not a Triad chain preset.");
+    processor.setStatus (error.isEmpty() ? "Loaded chain " + file.getFileNameWithoutExtension() + " into band " + juce::String (band + 1) : error);
+    return error.isEmpty();
+}
+void TriadEditor::showPresetMenu()
+{
+    enum { saveId = 1, saveAsId, folderId, firstPreset = 100 };
+    const auto files = filesIn (TriadSettings::presetFolder(), "*.triadpreset");
+    const auto current = processor.getPresetName();
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("TRIAD PRESETS");
+    if (current.isNotEmpty()) menu.addItem (saveId, "Save \"" + current + "\"");
+    menu.addItem (saveAsId, "Save as new preset...");
+    menu.addSeparator();
+    for (int i = 0; i < files.size(); ++i) menu.addItem (firstPreset + i, files[i].getFileNameWithoutExtension(), true, files[i].getFileNameWithoutExtension() == current);
+    if (files.isEmpty()) menu.addItem (-1, "No presets saved yet", false);
+    menu.addSeparator();
+    menu.addItem (folderId, "Show presets folder");
+    juce::Component::SafePointer<TriadEditor> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetButton), [safe, files, current] (int choice)
+    {
+        if (safe == nullptr || choice == 0) return;
+        auto& self = *safe;
+        if (choice == saveId) self.savePreset (current);
+        else if (choice == saveAsId)
+            self.prompt.show ("Save Triad preset", current.isNotEmpty() ? current : "My preset",
+                              [safe] (const juce::String& name) { if (safe != nullptr) safe->savePreset (name); });
+        else if (choice == folderId) { TriadSettings::presetFolder().createDirectory(); TriadSettings::presetFolder().revealToUser(); }
+        else if (choice >= firstPreset && choice - firstPreset < files.size()) self.loadPreset (files[choice - firstPreset]);
+    });
+}
+void TriadEditor::showBandMenu (int band, juce::Component& target)
+{
+    enum { saveId = 1, lfoId, leftId, rightId, removeId, folderId, firstChain = 100 };
+    const auto files = filesIn (TriadSettings::chainFolder(), "*.triadchain");
+    const int count = processor.getBandCount();
+    juce::PopupMenu menu, chains;
+    menu.addSectionHeader ("BAND " + juce::String (band + 1));
+    menu.addItem (saveId, "Save chain as preset...");
+    for (int i = 0; i < files.size(); ++i) chains.addItem (firstChain + i, files[i].getFileNameWithoutExtension());
+    if (files.isEmpty()) chains.addItem (-1, "No chains saved yet", false);
+    chains.addSeparator();
+    chains.addItem (folderId, "Show chains folder");
+    menu.addSubMenu ("Load chain preset (replaces this band's effects)", chains);
+    menu.addSeparator();
+    menu.addItem (lfoId, "Edit LFOs for this band...");
+    menu.addItem (leftId, "Move effects to band " + juce::String (band), band > 0);
+    menu.addItem (rightId, "Move effects to band " + juce::String (band + 2), band < count - 1);
+    menu.addSeparator();
+    menu.addItem (removeId, "Remove band " + juce::String (band + 1), count > 1);
+    juce::Component::SafePointer<TriadEditor> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&target), [safe, band, files] (int choice)
+    {
+        if (safe == nullptr || choice == 0) return;
+        auto& self = *safe;
+        if (choice == saveId)
+            self.prompt.show ("Save band " + juce::String (band + 1) + " chain", "Band " + juce::String (band + 1) + " chain",
+                              [safe, band] (const juce::String& name) { if (safe != nullptr) safe->saveChain (band, name); });
+        else if (choice == lfoId) self.showLfo (band, -1);
+        else if (choice == leftId) self.processor.moveBand (band, band - 1);
+        else if (choice == rightId) self.processor.moveBand (band, band + 1);
+        else if (choice == removeId) self.processor.removeBand (band);
+        else if (choice == folderId) { TriadSettings::chainFolder().createDirectory(); TriadSettings::chainFolder().revealToUser(); }
+        else if (choice >= firstChain && choice - firstChain < files.size()) self.loadChain (band, files[choice - firstChain]);
+        self.timerCallback();
+    });
+}
+
+// ---- Settings -----------------------------------------------------------------------------------------
+void TriadEditor::addPluginFolder()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Add a folder with VST3 plug-ins", juce::File());
+    juce::Component::SafePointer<TriadEditor> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe] (const juce::FileChooser& c)
+    {
+        if (safe == nullptr || ! c.getResult().isDirectory()) return;
+        auto folders = safe->settings->getFolders();
+        folders.addIfNotAlreadyThere (c.getResult().getFullPathName());
+        safe->settings->setFolders (folders);
+        safe->catalog->configure (folders, safe->settings->getAutoCheck());
+    });
+}
+void TriadEditor::showGearMenu()
+{
+    enum { sortCompany = 1, sortAZ, autoCheck, refreshList, rescanAll, addFolder, presetsFolder, chainsFolder,
+           scaleBase = 100, removeFolderBase = 200 };
+    const auto folders = settings->getFolders();
+    juce::PopupMenu menu, removeMenu;
+    menu.addSectionHeader ("EFFECT LIST");
+    menu.addItem (sortCompany, "Sort by company", true, settings->getSort() == TriadSettings::Sort::company);
+    menu.addItem (sortAZ, "Sort A-Z by name", true, settings->getSort() == TriadSettings::Sort::alphabetical);
+    menu.addItem (autoCheck, "Look for new plug-ins each time Triad opens", true, settings->getAutoCheck());
+    menu.addItem (refreshList, "Rescan for new plug-ins");
+    menu.addItem (rescanAll, "Rescan everything");
+    menu.addItem (addFolder, "Add a plug-in folder...");
+    for (int i = 0; i < folders.size(); ++i) removeMenu.addItem (removeFolderBase + i, folders[i]);
+    if (! folders.isEmpty()) menu.addSubMenu ("Remove a plug-in folder", removeMenu);
+    menu.addItem (-1, catalog->getProgress(), false);
+    menu.addSectionHeader ("WINDOW SIZE");
+    for (int percent : { 75, 90, 100, 125, 150 })
+        menu.addItem (scaleBase + percent, juce::String (percent) + "%", true, juce::roundToInt (scale * 100.0) == percent);
+    menu.addSectionHeader ("PRESETS");
+    menu.addItem (presetsFolder, "Show presets folder");
+    menu.addItem (chainsFolder, "Show chain presets folder");
+    juce::Component::SafePointer<TriadEditor> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&gearButton), [safe, folders] (int choice)
+    {
+        if (safe == nullptr || choice == 0) return;
+        auto& self = *safe;
+        auto& s = *self.settings;
+        if (choice == sortCompany) s.setSort (TriadSettings::Sort::company);
+        else if (choice == sortAZ) s.setSort (TriadSettings::Sort::alphabetical);
+        else if (choice == autoCheck)
+        {
+            s.setAutoCheck (! s.getAutoCheck());
+            if (s.getAutoCheck()) self.catalog->configure (s.getFolders(), true);
+        }
+        else if (choice == refreshList) self.catalog->refresh();
+        else if (choice == rescanAll) self.catalog->rescanAll();
+        else if (choice == addFolder) self.addPluginFolder();
+        else if (choice == presetsFolder) { TriadSettings::presetFolder().createDirectory(); TriadSettings::presetFolder().revealToUser(); }
+        else if (choice == chainsFolder) { TriadSettings::chainFolder().createDirectory(); TriadSettings::chainFolder().revealToUser(); }
+        else if (choice > scaleBase && choice < removeFolderBase) { s.setScale ((choice - scaleBase) / 100.0); self.setScale (s.getScale()); }
+        else if (choice >= removeFolderBase && choice - removeFolderBase < folders.size())
+        {
+            auto next = folders;
+            next.remove (choice - removeFolderBase);
+            s.setFolders (next);
+            self.catalog->configure (next, s.getAutoCheck());
+        }
+    });
 }

@@ -1,6 +1,7 @@
 #include "PluginCatalog.h"
 #include "AudioUnitList.h"
 #include "TriadIdentity.h"
+#include "Settings.h"
 
 #if JUCE_MAC || JUCE_LINUX || JUCE_BSD
  #include <spawn.h>
@@ -135,6 +136,9 @@ PluginCatalog::Options PluginCatalog::defaultOptions()
     o.vst3Folders.add (home.getChildFile (".vst3"));
     o.cacheFolder = appData.getChildFile ("Triad");
    #endif
+    const TriadSettings settings;
+    for (const auto& folder : settings.getFolders()) o.vst3Folders.addIfNotAlreadyThere (juce::File (folder));
+    o.autoCheck = settings.getAutoCheck();
     return o;
 }
 juce::File PluginCatalog::findScanner()
@@ -168,7 +172,13 @@ void PluginCatalog::run()
         if (passRequested.exchange (false))
         {
             scanning = true;
-            scanPass (forgetRequested.exchange (false));
+            {
+                const juce::ScopedLock sl (lock);
+                active = options;
+            }
+            // Without "check for new plug-ins", the saved list is used as it is until Rescan is pressed.
+            const bool cacheOnly = ! forcedPass.exchange (false) && ! active.autoCheck && cacheFile().existsAsFile();
+            scanPass (forgetRequested.exchange (false), cacheOnly);
             if (threadShouldExit()) break;
             if (! passRequested.load())
             {
@@ -181,8 +191,20 @@ void PluginCatalog::run()
         wait (-1);
     }
 }
+void PluginCatalog::configure (const juce::StringArray& extraFolders, bool autoCheck)
+{
+    {
+        const juce::ScopedLock sl (lock);
+        auto defaults = defaultOptions();
+        options.vst3Folders = defaults.vst3Folders;
+        for (const auto& folder : extraFolders) options.vst3Folders.addIfNotAlreadyThere (juce::File (folder));
+        options.autoCheck = autoCheck;
+    }
+    refresh();
+}
 void PluginCatalog::refresh()
 {
+    forcedPass = true;
     scanning = true;
     passRequested = true;
     notify();
@@ -203,16 +225,22 @@ bool PluginCatalog::waitUntilIdle (int timeoutMs)
     return true;
 }
 
-void PluginCatalog::scanPass (bool forget)
+void PluginCatalog::scanPass (bool forget, bool cacheOnly)
 {
     if (forget) { records.clear(); cacheFile().deleteFile(); cacheLoaded = true; }
     if (! cacheLoaded) { loadCache(); cacheLoaded = true; }
+    if (cacheOnly)
+    {
+        listAudioUnits();
+        publish();
+        return;
+    }
     // Triad 0.2.1's list could load plug-ins inside the DAW; its files are no longer used.
     options.cacheFolder.getChildFile ("PluginCache.xml").deleteFile();
     options.cacheFolder.getChildFile ("ScanInProgress.txt").deleteFile();
     listAudioUnits();
     juce::Array<juce::File> queue;
-    for (const auto& folder : options.vst3Folders)
+    for (const auto& folder : active.vst3Folders)
         if (folder.isDirectory()) collectBundles (folder, 0, queue);
     for (auto it = records.begin(); it != records.end();)   // forget uninstalled plug-ins
         it = juce::File (it->first).exists() ? std::next (it) : records.erase (it);
@@ -262,7 +290,7 @@ void PluginCatalog::listAudioUnits()
 {
     auKinds.clear();
     auEffects.clear();
-    if (! options.includeAudioUnits) return;
+    if (! active.includeAudioUnits) return;
     for (const auto& c : triad::au::listComponents())
     {
         const bool effect = c.type == auEffectType || c.type == auMusicEffectType;
@@ -382,7 +410,7 @@ void PluginCatalog::runScanner (const juce::File& bundle, FileRecord& record)
     const auto result = options.cacheFolder.getChildFile ("scan-" + juce::String::toHexString (juce::Random::getSystemRandom().nextInt64()) + ".xml");
     options.cacheFolder.createDirectory();
     const auto outcome = runHelper (scanner, { "--scan", bundle.getFullPathName(), result.getFullPathName() },
-                                    options.timeoutMs, [this] { return threadShouldExit(); });
+                                    active.timeoutMs, [this] { return threadShouldExit(); });
     const auto xml = result.existsAsFile() ? juce::XmlDocument::parse (result) : nullptr;
     result.deleteFile();
     result.getSiblingFile (result.getFileName() + ".part").deleteFile();

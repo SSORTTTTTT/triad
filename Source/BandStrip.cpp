@@ -1,10 +1,11 @@
 #include "BandStrip.h"
+#include "Settings.h"
 
 using namespace triad::ui;
 
 namespace
 {
-constexpr int headerHeight = 58, rowHeight = 30, rowGap = 2, addHeight = 24, footerHeight = 84;
+constexpr int rowHeight = 30, rowGap = 2, addHeight = 24, footerHeight = 92;
 }
 
 // ---- Slot row -------------------------------------------------------------------------------
@@ -28,9 +29,13 @@ void SlotRow::update (const TriadProcessor::SlotInfo& next, int slotCount)
 {
     if (! knob.isMouseButtonDown() && std::abs (knob.getValue() - next.mix) > 0.001)
         knob.setValue (next.mix, juce::dontSendNotification);
+    const bool liveChanged = std::abs (next.liveMix - info.liveMix) > 0.2f || next.modulated != info.modulated;
     if (! first && slotCount == count && next.name == info.name && next.status == info.status && next.loaded == info.loaded
         && next.enabled == info.enabled && next.pending == info.pending && next.hasContent == info.hasContent && next.format == info.format)
+    {
+        if (liveChanged) { info.liveMix = next.liveMix; info.modulated = next.modulated; repaint(); }
         return;
+    }
     first = false;
     count = slotCount;
     info = next;
@@ -59,7 +64,7 @@ void SlotRow::paint (juce::Graphics& g)
     g.setColour (info.hasContent ? textColour.withAlpha (0.8f) : dimTextColour.withAlpha (0.6f));
     g.fillPath (arrow);
     // Name, or "Slot n" in italics when empty.
-    const auto nameArea = juce::Rectangle<float> (20.0f, 0.0f, (float) knob.getX() - 24.0f, r.getHeight());
+    const auto nameArea = juce::Rectangle<float> (20.0f, 0.0f, (float) lfoArea().getX() - 22.0f, r.getHeight());
     if (info.name.isNotEmpty())
     {
         auto nameColour = info.status.isNotEmpty() ? juce::Colour (0xffe8a15c) : textColour;
@@ -75,6 +80,9 @@ void SlotRow::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (13.5f, juce::Font::italic));
         g.drawText ("Slot " + juce::String (slot + 1), nameArea, juce::Justification::centredLeft);
     }
+    // LFO button: lit in the band colour while an LFO moves this knob.
+    IconButton::drawIcon (g, IconButton::Icon::lfo, lfoArea().toFloat().withSizeKeepingCentre (14.0f, 9.0f),
+                          info.modulated ? colour : dimTextColour.withAlpha (hover ? 0.7f : 0.35f));
     // Green on/off light.
     const auto light = ledArea().toFloat().withSizeKeepingCentre (9.0f, 9.0f);
     if (info.enabled)
@@ -86,11 +94,25 @@ void SlotRow::paint (juce::Graphics& g)
     else g.setColour (juce::Colour (0xff4a504c));
     g.fillEllipse (light);
 }
+void SlotRow::paintOverChildren (juce::Graphics& g)
+{
+    if (! info.modulated) return;
+    // Where the LFO has the mix right now: a dot riding round the knob.
+    const auto k = knob.getBounds().toFloat();
+    const auto params = knob.getRotaryParameters();
+    const float angle = params.startAngleRadians + (info.liveMix / 100.0f) * (params.endAngleRadians - params.startAngleRadians);
+    const float radius = k.getWidth() * 0.5f + 1.0f;
+    const auto centre = k.getCentre();
+    const auto dot = centre.getPointOnCircumference (radius, angle);
+    g.setColour (juce::Colours::white);
+    g.fillEllipse (juce::Rectangle<float> (4.5f, 4.5f).withCentre (dot));
+}
 void SlotRow::mouseUp (const juce::MouseEvent& e)
 {
     if (! e.mouseWasClicked()) return;
     if (e.mods.isPopupMenu() || arrowArea().contains (e.getPosition())) { showMenu(); return; }
     if (ledArea().contains (e.getPosition())) { processor.setSlotEnabled (band, slot, ! info.enabled); return; }
+    if (lfoArea().contains (e.getPosition())) { host.showLfo (band, slot); return; }
     if (info.loaded) processor.showEffect (band, slot);   // one click opens the effect
     else host.chooseEffect (band, slot, *this);
 }
@@ -98,11 +120,14 @@ void SlotRow::showMenu()
 {
     // A band's only, empty slot has nothing to manage: go straight to the effect list.
     if (! info.hasContent && count <= 1) { host.chooseEffect (band, slot, *this); return; }
-    enum { menuOpen = 1, menuReplace, menuUp, menuDown, menuToggle, menuRemove };
+    enum { menuOpen = 1, menuReplace, menuUp, menuDown, menuToggle, menuRemove, menuLfo, menuFavourite };
     juce::PopupMenu menu;
     menu.addSectionHeader (info.name.isNotEmpty() ? info.name : "Slot " + juce::String (slot + 1));
     if (info.hasContent) menu.addItem (menuOpen, "Open window", info.loaded);
     menu.addItem (menuReplace, info.hasContent ? "Replace..." : "Load effect...");
+    menu.addItem (menuLfo, "Edit LFO for this mix knob...");
+    const bool favourite = info.loaded && host.isFavourite (info.format, info.name);
+    if (info.loaded) menu.addItem (menuFavourite, favourite ? "Remove from favourites" : "Add to favourites");
     menu.addSeparator();
     menu.addItem (menuUp, "Move up", slot > 0);
     menu.addItem (menuDown, "Move down", slot < count - 1);
@@ -110,19 +135,21 @@ void SlotRow::showMenu()
     menu.addSeparator();
     menu.addItem (menuRemove, count > 1 ? "Remove slot" : "Remove effect");
     juce::Component::SafePointer<SlotRow> safe (this);
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int choice)
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe, favourite] (int choice)
     {
         if (safe == nullptr) return;
         auto& self = *safe;
         // Rows are rebuilt from the editor's timer, never inside these calls.
         switch (choice)
         {
-            case menuOpen:    self.processor.showEffect (self.band, self.slot); break;
-            case menuReplace: self.host.chooseEffect (self.band, self.slot, self); break;
-            case menuUp:      self.processor.moveSlot (self.band, self.slot, -1); break;
-            case menuDown:    self.processor.moveSlot (self.band, self.slot, 1); break;
-            case menuToggle:  self.processor.setSlotEnabled (self.band, self.slot, ! self.info.enabled); break;
-            case menuRemove:  self.processor.removeSlot (self.band, self.slot); break;
+            case menuOpen:      self.processor.showEffect (self.band, self.slot); break;
+            case menuReplace:   self.host.chooseEffect (self.band, self.slot, self); break;
+            case menuUp:        self.processor.moveSlot (self.band, self.slot, -1); break;
+            case menuDown:      self.processor.moveSlot (self.band, self.slot, 1); break;
+            case menuToggle:    self.processor.setSlotEnabled (self.band, self.slot, ! self.info.enabled); break;
+            case menuRemove:    self.processor.removeSlot (self.band, self.slot); break;
+            case menuLfo:       self.host.showLfo (self.band, self.slot); break;
+            case menuFavourite: self.host.setFavourite (self.info.format, self.info.name, ! favourite); break;
             default: break;
         }
     });
@@ -169,6 +196,9 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
     // The editor rebuilds strips from its timer, so this strip is not deleted inside its own callback.
     removeButton.onClick = [this] { processor.removeBand (band); };
     addAndMakeVisible (removeButton);
+    menuButton.setTooltip ("Chain presets, LFOs, move or remove this band");
+    menuButton.onClick = [this] { host.showBandMenu (band, menuButton); };
+    addAndMakeVisible (menuButton);
     for (auto* label : { &startLabel, &endLabel })
     {
         label->setFont (juce::FontOptions (13.0f));
@@ -196,6 +226,15 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
     mix.setTooltip ("Band mix: 0% is the unprocessed band, 100% is the band's full effect chain.");
     addAndMakeVisible (mix);
     mixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.parameters, TriadProcessor::bandMixID (band), mix);
+    volume.setSliderStyle (juce::Slider::LinearHorizontal);
+    volume.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    volume.setColour (juce::Slider::trackColourId, colour);
+    volume.setTitle ("Band " + juce::String (band + 1) + " volume");
+    volume.setTooltip ("Band volume. Double-click for 0 dB.");
+    addAndMakeVisible (volume);
+    volumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.parameters, TriadProcessor::bandGainID (band), volume);
+    volume.setDoubleClickReturnValue (true, 0.0);
+    volume.onValueChange = [this] { repaint (0, getHeight() - footerHeight, getWidth(), footerHeight); };
 }
 void BandStrip::rebuildRows (int count)
 {
@@ -207,7 +246,6 @@ void BandStrip::rebuildRows (int count)
         slotHolder.addAndMakeVisible (*rows.back());
     }
     addButton.setSlotCount (count);
-    builtStructure = processor.getStructureVersion();
     layoutRows();
     repaint();
     if (grew)   // show the slot that was just added
@@ -225,7 +263,7 @@ void BandStrip::layoutRows()
     addButton.setBounds (0, y, juce::jmax (40, width), addHeight);
     slotHolder.setSize (juce::jmax (40, width), y + addHeight + 2);
 }
-void BandStrip::update (const std::vector<float>& crossovers, int bandCount, float nyquist)
+void BandStrip::update (const std::vector<float>& crossovers, int bandCount, float nyquist, float newLevel)
 {
     startHz = band == 0 ? 0.0f : crossovers[(size_t) band - 1];
     endHz = band < (int) crossovers.size() ? crossovers[(size_t) band] : nyquist;
@@ -247,17 +285,25 @@ void BandStrip::update (const std::vector<float>& crossovers, int bandCount, flo
         if (! grew) slotView.setViewPosition (position);
     }
     for (int s = 0; s < (int) rows.size(); ++s) rows[(size_t) s]->update (processor.getSlotInfo (band, s), count);
+    // Level meter: fast attack, gentle fall, peak hold.
+    level = juce::jmax (newLevel, level * 0.7f);
+    if (newLevel >= peakHold) { peakHold = newLevel; holdFrames = 15; }
+    else if (--holdFrames < 0) peakHold *= 0.85f;
+    repaint (0, getHeight() - footerHeight, getWidth(), footerHeight);
 }
 void BandStrip::resized()
 {
     const int w = getWidth();
     removeButton.setBounds (w - 32, 8, 22, 22);
+    menuButton.setBounds (w - 60, 8, 26, 22);
     startLabel.setBounds (8, 31, w / 2 - 12, 22);
     endLabel.setBounds (w / 2 + 4, 31, w / 2 - 12, 22);
     slotView.setBounds (6, headerHeight, w - 12, getHeight() - headerHeight - footerHeight);
     layoutRows();
     layoutRows();   // again, now that the viewport knows whether it needs a scroll bar
-    mix.setBounds (w - 82, getHeight() - footerHeight + 10, 66, 66);
+    const int footerTop = getHeight() - footerHeight;
+    mix.setBounds (w - 76, footerTop + 8, 62, 62);
+    volume.setBounds (10, footerTop + 26, w - 96, 18);
 }
 void BandStrip::paint (juce::Graphics& g)
 {
@@ -265,17 +311,66 @@ void BandStrip::paint (juce::Graphics& g)
     g.setColour (panel); g.fillRoundedRectangle (bounds, 7.0f);
     g.setColour (colour.withAlpha (0.75f)); g.fillRoundedRectangle (12.0f, 11.0f, 4.0f, 17.0f, 2.0f);
     g.setColour (colour); g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-    g.drawText ("BAND " + juce::String (band + 1), 23, 8, getWidth() - 60, 24, juce::Justification::centredLeft);
+    g.drawText ("BAND " + juce::String (band + 1), 23, 8, getWidth() - 90, 24, juce::Justification::centredLeft);
     g.setColour (juce::Colour (0xff778275)); g.setFont (juce::FontOptions (12.0f));
     g.drawText (juce::String::fromUTF8 ("\xe2\x86\x92"), getWidth() / 2 - 10, 31, 20, 22, juce::Justification::centred);
     g.setColour (colour.withAlpha (0.45f));
     g.drawHorizontalLine (headerHeight - 4, 10.0f, (float) getWidth() - 10.0f);
     const int footerTop = getHeight() - footerHeight;
     g.drawHorizontalLine (footerTop + 2, 10.0f, (float) getWidth() - 10.0f);
-    g.setColour (juce::Colour (0xffa5afa2)); g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-    g.drawText ("BAND MIX", 12, footerTop + 22, 120, 20, juce::Justification::centredLeft);
-    g.setFont (juce::FontOptions (11.0f)); g.setColour (juce::Colour (0xff8a948a));
+    // Volume: label and value, slider (a component), then the level meter.
+    const int left = 12, right = getWidth() - 88;
+    g.setColour (juce::Colour (0xffa5afa2)); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    g.drawText ("VOLUME", left, footerTop + 8, 80, 16, juce::Justification::centredLeft);
+    const auto db = (float) volume.getValue();
+    g.setColour (textColour); g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+    g.drawText ((db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB", right - 80, footerTop + 8, 80, 16, juce::Justification::centredRight);
+    const auto meter = juce::Rectangle<float> ((float) left, (float) footerTop + 50.0f, (float) (right - left - 44), 6.0f);
+    g.setColour (juce::Colour (0xff111312)); g.fillRoundedRectangle (meter, 2.0f);
+    auto position = [&meter] (float gain)
+    {
+        const float dbValue = juce::jlimit (-60.0f, 6.0f, juce::Decibels::gainToDecibels (gain, -60.0f));
+        return meter.getX() + meter.getWidth() * (dbValue + 60.0f) / 66.0f;
+    };
+    if (level > 0.001f)
+    {
+        g.setColour (level > 1.0f ? juce::Colour (0xffe8705c) : colour.withAlpha (0.85f));
+        g.fillRoundedRectangle (meter.withRight (position (level)), 2.0f);
+    }
+    if (peakHold > 0.001f)
+    {
+        g.setColour (peakHold > 1.0f ? juce::Colour (0xffe8705c) : textColour);
+        g.fillRect (position (peakHold) - 1.0f, meter.getY() - 1.0f, 2.0f, meter.getHeight() + 2.0f);
+    }
+    g.setColour (dimTextColour); g.setFont (juce::FontOptions (10.0f));
+    g.drawText (formatDb (peakHold), (int) meter.getRight() + 2, (int) meter.getY() - 5, 44, 16, juce::Justification::centredRight);
     const int n = (int) rows.size();
-    g.drawText ("Dry 0%  /  Wet 100%", 12, footerTop + 44, 130, 18, juce::Justification::centredLeft);
-    g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), 12, footerTop + 60, 130, 16, juce::Justification::centredLeft);
+    g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), left, footerTop + 64, 80, 16, juce::Justification::centredLeft);
+    g.setColour (juce::Colour (0xffa5afa2)); g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    g.drawText ("BAND MIX", getWidth() - 80, footerTop + 70, 70, 16, juce::Justification::centred);
+}
+void BandStrip::paintOverChildren (juce::Graphics& g)
+{
+    if (! lifted) return;
+    g.setColour (colour);
+    g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 7.0f, 2.0f);
+}
+void BandStrip::setLifted (bool on)
+{
+    lifted = on;
+    setAlpha (on ? 0.9f : 1.0f);
+    repaint();
+}
+// Press and drag the header to move this band's chain to another band.
+void BandStrip::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.y < headerHeight && e.mods.isLeftButtonDown()) host.bandDrag (band, e, 0);
+}
+void BandStrip::mouseDrag (const juce::MouseEvent& e)
+{
+    if (e.mouseDownPosition.y < headerHeight) host.bandDrag (band, e, 1);
+}
+void BandStrip::mouseUp (const juce::MouseEvent& e)
+{
+    if (e.mouseDownPosition.y < headerHeight) host.bandDrag (band, e, 2);
 }

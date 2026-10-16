@@ -1,7 +1,6 @@
 #include "CrossoverDisplay.h"
 
-using triad::ui::bandColour;
-using triad::ui::formatHz;
+using namespace triad::ui;
 
 CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p)
 {
@@ -36,7 +35,7 @@ juce::Component* CrossoverDisplay::getHandle (int index) const
 }
 juce::Rectangle<float> CrossoverDisplay::plotBounds() const
 {
-    return { 20.0f, 38.0f, juce::jmax (1.0f, (float) getWidth() - 40.0f), juce::jmax (1.0f, (float) getHeight() - 70.0f) };
+    return { 20.0f, 38.0f, juce::jmax (1.0f, (float) getWidth() - 40.0f - meterWidth), juce::jmax (1.0f, (float) getHeight() - 70.0f) };
 }
 float CrossoverDisplay::xForFrequency (float frequency) const
 {
@@ -93,9 +92,105 @@ void CrossoverDisplay::setCrossoverValue (int index, float frequency)
 }
 void CrossoverDisplay::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (! plotBounds().contains (e.position)) return;
+    if (! plotBounds().contains (e.position) || e.mods.isPopupMenu()) return;
     processor.addBand (frequencyForX (e.position.x));
     refresh();
+}
+int CrossoverDisplay::bandAt (float x) const
+{
+    int band = 0;
+    for (size_t i = 0; i < cuts.size(); ++i) if (x > xForFrequency (cuts[i])) band = (int) i + 1;
+    return band;
+}
+void CrossoverDisplay::mouseDown (const juce::MouseEvent& e)
+{
+    // Right-click a band's area: remove it (or add a band right there).
+    if (e.mods.isPopupMenu() && plotBounds().contains (e.position)) showBandMenu (bandAt (e.position.x), frequencyForX (e.position.x));
+}
+void CrossoverDisplay::showBandMenu (int band, float hz)
+{
+    enum { removeId = 1, addId, lfoId };
+    const int count = processor.getBandCount();
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("BAND " + juce::String (band + 1));
+    menu.addItem (removeId, "Remove band " + juce::String (band + 1), count > 1);
+    menu.addItem (addId, "Add a band here (" + formatHz (hz) + ")", count < triad::maxBands);
+    menu.addItem (lfoId, "Edit LFO for band " + juce::String (band + 1) + " mix...");
+    juce::Component::SafePointer<CrossoverDisplay> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, band, hz] (int choice)
+    {
+        if (safe == nullptr) return;
+        if (choice == removeId) safe->processor.removeBand (band);
+        else if (choice == addId) safe->processor.addBand (hz);
+        else if (choice == lfoId) { if (safe->onEditBandLfo) safe->onEditBandLfo (band); return; }
+        safe->refresh();
+    });
+}
+void CrossoverDisplay::showCrossoverMenu (int index)
+{
+    enum { removeBelow = 1, removeAbove, resetId };
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("CROSSOVER " + juce::String (index + 1) + "  " + (index < (int) cuts.size() ? formatHz (cuts[(size_t) index]) : juce::String()));
+    menu.addItem (removeBelow, "Remove band " + juce::String (index + 1) + " (below)");
+    menu.addItem (removeAbove, "Remove band " + juce::String (index + 2) + " (above)");
+    menu.addItem (resetId, "Reset this crossover");
+    juce::Component::SafePointer<CrossoverDisplay> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, index] (int choice)
+    {
+        if (safe == nullptr) return;
+        if (choice == removeBelow) safe->processor.removeBand (index);
+        else if (choice == removeAbove) safe->processor.removeBand (index + 1);
+        else if (choice == resetId) safe->setCrossoverValue (index, TriadProcessor::defaultCrossover (index, safe->processor.getBandCount()));
+        safe->refresh();
+    });
+}
+void CrossoverDisplay::Meter::push (float v)
+{
+    level = juce::jmax (v, level * 0.82f);
+    if (v >= hold) { hold = v; holdFrames = 45; }
+    else if (--holdFrames < 0) hold *= 0.9f;
+}
+void CrossoverDisplay::setMeters (float input, float output)
+{
+    inputMeter.push (input);
+    outputMeter.push (output);
+}
+void CrossoverDisplay::paintMeters (juce::Graphics& g)
+{
+    const auto plot = plotBounds();
+    const float top = plot.getY() + 8.0f, bottom = plot.getBottom();
+    const float x0 = (float) getWidth() - 18.0f - meterWidth + 12.0f;
+    auto yFor = [&] (float gain)
+    {
+        const float db = juce::jlimit (-60.0f, 6.0f, juce::Decibels::gainToDecibels (gain, -60.0f));
+        return bottom - (bottom - top) * (db + 60.0f) / 66.0f;
+    };
+    const char* labels[] { "IN", "OUT" };
+    const Meter* meters[] { &inputMeter, &outputMeter };
+    for (int i = 0; i < 2; ++i)
+    {
+        const float x = x0 + (float) i * 28.0f;
+        const auto bar = juce::Rectangle<float> (x, top, 12.0f, bottom - top);
+        g.setColour (juce::Colour (0xff1c1f1e)); g.fillRoundedRectangle (bar, 2.0f);
+        const auto& m = *meters[i];
+        if (m.level > 0.001f)
+        {
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff9bd85c), 0.0f, bottom, juce::Colour (0xffe8705c), 0.0f, yFor (1.0f), false));
+            g.fillRoundedRectangle (bar.withTop (yFor (m.level)), 2.0f);
+        }
+        if (m.hold > 0.001f)
+        {
+            g.setColour (m.hold > 1.0f ? juce::Colour (0xffe8705c) : textColour);
+            g.fillRect (x, yFor (m.hold) - 1.0f, 12.0f, 2.0f);
+        }
+        g.setColour (juce::Colour (0xffb8bcba)); g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
+        g.drawText (labels[i], juce::Rectangle<float> (x - 8.0f, top - 18.0f, 28.0f, 14.0f), juce::Justification::centred);
+        g.setColour (dimTextColour); g.setFont (juce::FontOptions (9.0f));
+        const auto text = m.hold < 1.0e-4f ? juce::String ("-inf") : juce::String (juce::Decibels::gainToDecibels (m.hold), 1);
+        g.drawText (text, juce::Rectangle<float> (x - 9.0f, bottom + 10.0f, 30.0f, 14.0f), juce::Justification::centred);
+    }
+    g.setColour (juce::Colour (0xff3a3f3c));
+    g.drawVerticalLine (juce::roundToInt (x0 - 10.0f), top - 18.0f, bottom + 22.0f);
 }
 void CrossoverDisplay::refresh()
 {
@@ -136,7 +231,7 @@ float CrossoverDisplay::pillTop (int index) const
 }
 void CrossoverDisplay::resized()
 {
-    addButton.setBounds (getWidth() - 96, 7, 78, 24);
+    addButton.setBounds (getWidth() - 96 - (int) meterWidth, 7, 78, 24);
     cuts = processor.effectiveCrossovers();
     layoutPills();
     const auto plot = plotBounds();
@@ -156,6 +251,7 @@ void CrossoverDisplay::timerCallback()
 {
     updateSpectrum();
     repaint (plotBounds().toNearestInt().expanded (2));
+    repaint (getWidth() - (int) meterWidth - 24, 0, (int) meterWidth + 24, getHeight());
 }
 void CrossoverDisplay::updateSpectrum()
 {
@@ -224,7 +320,8 @@ void CrossoverDisplay::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xffb8bcba)); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
     g.drawText ("BAND CROSSOVERS", 18, 8, 175, 23, juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (11.0f)); g.setColour (juce::Colour (0xff898f8b));
-    g.drawText ("Drag a divider  /  Double-click to add a band", getWidth() - 430, 8, 320, 23, juce::Justification::centredRight);
+    g.drawText ("Drag a divider  /  Double-click to add a band  /  Right-click to remove", getWidth() - 540 - (int) meterWidth, 8, 430, 23,
+                juce::Justification::centredRight);
     for (int i = 0; i < count && i + 1 < (int) xs.size(); ++i)
     {
         const auto colour = bandColour (i);
@@ -268,6 +365,7 @@ void CrossoverDisplay::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
         g.drawText (formatHz (cuts[i]), juce::Rectangle<float> (x, y, pillWidth, 24.0f), juce::Justification::centred);
     }
+    paintMeters (g);
 }
 
 // ---- Handles --------------------------------------------------------------------------------
@@ -308,6 +406,7 @@ bool CrossoverDisplay::Handle::hitTest (int x, int y)
 }
 void CrossoverDisplay::Handle::mouseDown (const juce::MouseEvent& event)
 {
+    if (event.mods.isPopupMenu()) { owner.showCrossoverMenu (index); return; }
     if (! event.mods.isLeftButtonDown()) return;
     const auto current = owner.processor.effectiveCrossovers();
     if (index >= (int) current.size()) return;
