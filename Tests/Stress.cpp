@@ -487,6 +487,7 @@ void bigProject (const Pool& pool, double seconds)
             require (p->loadEffect (b, s, d, false).isEmpty(), "Load " + d.name + " into band " + juce::String (b + 1));
         }
     settle (*p);
+    pump (300);   // a DAW's message loop keeps running; plug-ins finish starting up there
     const int loaded = loadedCount (*p);
     say ("Loaded " + juce::String (loaded) + " effects in " + ms (juce::Time::getMillisecondCounterHiRes() - start)
          + "; Triad latency " + juce::String (p->getLatencySamples()) + " samples");
@@ -537,6 +538,7 @@ void bigProject (const Pool& pool, double seconds)
     reopened.prepareToPlay (rate, block);
     reopened.setStateInformation (state.getData(), (int) state.getSize());
     settle (reopened);
+    pump (300);
     say ("Saved (" + juce::String ((int) (state.getSize() / 1024)) + " KB) in " + ms (saveTime) + ", reopened in "
          + ms (juce::Time::getMillisecondCounterHiRes() - start) + " with " + juce::String (loadedCount (reopened)) + " effects running");
     require (reopened.getBandCount() == triad::maxBands && loadedCount (reopened) == loaded, "Big project reopens complete");
@@ -867,6 +869,7 @@ void manyInstances (const Pool& pool)
             for (int s = 0; s < slotsPerBand; ++s)
                 require (p.loadEffect (b, s, pool.effects[(size_t) (index++ % (int) pool.effects.size())], false).isEmpty(), "Load into instance");
         settle (p);
+        pump (50);
         activateAllLfos (p, lfoRandom);
         p.setPlayHead (&transport);
     }
@@ -910,6 +913,7 @@ void manyInstances (const Pool& pool)
         p.prepareToPlay (44100, 256);
         for (int s = 0; s < 3; ++s) p.loadEffect (i % 3, s, pool.effects[(size_t) ((i + s) % (int) pool.effects.size())], false);
         settle (p);
+        pump (30);
         juce::AudioBuffer<float> a (2, 256);
         fillNoise (a, random);
         p.processBlock (a, midi);

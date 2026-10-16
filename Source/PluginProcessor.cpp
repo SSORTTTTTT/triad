@@ -385,8 +385,23 @@ void TriadProcessor::alignLatency()
 }
 void TriadProcessor::timerCallback()
 {
-    const juce::ScopedTryLock lock (gate);
-    if (lock.isLocked()) alignLatency();
+    {
+        const juce::ScopedTryLock lock (gate);
+        if (lock.isLocked()) alignLatency();
+    }
+    // Delete effects removed at least a second ago (oldest first).
+    if (! retired.empty())
+    {
+        const auto now = juce::Time::getMillisecondCounter();
+        auto keep = std::find_if (retired.begin(), retired.end(), [now] (const Retired& r) { return now - r.since < 1000; });
+        retired.erase (retired.begin(), keep);
+    }
+}
+void TriadProcessor::retire (std::unique_ptr<juce::AudioPluginInstance> effect)
+{
+    if (effect == nullptr) return;
+    effect->setPlayHead (nullptr);
+    retired.push_back ({ std::move (effect), juce::Time::getMillisecondCounter() });
 }
 void TriadProcessor::startFadeIn() { fadeRemaining = fadeLength; }
 
@@ -698,7 +713,7 @@ bool TriadProcessor::removeBand (int band)
         startFadeIn();
         setStatus ("Removed band " + juce::String (band + 1));
     }
-    for (auto& s : removed->slots) { s->window.reset(); s->effect.reset(); }
+    for (auto& s : removed->slots) { s->window.reset(); retire (std::move (s->effect)); }
     removed.reset();
     for (int j = 0; j < count - 1; ++j) setParameterValue (crossoverID (j), next[(size_t) j]);
     for (int p = band; p < count; ++p)
@@ -840,7 +855,7 @@ void TriadProcessor::removeSlot (int band, int slot)
         setStatus (removed->description.name.isNotEmpty() ? "Removed " + removed->description.name : "Removed slot");
     }
     removed->window.reset();   // an editor must be deleted before its processor
-    removed->effect.reset();
+    retire (std::move (removed->effect));
     ++structureVersion;
     refreshWindowTitles();
     stateChanged();
@@ -1017,7 +1032,7 @@ juce::String TriadProcessor::finishInstall (int band, int slotIndex, const juce:
         alignLatency();
     }
     oldWindow.reset();   // an editor must be deleted before its processor
-    old.reset();
+    retire (std::move (old));
     stateChanged();
     if (openEditor) showEffect (band, slotIndex);
     return {};
@@ -1040,7 +1055,7 @@ void TriadProcessor::removeEffect (int band, int slot)
         setStatus ("Effect removed");
     }
     window.reset();
-    old.reset();
+    retire (std::move (old));
     stateChanged();
 }
 void TriadProcessor::setSlotEnabled (int band, int slot, bool enabled)
@@ -1602,7 +1617,7 @@ void TriadProcessor::restoreFrom (const juce::XmlElement& xml)
         publishInfo();
     }
     for (auto& band : old)
-        for (auto& s : band->slots) { s->window.reset(); s->effect.reset(); }
+        for (auto& s : band->slots) { s->window.reset(); retire (std::move (s->effect)); }
     old = {};
     // Parameters, minus any that no longer exist (Triad 0.2.0 had per-slot mix parameters).
     juce::ValueTree savedParameters;
@@ -1704,7 +1719,7 @@ juce::String TriadProcessor::loadChainXml (int band, const juce::XmlElement& xml
         prepareBand (band, false);
         alignLatency();
     }
-    for (auto& s : old->slots) { s->window.reset(); s->effect.reset(); }
+    for (auto& s : old->slots) { s->window.reset(); retire (std::move (s->effect)); }
     old.reset();
     setParameterValue (bandMixID (band), (float) xml.getDoubleAttribute ("bandMix", 100.0));
     setParameterValue (bandGainID (band), (float) xml.getDoubleAttribute ("bandGain", 0.0));

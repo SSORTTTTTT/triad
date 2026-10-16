@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <cstdlib>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 
 void require (bool b, const char* message) { if (! b) throw std::runtime_error (message); }
@@ -76,14 +77,22 @@ void runAudioCase (TriadProcessor& p, double sr, const std::vector<float>& gains
 class SidechainEffect final : public juce::AudioPluginInstance
 {
 public:
-    explicit SidechainEffect (bool monoOnly = false)
+    // postOnLoad: like some real plug-ins, it posts itself a message when made (holding a plain
+    // pointer to itself), which must not arrive after the host has deleted it.
+    explicit SidechainEffect (bool monoOnly = false, bool postOnLoad = false)
         : AudioPluginInstance (BusesProperties().withInput ("In", monoOnly ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo(), true)
                                                 .withOutput ("Out", monoOnly ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo(), true)
                                                 .withInput ("Sidechain", juce::AudioChannelSet::stereo(), true)),
           mono (monoOnly)
     {
         setLatencySamples (73);
+        live().insert (this);
+        if (postOnLoad)
+            juce::MessageManager::callAsync ([self = this] { ++(live().count (self) > 0 ? delivered : deliveredAfterDeletion); });
     }
+    ~SidechainEffect() override { live().erase (this); }
+    static std::set<const void*>& live() { static std::set<const void*> s; return s; }
+    static inline int delivered = 0, deliveredAfterDeletion = 0;
     void fillInPluginDescription (juce::PluginDescription& d) const override
     {
         d.name = mono ? "Mono Only" : "Sidechain Effect"; d.pluginFormatName = "Test"; d.manufacturerName = "Triad Tests";
@@ -287,6 +296,18 @@ int main (int argc, char** argv)
             const auto refused = sidechain.loadInstance (0, 0, std::make_unique<SidechainEffect> (true));
             require (refused.contains ("Mono"), ("A mono-only effect is refused with its layout named (" + refused + ")").toRawUTF8());
             std::cout << "Mono-only effect refused: " << refused << std::endl;
+        }
+        // ---- A removed effect is deleted only after its own pending messages have arrived -------
+        {
+            TriadProcessor q;
+            q.prepareToPlay (48000, 512);
+            require (q.loadInstance (0, 0, std::make_unique<SidechainEffect> (false, true)).isEmpty(), "Load an effect that posts itself a message");
+            q.removeSlot (0, 0);   // straight away, before its message has arrived
+            require (! SidechainEffect::live().empty(), "The removed effect is not deleted on the spot");
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
+            require (SidechainEffect::delivered == 1 && SidechainEffect::deliveredAfterDeletion == 0, "Its message arrives while it still exists");
+            require (SidechainEffect::live().empty(), "It is deleted a moment later");
+            std::cout << "Removed effects are deleted after their pending messages: passed" << std::endl;
         }
 
         // ---- Per-slot mix (FL-style slot knobs) ----------------------------------------------
