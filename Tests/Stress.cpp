@@ -1011,10 +1011,319 @@ void manyInstances (const Pool& pool)
     say ("40 create/play/destroy cycles in " + ms (juce::Time::getMillisecondCounterHiRes() - start));
 }
 
-// ---- 4. Plug-in list with crashing plug-ins -------------------------------------------------------
+// ---- 4. Live vocal monitoring: latency and real-time safety ----------------------------------------
+// What a singer hears through Triad while recording: (a) the delay Triad adds and reports to the DAW
+// (it should be zero unless a hosted effect itself has latency), checked by measuring an impulse;
+// (b) the timing smear of the crossovers (group delay, from the phase of the bands added back);
+// (c) whether Triad keeps up at the small buffer sizes used for live monitoring, on an audio thread
+// paced like a real audio interface, with the Triad window open.
+namespace live
+{
+constexpr double rate = 48000.0;
+
+// Lets parameter smoothing and slope crossfades finish.
+void runSilence (TriadProcessor& p, int block, double seconds)
+{
+    juce::AudioBuffer<float> silence (2, block);
+    juce::MidiBuffer midi;
+    for (int i = 0; i < (int) (rate * seconds / block); ++i) { silence.clear(); p.processBlock (silence, midi); }
+}
+// The output for a unit impulse at the input (both channels), `length` samples.
+std::vector<float> impulseResponse (TriadProcessor& p, int block, int length)
+{
+    runSilence (p, block, 0.25);
+    std::vector<float> out;
+    juce::AudioBuffer<float> audio (2, block);
+    juce::MidiBuffer midi;
+    for (int done = 0; done < length; done += block)
+    {
+        audio.clear();
+        if (done == 0) { audio.setSample (0, 0, 1.0f); audio.setSample (1, 0, 1.0f); }
+        p.processBlock (audio, midi);
+        for (int i = 0; i < block; ++i) out.push_back (audio.getSample (0, i));
+    }
+    out.resize ((size_t) length);
+    return out;
+}
+int firstSound (const std::vector<float>& h)
+{
+    float peak = 0.0f;
+    for (auto v : h) peak = juce::jmax (peak, std::abs (v));
+    for (size_t i = 0; i < h.size(); ++i) if (std::abs (h[i]) > peak * 0.01f) return (int) i;
+    return -1;
+}
+int peakAt (const std::vector<float>& h)
+{
+    int at = 0;
+    for (size_t i = 1; i < h.size(); ++i) if (std::abs (h[i]) > std::abs (h[(size_t) at])) at = (int) i;
+    return at;
+}
+// Group delay (ms) at a frequency, from the impulse response: Re(FFT(n h) / FFT(h)).
+std::vector<double> groupDelayMs (const std::vector<float>& h, const std::vector<float>& freqs)
+{
+    const size_t n = h.size();
+    std::vector<std::complex<float>> a (n), b (n);
+    for (size_t i = 0; i < n; ++i) { a[i] = { h[i], 0.0f }; b[i] = { (float) i * h[i], 0.0f }; }
+    triad::fft (a); triad::fft (b);
+    std::vector<double> out;
+    for (auto f : freqs)
+    {
+        const auto k = (size_t) juce::roundToInt ((double) f / rate * (double) n);
+        const auto ratio = b[k] / a[k];
+        out.push_back ((double) ratio.real() / rate * 1000.0);
+    }
+    return out;
+}
+juce::String samplesAndMs (int samples) { return juce::String (samples) + " samples (" + juce::String (samples / rate * 1000.0, 2) + " ms)"; }
+
+// The audio thread: blocks paced like an audio interface (one every block/rate seconds), each one's
+// processing time measured. The message thread keeps running (Triad's window redraws) meanwhile.
+struct Timing { double average = 0.0, worst = 0.0, p999 = 0.0; int late = 0, blocks = 0; bool realtime = false; };
+class PacedAudio final : public juce::Thread
+{
+public:
+    PacedAudio (TriadProcessor& proc, Transport& t, int blockSize, double secs)
+        : Thread ("Triad live-monitoring test"), p (proc), transport (t), block (blockSize), seconds (secs) {}
+    Timing result;
+    void run() override
+    {
+        juce::AudioBuffer<float> audio (2, block);
+        juce::MidiBuffer midi;
+        juce::Random r (7);
+        const double period = 1000.0 * block / rate;
+        const int count = (int) (rate * seconds / block);
+        std::vector<double> times;
+        times.reserve ((size_t) count);
+        double next = juce::Time::getMillisecondCounterHiRes();
+        for (int i = 0; i < count && ! threadShouldExit(); ++i)
+        {
+            // A voice-like test signal: noise bursts with gaps.
+            for (int c = 0; c < 2; ++c)
+                for (int s = 0; s < block; ++s)
+                    audio.setSample (c, s, ((i / 40) % 3 == 2 ? 0.0f : 0.25f) * (r.nextFloat() * 2.0f - 1.0f));
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            p.processBlock (audio, midi);
+            const auto dt = juce::Time::getMillisecondCounterHiRes() - t0;
+            transport.advance (block, rate);
+            times.push_back (dt);
+            if (dt > period) ++result.late;
+            next += period;
+            for (auto now = juce::Time::getMillisecondCounterHiRes(); now < next; now = juce::Time::getMillisecondCounterHiRes())
+            {
+                if (next - now > 1.5) juce::Thread::sleep (1);
+                else std::this_thread::yield();
+            }
+            if (juce::Time::getMillisecondCounterHiRes() > next + 4.0 * period) next = juce::Time::getMillisecondCounterHiRes();   // fell behind: start again
+        }
+        result.blocks = (int) times.size();
+        if (times.empty()) return;
+        double total = 0.0;
+        for (auto t : times) { total += t; result.worst = juce::jmax (result.worst, t); }
+        result.average = total / (double) times.size();
+        std::sort (times.begin(), times.end());
+        result.p999 = times[juce::jmin (times.size() - 1, (size_t) ((double) times.size() * 0.999))];
+    }
+private:
+    TriadProcessor& p;
+    Transport& transport;
+    int block;
+    double seconds;
+};
+Timing play (TriadProcessor& p, Transport& transport, int block, double seconds)
+{
+    PacedAudio audio (p, transport, block, seconds);
+    const auto options = juce::Thread::RealtimeOptions().withPriority (10).withApproximateAudioProcessingTime (block, rate)
+                                                        .withPeriodMs (1000.0 * block / rate);
+    const bool realtime = audio.startRealtimeThread (options);
+    if (! realtime) audio.startThread (juce::Thread::Priority::highest);
+    while (audio.isThreadRunning()) pump (20);
+    audio.stopThread (2000);
+    auto t = audio.result;
+    t.realtime = realtime;
+    return t;
+}
+}
+
+void liveMonitoring (const Pool& pool, bool real)
+{
+    using namespace live;
+    say ("\n== 4. Live vocal monitoring: latency and real-time safety ==");
+    // (a) The delay Triad adds, reported to the DAW and measured with an impulse.
+    step ("live monitoring: Triad's own delay", 300);
+    struct Setup { const char* name; int bands; int order; };
+    for (const auto& setup : { Setup { "3 bands, 24 dB/oct (default)", 3, 4 }, Setup { "3 bands, 6 dB/oct (softest)", 3, 1 },
+                               Setup { "3 bands, 96 dB/oct (hardest)", 3, 16 }, Setup { "10 bands, 96 dB/oct", 10, 16 } })
+    {
+        TriadProcessor p;
+        p.prepareToPlay (rate, 64);
+        while (p.getBandCount() < setup.bands && p.addBand()) {}
+        for (int j = 0; j + 1 < p.getBandCount(); ++j) p.setCrossoverSlope (j, setup.order);
+        const auto h = impulseResponse (p, 64, 16384);
+        const int reported = p.getLatencySamples(), first = firstSound (h), peak = peakAt (h);
+        say (juce::String ("Triad alone, ") + setup.name + ": reports " + samplesAndMs (reported) + " to the DAW; the sound starts at sample "
+             + juce::String (first) + ", its peak at sample " + juce::String (peak) + " (" + juce::String (peak / rate * 1000.0, 2) + " ms)");
+        // Minimum-phase crossovers: no latency; with many steep crossovers the click is rounded over a few samples (phase), not delayed.
+        require (reported == 0 && first <= 4, "Triad alone adds no delay (nothing for the DAW to compensate)");
+    }
+    // (b) Timing smear of the crossovers: group delay of the bands added back, at vocal frequencies.
+    {
+        const std::vector<float> freqs { 100.0f, 250.0f, 500.0f, 1000.0f, 2500.0f, 5000.0f, 10000.0f };
+        say ("Crossover timing smear (group delay of the bands added back, crossovers at 250 Hz and 2.5 kHz), in ms at:");
+        juce::String header ("              ");
+        for (auto f : freqs) header << juce::String (f < 1000.0f ? juce::String ((int) f) + " Hz" : juce::String (f / 1000.0f, 1) + " kHz").paddedLeft (' ', 9);
+        say (header);
+        double worstVoice = 0.0;
+        for (int order : { 1, 2, 4, 8, 12, 16 })
+        {
+            TriadProcessor p;
+            p.prepareToPlay (rate, 64);
+            for (int j = 0; j + 1 < p.getBandCount(); ++j) p.setCrossoverSlope (j, order);
+            const auto gd = groupDelayMs (impulseResponse (p, 64, 32768), freqs);
+            juce::String line (TriadProcessor::slopeText (order).paddedRight (' ', 14));
+            for (size_t i = 0; i < gd.size(); ++i)
+            {
+                line << juce::String (gd[i], 2).paddedLeft (' ', 9);
+                if (freqs[i] >= 500.0f) worstVoice = juce::jmax (worstVoice, gd[i]);
+            }
+            say (line);
+        }
+        say ("(For comparison: a singer 1 m from the microphone arrives 2.9 ms late; a 64-sample buffer is 1.33 ms.)");
+        juce::ignoreUnused (worstVoice);
+    }
+    // (c) Effects that report latency, and the delay Triad then reports: measured, with the effect's
+    // slot at 0% mix, the band comes out exactly that much later and aligned with the others.
+    step ("live monitoring: effects with latency", 600);
+    {
+        std::vector<std::pair<juce::String, int>> withLatency;
+        int zero = 0;
+        TriadProcessor probe;
+        probe.prepareToPlay (rate, 64);
+        for (size_t i = 0; i < pool.effects.size(); ++i)
+        {
+            if (probe.loadEffect (0, 0, pool.effects[i], false).isNotEmpty()) continue;
+            settle (probe);
+            pump (50);
+            const int latency = probe.getSlotInfo (0, 0).latency;
+            if (latency > 0) withLatency.push_back ({ pool.names[(int) i], latency });
+            else ++zero;
+            probe.removeEffect (0, 0);
+            settle (probe);
+        }
+        juce::StringArray list;
+        for (const auto& [name, latency] : withLatency) list.add (name + " " + samplesAndMs (latency));
+        say (juce::String (zero) + " of " + juce::String ((int) pool.effects.size()) + " effects add no latency; "
+             + (list.isEmpty() ? juce::String ("none add any.") : "these do (Triad then reports the largest band total to the DAW): " + list.joinIntoString ("; ")));
+        if (! withLatency.empty())
+        {
+            // The one with the most latency, in band 2 at 0% mix: the output is the dry signal, delayed by exactly what Triad reports.
+            size_t most = 0;
+            for (size_t i = 0; i < withLatency.size(); ++i) if (withLatency[i].second > withLatency[most].second) most = i;
+            const int index = pool.names.indexOf (withLatency[most].first);
+            TriadProcessor p;
+            p.prepareToPlay (rate, 64);
+            require (p.loadEffect (1, 0, pool.effects[(size_t) index], false).isEmpty(), "Load " + withLatency[most].first);
+            settle (p);
+            pump (300);
+            p.setSlotMix (1, 0, 0.0f);
+            const auto h = impulseResponse (p, 64, 32768);
+            const int reported = p.getLatencySamples(), first = firstSound (h);
+            say ("With " + withLatency[most].first + " in band 2 (slot at 0% mix): Triad reports " + samplesAndMs (reported)
+                 + "; the dry sound comes out at sample " + juce::String (first) + " (peak at " + juce::String (peakAt (h)) + ")");
+            require (reported == withLatency[most].second && first == reported, "Triad reports exactly the delay it adds, so the DAW can line it up");
+        }
+    }
+    // (d) Keeping up at live-monitoring buffer sizes, on a paced audio thread, with the window open.
+    step ("live monitoring: real-time buffers", 900);
+    {
+        // A vocal chain: five effects without latency (what a singer can monitor through), the kinds used on
+        // vocals first: dynamics, EQ, saturation, delay, reverb.
+        std::vector<size_t> chain;
+        {
+            const juce::StringArray kinds { "Dynamics", "Compressor", "EQ", "MultiTool", "Tape", "Centaur", "TIME-12", "Delay", "Plate", "Reverb", "Room" };
+            std::vector<size_t> order;
+            for (const auto& kind : kinds)
+                for (size_t i = 0; i < pool.effects.size(); ++i)
+                    if (pool.names[(int) i].containsIgnoreCase (kind) && std::find (order.begin(), order.end(), i) == order.end()) order.push_back (i);
+            for (size_t i = 0; i < pool.effects.size(); ++i)
+                if (std::find (order.begin(), order.end(), i) == order.end()) order.push_back (i);
+            TriadProcessor probe;
+            probe.prepareToPlay (rate, 64);
+            for (size_t i : order)
+            {
+                if (chain.size() >= 5) break;
+                if (probe.loadEffect (0, 0, pool.effects[i], false).isNotEmpty()) continue;
+                settle (probe);
+                if (probe.getSlotInfo (0, 0).latency == 0) chain.push_back (i);
+                probe.removeEffect (0, 0);
+                settle (probe);
+            }
+        }
+        juce::StringArray chainNames;
+        for (auto i : chain) chainNames.add (pool.names[(int) i]);
+        struct Case { const char* name; int bands, order, effects; bool lfos; };
+        const Case cases[] { { "Triad alone, 3 bands, 24 dB/oct", 3, 4, 0, false },
+                             { "Triad alone, 10 bands, 96 dB/oct", 10, 16, 0, false },
+                             { "Triad alone, 10 bands, 96 dB/oct, every LFO on", 10, 16, 0, true },
+                             { "vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct", 3, 8, (int) chain.size(), true } };
+        say ("Vocal chain effects: " + (chainNames.isEmpty() ? juce::String ("none available") : chainNames.joinIntoString (", ")));
+        say ("Each case plays " + juce::String (real ? 8 : 6) + " s per buffer size at 48 kHz on an audio thread paced like an interface, with Triad's window open;"
+             " a block is late if it takes longer than the buffer lasts.");
+        juce::Random random (5);
+        for (const auto& c : cases)
+        {
+            if (c.effects == 0 && juce::String (c.name).startsWith ("vocal")) continue;
+            for (int block : { 32, 64, 128, 256 })
+            {
+                step (juce::String ("live monitoring: ") + c.name + ", " + juce::String (block) + " samples", 300);
+                auto p = std::make_unique<TriadProcessor>();
+                Transport transport;
+                p->setPlayHead (&transport);
+                p->prepareToPlay (rate, block);
+                while (p->getBandCount() < c.bands && p->addBand()) {}
+                for (int j = 0; j + 1 < p->getBandCount(); ++j) p->setCrossoverSlope (j, c.order);
+                for (int e = 0; e < c.effects; ++e)
+                {
+                    const int band = e == 0 ? 0 : (e < 3 ? 1 : 2);
+                    const int slot = e == 0 ? 0 : (e < 3 ? e - 1 : e - 3);
+                    require (p->loadEffect (band, slot, pool.effects[chain[(size_t) e]], false).isEmpty(), "Load the vocal chain");
+                }
+                settle (*p);
+                if (c.lfos) activateAllLfos (*p, random);
+                std::unique_ptr<juce::AudioProcessorEditor> editor;
+                if (juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr)
+                {
+                    editor.reset (p->createEditor());
+                    editor->setVisible (true);
+                    if (auto* e = dynamic_cast<TriadEditor*> (editor.get())) e->setTab (c.lfos ? TriadEditor::Tab::lfo : TriadEditor::Tab::bands);
+                }
+                pump (200);
+                runSilence (*p, block, 0.2);
+                const auto t = play (*p, transport, block, real ? 8.0 : 6.0);
+                const double budget = 1000.0 * block / rate;
+                say ("  " + juce::String (c.name) + ", " + juce::String (block).paddedLeft (' ', 3) + " samples (" + juce::String (budget, 2) + " ms): average "
+                     + juce::String (juce::roundToInt (t.average * 1000.0)) + " us (" + juce::String (100.0 * t.average / budget, 1) + "% of the time), 99.9% under "
+                     + juce::String (juce::roundToInt (t.p999 * 1000.0)) + " us, worst " + juce::String (juce::roundToInt (t.worst * 1000.0)) + " us; late blocks "
+                     + juce::String (t.late) + " of " + juce::String (t.blocks) + "; Triad latency " + samplesAndMs (p->getLatencySamples())
+                     + (t.realtime ? "" : " (normal-priority thread)"));
+                require (p->getLatencySamples() == 0, "No added latency with zero-latency effects");
+                // Triad on its own must keep up at 64 samples and above: well under the time a block lasts on average, and
+                // (the test machines are shared and virtual, so the odd block is held up by other work) under 1% late.
+                if (c.effects == 0 && block >= 64)
+                    require (t.average < 0.5 * budget && t.late * 100 <= t.blocks,
+                             "Triad alone keeps up with live monitoring at " + juce::String (block) + " samples");
+                editor.reset();
+                p->setPlayHead (nullptr);
+                p.reset();
+                pump (50);
+            }
+        }
+    }
+}
+
+// ---- 5. Plug-in list with crashing plug-ins -------------------------------------------------------
 void pluginList (const juce::File& effect, const juce::File& crashFixture, const juce::File& scanner)
 {
-    say ("\n== 4. Plug-in list: 60 plug-ins, 20 of which crash when loaded ==");
+    say ("\n== 5. Plug-in list: 60 plug-ins, 20 of which crash when loaded ==");
     step ("plug-in list with crashing plug-ins", 900);
     auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadStressList");
     temp.deleteRecursively();
@@ -1081,17 +1390,18 @@ int main (int argc, char** argv)
     juce::File reportFile;
     try
     {
-        require (argc >= 4, "Usage: TriadStress <Test Effect.vst3> <Crash Fixture.vst3> <Triad Scanner> [report.txt] [seed] [--real]");
+        require (argc >= 4, "Usage: TriadStress <Test Effect.vst3> <Crash Fixture.vst3> <Triad Scanner> [report.txt] [seed] [--real] [--live]");
         const juce::File effect (juce::String::fromUTF8 (argv[1]));
         const juce::File crashFixture (juce::String::fromUTF8 (argv[2]));
         const juce::File scanner (juce::String::fromUTF8 (argv[3]));
         // --real: use every effect installed on this computer instead of the test effect + Apple's AUs.
-        bool real = false;
+        bool real = false, liveOnly = false;   // --live: only the live-monitoring section
         juce::int64 seed = 20261015;
         for (int i = 4; i < argc; ++i)
         {
             const auto arg = juce::String::fromUTF8 (argv[i]);
             if (arg == "--real") real = true;
+            else if (arg == "--live") liveOnly = true;
             else if (arg.containsOnly ("0123456789")) seed = arg.getLargeIntValue();
             else reportFile = juce::File (arg);
         }
@@ -1101,6 +1411,13 @@ int main (int argc, char** argv)
              + juce::SystemStats::getOperatingSystemName() + ", " + juce::SystemStats::getCpuModel() + ", "
              + juce::String (juce::SystemStats::getNumCpus()) + " cores)");
         const auto pool = real ? buildRealPool (scanner) : buildPool (effect, scanner);
+        if (liveOnly)
+        {
+            liveMonitoring (pool, real);
+            say ("\nPASS: live monitoring checks held");
+            watchdog = nullptr;
+            return 0;
+        }
         bigProject (pool, real ? 10.0 : 20.0);
         // With real plug-ins: five different random sequences, each given up to 8 minutes.
         if (real)
@@ -1108,6 +1425,7 @@ int main (int argc, char** argv)
         else
             editsWhilePlaying (pool, seed, 3000, 0.0);
         manyInstances (pool);
+        liveMonitoring (pool, real);
         pluginList (effect, crashFixture, scanner);
         step ({}, 0);
         if (! invalidEffects.empty())

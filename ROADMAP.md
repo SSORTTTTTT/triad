@@ -49,6 +49,23 @@ Built from the notes below (2026-10-15/16):
 
 Still to come: see "Next update" below (LFO randomizer, soft crossovers, knobs inside third-party effects) and "Later" (most-used sorting, routing between bands).
 
+## Next update — latency meter (Thomas, 2026-10-17, after using 0.4.2)
+
+Thomas: 0.4.2 "is working great". Next: a **latency meter**, shown like the IN/OUT and band volume meters, so he
+can see at a glance whether Triad is still zero-latency (for recording vocals through it) and, if not, what adds it.
+
+- **Total:** next to IN / OUT, Triad's latency in samples and ms (what Triad reports to the DAW). Green at 0
+  ("ZERO LATENCY"), amber when an effect adds latency, red above about 10 ms (too late to sing through).
+- **Per band:** each strip's footer shows its chain's latency (the slowest band sets the total); the others are
+  delayed to line up with it.
+- **Per slot:** a small badge on any effect that reports latency (e.g. "1.0 ms"), and the effect causing the most
+  is highlighted, so it can be bypassed or swapped while recording.
+- **CPU load** beside it (share of the audio buffer Triad uses), since dropouts at small buffers sound like clicks.
+- Maybe: a **LIVE** switch that bypasses every effect with latency while recording (Triad then reports 0), and turns
+  them back on for mixing.
+- Background: see VALIDATION.md, "Live vocal monitoring" (Triad alone adds no latency; what the crossovers'
+  phase does to timing; how Triad keeps up at 32–256-sample buffers).
+
 ## Next update — notes from Thomas (2026-10-16, after using 0.3.2)
 
 Thomas: 0.3.2 "seems to be working really good"; the LFO editor feels like ShaperBox, which he likes.
