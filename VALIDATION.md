@@ -1,5 +1,18 @@
 # Validation — Triad
 
+## Triad v4 (0.4.1) on macOS — 2026-10-16
+
+Commit `20119a3`, run 39006301559 (macos-14 runner). New in 0.4.1: LFO generator, preset folders with pages, slopes up to 96 dB/oct, copy / paste band state.
+
+| Check | Result |
+| --- | --- |
+| Installer `Triad-v4-0.4.1-macOS-AppleSilicon.pkg` | Built and installed; AU VALIDATION SUCCEEDED; pluginval SUCCESS (VST3 and AU) |
+| Every slope, 6 to 96 dB/oct | Bands add back flat (max error 3e-5); shapes match Butterworth / Linkwitz-Riley (max 2.5e-5); 96 dB/oct: -96.5 dB one octave away |
+| Ten bands with mixed slopes (up to 96 dB/oct) | Flat (max error 7.9e-5) |
+| Copy / paste band state | Same effects with the same settings, slot mixes, LFOs, band mix and volume; source unchanged; across two Triads; band menu items |
+| LFO presets | 339 shapes in 13 folders (75 hand-made, 6 x 44 generated); every page reachable, mouse wheel turns pages |
+| Stress tests (test effects; 20 real VST3s and Apple AUs) | All passed, including 35-45 random copy/paste band state edits and slopes up to 96 dB/oct; no NaN/Inf output |
+
 ## Triad v4 (0.4.0) on macOS — 2026-10-16
 
 Commit `6da619b`, run 38988111461 (macos-14 runner). New in 0.4.0: crossover slope dot, 6–48 dB/oct.
