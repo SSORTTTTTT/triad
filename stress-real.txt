@@ -1,0 +1,73 @@
+Triad stress test with the plug-ins installed on this computer, Triad 0.4.3 (Mac OSX 14.8.9, Apple M1 (Virtual), 3 cores)
+Installed VST3 bundles: 20 (6 read from disk, 0 via their AU, 14 checked by Triad Scanner, 0 crashed it, 0 timed out)
+Note: this test Mac has no graphics card (OpenGL renderer: none), so plug-in windows that draw with OpenGL are opened and closed but not left on screen (not a problem on a real Mac).
+  OK   Airwindows Consolidated (VST3, Airwindows): loads in 38.74 ms, latency 0 samples, window opens in 184.67 ms
+  OK   BYOD (VST3, chowdsp): loads in 15.20 ms, latency 4 samples, window opens in 100.44 ms
+  OK   ChowCentaur (VST3, chowdsp): loads in 64.77 ms, latency 0 samples, window opens in 26.60 ms
+  OK   ChowMatrix (VST3, chowdsp): loads in 225.81 ms, latency 0 samples, window opens in 26.73 ms
+  OK   ChowMultiTool (VST3, chowdsp): loads in 157.01 ms, latency 0 samples, window opens in 29.55 ms
+  OK   ChowPhaserMono (VST3, chowdsp): loads in 11.31 ms, latency 0 samples, window opens in 27.61 ms
+  OK   ChowPhaserStereo (VST3, chowdsp): loads in 10.58 ms, latency 0 samples, window opens in 30.83 ms
+  OK   CHOWTapeModel (VST3, chowdsp): loads in 162.84 ms, latency 39 samples, window opens in 89.96 ms
+  OK   Dragonfly Early Reflections (VST3, Michael Willis): loads in 6.90 ms, latency 0 samples, window opens in 41.25 ms (OpenGL: not drawn on this test Mac)
+  OK   Dragonfly Plate Reverb (VST3, Michael Willis): loads in 8.25 ms, latency 0 samples, window opens in 12.99 ms (OpenGL: not drawn on this test Mac)
+  OK   Dragonfly Room Reverb (VST3, Michael Willis): loads in 3.68 ms, latency 0 samples, window opens in 12.30 ms (OpenGL: not drawn on this test Mac)
+  OK   Dragonfly Hall Reverb (VST3, Michael Willis and Rob vd Berg): loads in 3.45 ms, latency 0 samples, window opens in 12.11 ms (OpenGL: not drawn on this test Mac)
+  OK   Wolf Shaper (VST3, Patrick Desaulniers): loads in 1.96 ms, latency 0 samples, window opens in 102.34 ms (OpenGL: not drawn on this test Mac)
+  OK   Surge XT Effects (VST3, Surge Synth Team): loads in 36.94 ms, latency 0 samples, window opens in 46.86 ms
+  OK   FILT-R (VST3, Tilr): loads in 9.10 ms, latency 49 samples, window opens in 13.51 ms
+  OK   GATE-12 (VST3, Tilr): loads in 12.67 ms, latency 0 samples, window opens in 28.52 ms
+  OK   REEV-R (VST3, Tilr): loads in 35.18 ms, latency 0 samples, window opens in 23.57 ms
+  OK   TIME-12 (VST3, Tilr): loads in 24.58 ms, latency 0 samples, window opens in 9.46 ms
+  OK   Airwindows Consolidated (AU, Airwindows): loads in 47.34 ms, latency 0 samples, window opens in 113.60 ms
+  OK   AUBandpass (AU, Apple): loads in 1.41 ms, latency 0 samples, window opens in 88.72 ms
+  OK   AUDelay (AU, Apple): loads in 0.74 ms, latency 0 samples, window opens in 23.61 ms
+  OK   AUDistortion (AU, Apple): loads in 6.52 ms, latency 0 samples, window opens in 49.33 ms
+  OK   AUDynamicsProcessor (AU, Apple): loads in 0.44 ms, latency 256 samples, window opens in 7.55 ms
+  OK   AUFilter (AU, Apple): loads in 0.96 ms, latency 0 samples, window opens in 10.63 ms
+  OK   AUGraphicEQ (AU, Apple): loads in 1.58 ms, latency 0 samples, window opens in 16.87 ms
+  OK   AUHighShelfFilter (AU, Apple): loads in 0.57 ms, latency 0 samples, window opens in 18.56 ms
+  OK   AUHipass (AU, Apple): loads in 0.80 ms, latency 0 samples, window opens in 18.20 ms
+  OK   AULowpass (AU, Apple): loads in 1.23 ms, latency 0 samples, window opens in 23.37 ms
+  OK   AULowShelfFilter (AU, Apple): loads in 0.43 ms, latency 0 samples, window opens in 17.67 ms
+  OK   AUMatrixReverb (AU, Apple): loads in 1.53 ms, latency 0 samples, window opens in 98.77 ms
+  OK   AUMultibandCompressor (AU, Apple): loads in 1.60 ms, latency 256 samples, window opens in 15.79 ms
+  OK   AUNBandEQ (AU, Apple): loads in 1.41 ms, latency 0 samples, window opens in 481.57 ms
+  OK   AUNewPitch (AU, Apple): loads in 1.46 ms, latency 4096 samples, window opens in 17.87 ms
+  OK   AUParametricEQ (AU, Apple): loads in 0.54 ms, latency 0 samples, window opens in 13.83 ms
+  OK   AUPeakLimiter (AU, Apple): loads in 0.90 ms, latency 96 samples, window opens in 25.01 ms
+  OK   AUPitch (AU, Apple): loads in 11.32 ms, latency 3719 samples, window opens in 22.42 ms
+  OK   AUReverb2 (AU, Apple): loads in 1.56 ms, latency 0 samples, window opens in 35.46 ms
+  OK   AURogerBeep (AU, Apple): loads in 1.01 ms, latency 0 samples, window opens in 35.92 ms
+  OK   AUSampleDelay (AU, Apple): loads in 0.81 ms, latency 0 samples, window opens in 23.43 ms
+  OK   BYOD (AU, chowdsp): loads in 67.15 ms, latency 4 samples, window opens in 80.83 ms
+  OK   ChowCentaur (AU, chowdsp): loads in 77.44 ms, latency 0 samples, window opens in 14.81 ms
+  OK   ChowMatrix (AU, chowdsp): loads in 295.18 ms, latency 0 samples, window opens in 31.94 ms
+  OK   ChowMultiTool (AU, chowdsp): loads in 241.67 ms, latency 0 samples, window opens in 37.59 ms
+  OK   ChowPhaserMono (AU, chowdsp): loads in 51.09 ms, latency 0 samples, window opens in 14.82 ms
+  OK   ChowPhaserStereo (AU, chowdsp): loads in 55.10 ms, latency 0 samples, window opens in 24.61 ms
+  OK   CHOWTapeModel (AU, chowdsp): loads in 219.85 ms, latency 39 samples, window opens in 112.72 ms
+  OK   Surge XT Effects (AU, Surge Synth Team): loads in 122.98 ms, latency 0 samples, window opens in 44.81 ms
+  OK   FILT-R (AU, Tilr): loads in 28.18 ms, latency 49 samples, window opens in 33.51 ms
+  OK   GATE-12 (AU, Tilr): loads in 20.21 ms, latency 0 samples, window opens in 23.25 ms
+  OK   REEV-R (AU, Tilr): loads in 62.81 ms, latency 0 samples, window opens in 36.51 ms
+  OK   TIME-12 (AU, Tilr): loads in 29.58 ms, latency 0 samples, window opens in 20.65 ms
+Effect pool: 51 effects from this computer
+
+== 1. Big project: 10 bands x 20 slots ==
+Loaded 200 effects in 6425.08 ms; Triad latency 8427 samples
+10 s of audio through 200 effects: average 10.52 ms per 256-sample block (197.2% of one core), worst 58.39 ms, peak level -35.3 dBFS
+Switched on every LFO: 220 knobs now move with the song (slot mixes, band mixes, band volumes)
+10 s of audio through 200 effects with every LFO on: average 11.76 ms per 256-sample block (220.5% of one core), worst 45.15 ms, peak level -15.9 dBFS
+LFO cost: 11.8% more processing than the same project without LFOs
+Saved (3198 KB) in 111.98 ms, reopened in 6979.93 ms with 200 effects running
+Closed the 200-effect project in 73.42 ms
+
+== 2. 3000 random edits while audio plays on another thread (seed 777) ==
+3000 edits in 120.9 s: 18977 audio blocks processed alongside the edits (2420 automation moves), worst block 176.69 ms, up to 56 effects loaded at once
+Effect windows opened on top of Triad: 44 (3 OpenGL windows skipped: no graphics card on this test Mac)
+Final layout: 4 bands, 10 effects; NaN/Inf output: none
+Edits: LFO length x53, LFO palette: folders, pages, USER, dice x104, add band x133, add empty slot x141, add/remove an LFO x64, band volume x66, bypass/enable slot x129, chain preset copy x35, close effect windows x53, copy / paste band state x35, crossover slope x58, drag crossover x41, draw an LFO x184, load effect (new slot) x505, matrix edit x133, move a band x78, move slot x138, open effect window x84, open/close Triad window, switch tabs x75, remove band x106, remove effect, keep slot x84, remove slot x233, replace effect x169, sample rate / buffer change x37, save and reload project x85, slot mix x177
+Slowest edits: draw an LFO avg 54.32 ms, worst 5394.80 ms (edit 2561); open/close Triad window, switch tabs avg 75.12 ms, worst 4754.18 ms (edit 2346); crossover slope avg 62.53 ms, worst 3357.40 ms (edit 1489); remove slot avg 19.76 ms, worst 2743.39 ms (edit 1366); save and reload project avg 500.34 ms, worst 2144.44 ms (edit 2104)
+
+== 2. 3000 random edits while audio plays on another thread (seed 778) ==

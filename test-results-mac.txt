@@ -1,0 +1,99 @@
+PASS: crossover dragging, frequency mapping, band order, automation gestures, keyboard, reset, recall, Nyquist guard, add/remove bands up to 10
+Generator, Angular 100%: 89% of shapes have 90-degree steps, 53% only squares/steps, 28% have 30 or 45-degree lines; 95% of lines at 30/45/60/75 degrees; steps+holds 88% of segments
+Generator, Angular 100% + Soft 60%: 48% of shapes mix hard jumps and curves
+Generator, chaos 0 / 50 / 100%: 10 / 16 / 31 points on average; repeating halves or quarters 60% / 20% / 3%
+LFO generator: passed
+LFO presets: 1049 shapes in 14 categories: passed
+Built-in 24 dB/oct crossover (LR4) vs JUCE dsp filter at 44100 Hz: max error 1.19209e-07
+Built-in 24 dB/oct crossover (LR4) vs JUCE dsp filter at 48000 Hz: max error 7.45058e-08
+Built-in 24 dB/oct crossover (LR4) vs JUCE dsp filter at 96000 Hz: max error 8.9407e-08
+Phase-correct reconstruction, 1 to 10 bands: max error 3.57628e-07
+6 dB/oct: bands add up flat (max error 0), shapes match (max error 1.43647e-05), low band at 4000 Hz -12.5 dB, high band at 250 Hz -12.3 dB
+12 dB/oct: bands add up flat (max error 2.87294e-05), shapes match (max error 1.63317e-05), low band at 4000 Hz -25.0 dB, high band at 250 Hz -24.7 dB
+18 dB/oct: bands add up flat (max error 2.41995e-05), shapes match (max error 1.95503e-05), low band at 4000 Hz -36.7 dB, high band at 250 Hz -36.3 dB
+24 dB/oct: bands add up flat (max error 2.51532e-05), shapes match (max error 2.02656e-05), low band at 4000 Hz -48.9 dB, high band at 250 Hz -48.4 dB
+30 dB/oct: bands add up flat (max error 2.57492e-05), shapes match (max error 2.37226e-05), low band at 4000 Hz -61.1 dB, high band at 250 Hz -60.4 dB
+36 dB/oct: bands add up flat (max error 3.05176e-05), shapes match (max error 2.28882e-05), low band at 4000 Hz -73.4 dB, high band at 250 Hz -72.5 dB
+42 dB/oct: bands add up flat (max error 2.83718e-05), shapes match (max error 2.37226e-05), low band at 4000 Hz -85.6 dB, high band at 250 Hz -84.5 dB
+48 dB/oct: bands add up flat (max error 2.93255e-05), shapes match (max error 2.2769e-05), low band at 4000 Hz -97.6 dB, high band at 250 Hz -96.5 dB
+54 dB/oct: bands add up flat (max error 2.98023e-05), shapes match (max error 2.24113e-05), low band at 2000 Hz -54.6 dB, high band at 500 Hz -54.1 dB
+60 dB/oct: bands add up flat (max error 3.20673e-05), shapes match (max error 2.18153e-05), low band at 2000 Hz -60.6 dB, high band at 500 Hz -60.2 dB
+66 dB/oct: bands add up flat (max error 3.02792e-05), shapes match (max error 2.25306e-05), low band at 2000 Hz -66.7 dB, high band at 500 Hz -66.2 dB
+72 dB/oct: bands add up flat (max error 3.05176e-05), shapes match (max error 2.22921e-05), low band at 2000 Hz -72.8 dB, high band at 500 Hz -72.1 dB
+78 dB/oct: bands add up flat (max error 3.05176e-05), shapes match (max error 2.55108e-05), low band at 2000 Hz -78.8 dB, high band at 500 Hz -78.1 dB
+84 dB/oct: bands add up flat (max error 3.17097e-05), shapes match (max error 2.44379e-05), low band at 2000 Hz -84.9 dB, high band at 500 Hz -84.3 dB
+90 dB/oct: bands add up flat (max error 3.02792e-05), shapes match (max error 2.563e-05), low band at 2000 Hz -91.0 dB, high band at 500 Hz -90.2 dB
+96 dB/oct: bands add up flat (max error 2.99215e-05), shapes match (max error 2.44379e-05), low band at 2000 Hz -96.5 dB, high band at 500 Hz -96.5 dB
+Ten bands with mixed slopes add up flat: max error 7.9453e-05
+Slopes changed 30 times while playing: output peak 0.499631 (input 0.496922), largest step between samples 0.0359691 (the sines alone: 0.0359974)
+Empty slots, oversized block: max error 8.9407e-08
+Unequal band latency compensation: max error 5.96046e-08
+All bands wet: max error 2.98023e-08
+All bands dry with latency retained: max error 5.96046e-08
+50 percent band mix: max error 5.96046e-08
+Always-on sidechain input is fed silence: max error 5.96046e-08
+Mono-only effect refused: Triad hosts stereo effects; this one offers in: Mono + Stereo, out: Mono.
+Removed effects are deleted after their pending messages: passed
+NaN from a hosted effect: silenced, restarted 3 times, then bypassed (Produced invalid audio (NaN) repeatedly; bypassed)
+Soft and hard crossovers (12 and 42 dB/oct): max error 8.9407e-08
+PASS: crossover slopes are DAW parameters, saved, recalled, and move with their crossovers
+50 percent slot mix: max error 5.96046e-08
+Slot mix and band mix together: max error 5.96046e-08
+Three-effect chain on one band, other bands aligned: max error 2.98023e-08
+Bypassed slot leaves the chain and its latency: max error 2.98023e-08
+Slot at 0 percent passes its input (latency kept): max error 2.98023e-08
+Moving a slot keeps the chain's result: max error 2.98023e-08
+Chain removed, latency back to one effect: max error 2.98023e-08
+Hosted state and mix recall: max error 8.9407e-08
+Triad 0.1 project recall: max error 8.9407e-08
+Triad 0.2 project recall (40 percent slot mix): max error 8.9407e-08
+Outer VST3 wrapper with nested effects and recalled state: max error 8.9407e-08
+Missing effects pass bands dry: max error 8.9407e-08
+Added band keeps effects in place: max error 8.9407e-08
+Removing a band merges its range: max error 1.19209e-07
+Ten bands with a sixteen-effect chain: max error 5.96046e-08
+Ten-band project recall: max error 5.96046e-08
+PASS: LFO shape editing (2x, 1/2, reverse, flip, curves, copy/paste); table error 0.000834942
+Untouched LFOs change nothing: max error 5.96046e-08
+LFO at 50% sets the slot mix to 50%: max error 5.96046e-08
+LFO amount 50%: max error 8.9407e-08
+Inverted LFO: max error 8.9407e-08
+Route switched off: max error 5.96046e-08
+Band volume -6 dB: max error 8.9407e-08
+Square LFO on band volume, in time with the song: errors 5.96046e-08 / 1.49012e-08
+PASS: LFOs on slot mixes and band volume, moving bands, chain presets, copy / paste band state
+PASS: LFO project recall
+moduleinfo.json in test effect: yes
+Plug-in list: 5 bundles (2 from moduleinfo.json, 2 checked by Triad Scanner, 1 crashed the scanner) in 592 ms
+  listed: VST3 / Triad Tests / Triad Test Effect
+  listed: VST3 / Triad Tests / Triad Test Effect
+  listed: VST3 /  / Crashy Effect [not checked] [crashed]
+A plug-in that aborts when loaded only took down Triad Scanner; Triad kept running
+A plug-in that hangs when loaded was stopped after 2 s; Triad kept running
+Hosted AU: AudioUnit:Effects/aufx,dely,appl, latency 0
+PASS: effect list excludes instruments, survives plug-ins that crash or hang, caches results
+Hosted effect editor opened and closed (including auto-open on load)
+Remove effects, clear latency: max error 8.9407e-08
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-mac.png
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-5bands.png
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-slopes.png
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-slots.png
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-10bands.png
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-generator.png
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-lfo.png
+Screenshot: /Users/runner/work/triad/triad/ci-ui/Triad-preview-matrix.png
+UI drawing times, whole window at 1x / 2x (a frame at 60 fps has 16.7 ms):
+  BANDS: 6.7 ms (worst 9.2) / 18.4 ms (worst 30.9)
+  LFO: 10.0 ms (worst 14.4) / 31.9 ms (worst 44.2)
+  MATRIX: 2.3 ms (worst 3.5) / 8.5 ms (worst 10.7)
+  Crossover display (redrawn 30x a second): 3.6 ms (worst 6.1) / 9.0 ms (worst 16.2)
+  One band strip (its meter redraws 20x a second): 0.7 ms (worst 0.8) / 2.3 ms (worst 4.2)
+  One slot row (knob): 0.2 ms (worst 0.4) / 0.3 ms (worst 0.7)
+  LFO grid (redrawn 30x a second while playing): 7.4 ms (worst 11.0) / 24.7 ms (worst 28.9)
+Close-up: /Users/runner/work/triad/triad/ci-ui/Triad-closeup-strip-footer.png
+Close-up: /Users/runner/work/triad/triad/ci-ui/Triad-closeup-slots.png
+Close-up: /Users/runner/work/triad/triad/ci-ui/Triad-closeup-crossovers.png
+Close-up: /Users/runner/work/triad/triad/ci-ui/Triad-closeup-lfo-toolbar.png
+Closing the last Triad deletes every effect it was keeping: passed
+PASS: all integration tests
+Integration tests exit code: 0
