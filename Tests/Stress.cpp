@@ -638,6 +638,8 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     bool timeLimit = false;
     constexpr int maxEffects = 120;
     const auto started = juce::Time::getMillisecondCounterHiRes();
+    std::vector<juce::File> userShapes;   // LFO shapes saved to USER by the palette edits (deleted at the end)
+    auto removeUserShapes = [&userShapes] { for (const auto& f : userShapes) triad::userShapes::remove (f); userShapes.clear(); };
     try
     {
         for (int op = 0; op < operations; ++op)
@@ -653,7 +655,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             const int slots = p.getSlotCount (band);
             const int slot = r.nextInt (slots);
             const int effects = loadedCount (p);
-            int choice = r.nextInt (130);
+            int choice = r.nextInt (134);
             if (effects >= maxEffects && choice < 30) choice = 30 + r.nextInt (70);   // full: edit or remove instead
             juce::String name;
             auto begin = [&] (const char* what, const juce::String& extra = {})
@@ -828,10 +830,53 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                     if (effects < maxEffects - 20) p.pasteBandState (r.nextInt (bands));
                 }
             }
-            else
+            else if (choice < 130)
             {
                 begin ("band volume");
                 if (auto* gain = p.parameters.getParameter (TriadProcessor::bandGainID (band))) gain->setValueNotifyingHost (r.nextFloat());
+            }
+            else
+            {
+                // The LFO palette: any folder (by type, GEN, EXTRA, USER) and page, a shape clicked, the dice,
+                // a shape saved to USER or deleted from it.
+                begin ("LFO palette: folders, pages, USER, dice");
+                if (dynamic_cast<TriadEditor*> (editor.get()) == nullptr)
+                {
+                    editor.reset (p.createEditor());
+                    editor->setVisible (true);
+                }
+                if (auto* e = dynamic_cast<TriadEditor*> (editor.get()))
+                {
+                    e->setTab (TriadEditor::Tab::lfo);
+                    e->showLfo (band, r.nextBool() ? -1 : slot);
+                    auto& page = e->getLfoPage();
+                    const int folders = triad::mod::numPresetCategories();
+                    const int folder = r.nextInt (folders + 1);
+                    page.setPaletteCategory (folder == folders ? LfoPage::userFolder : folder);
+                    page.setPalettePage (r.nextInt (page.getNumPalettePages()));
+                    switch (r.nextInt (4))
+                    {
+                        case 0:
+                            if (page.getNumPaletteButtons() > 0)
+                                if (auto* b = page.getPaletteButton (r.nextInt (page.getNumPaletteButtons())); b != nullptr && b->onClick) b->onClick();
+                            break;
+                        case 1: page.generate(); break;
+                        case 2:
+                            if (userShapes.size() < 30)
+                                if (const auto f = page.saveShapeToUser ("Stress shape"); f != juce::File()) userShapes.push_back (f);
+                            break;
+                        default:
+                            if (! userShapes.empty())
+                            {
+                                const auto k = (size_t) r.nextInt ((int) userShapes.size());
+                                triad::userShapes::remove (userShapes[k]);
+                                userShapes.erase (userShapes.begin() + (std::ptrdiff_t) k);
+                                page.setPaletteCategory (0);
+                                page.setPaletteCategory (LfoPage::userFolder);
+                            }
+                            break;
+                    }
+                }
             }
             ++counts[name];
             step ("edit " + juce::String (op + 1) + ": " + name + ", then waiting for loads and the windows");
@@ -851,11 +896,13 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     }
     catch (...)
     {
+        removeUserShapes();
         stop = true; resumeAudio(); audioThread.join();
         if (watchdog != nullptr) watchdog->watchAudio (nullptr, nullptr);
         p.setPlayHead (nullptr);
         throw;
     }
+    removeUserShapes();
     step ("edits: playing on with the final layout, then closing", 300);
     if (timeLimit)
         say ("Time limit (" + juce::String (juce::roundToInt (maxSeconds / 60.0)) + " min) reached after " + juce::String (done) + " edits; the section stops there");
