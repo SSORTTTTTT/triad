@@ -115,6 +115,9 @@ So Triad does not look like other plug-ins, and looks sleeker:
   album art), each with a word on what he likes (colours, flatness or depth, glow, roundness, density), plus fonts
   he likes. They are used as mood references only: Triad gets its own look, not another product's colours,
   layout, knob graphics or logo.
+- **Thomas will provide** font files (.ttf / .otf; the licence must allow embedding the font in software, as
+  OFL fonts and most "desktop + app" licences do), colour schemes (hex codes or pictures) and lighting styles
+  (glow, gradients, shadows, glass, neon...), to make Triad look that specific way.
 - **Three directions as mockups** of Triad's real screens (BANDS and LFO), side by side; Thomas picks one or mixes.
 - **Built as a theme system:** colours (background, panels, accent, the ten band colours, text), font and
   weights, corner radius, line weights, knob style (ring, arc, dot), meter style — so several themes can ship and
