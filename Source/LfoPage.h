@@ -1,5 +1,7 @@
 #pragma once
 #include "Widgets.h"
+#include "Generator.h"
+#include "Settings.h"
 
 // The LFO grid, in the spirit of ShaperBox / Gross Beat / Serum: points on a grid that snap by
 // default, segments you can bend, and the playing position shown as it moves.
@@ -30,6 +32,7 @@ public:
     bool triplet = false, snap = true;
     int columns() const;
     juce::Rectangle<float> plot() const;
+    float plotAspect() const;                        // the grid's width / height on screen
     juce::Point<float> toScreen (const triad::mod::Point&) const;
     const triad::mod::Shape& getShape() const noexcept { return shape; }
     std::function<void()> onChange;
@@ -54,7 +57,8 @@ private:
 };
 
 // The LFO tab: band chooser, one tab per LFO (labelled with what it moves), the grid with its
-// toolbar and shape palette, and the routing list (where this LFO goes, how much).
+// toolbar and shape palette (presets in categories), the routing list (where this LFO goes, how
+// much) and the shape generator (Angular / Soft / Chaos and a dice that draws a new shape).
 class LfoPage final : public juce::Component
 {
 public:
@@ -65,6 +69,24 @@ public:
     int getBand() const noexcept { return band; }
     int getLfo() const noexcept { return lfo; }
     ShapeEditor& getEditor() noexcept { return editor; }
+    // The generator: a new shape in the style of the sliders, on the editor's grid (undoable).
+    void generate();
+    void setGeneratorStyle (float angular, float soft, float chaos);   // 0..1 each
+    triad::mod::Style getGeneratorStyle() const;
+    void setGeneratorSeed (juce::int64 seed) { generatorRandom.setSeed (seed); }
+    juce::Button& getGenerateButton() noexcept { return *generateButton; }
+    juce::Slider& getChaosSlider() noexcept { return chaosSlider; }
+    // The preset palette shows one category (folder) at a time, a page of up to 11 shapes at a time;
+    // the GEN folders have several pages (< and >, or the mouse wheel over the palette).
+    static constexpr int paletteSize = 11;
+    void setPaletteCategory (int);
+    int getPaletteCategory() const noexcept { return paletteCategory; }
+    void setPalettePage (int);
+    int getPalettePage() const noexcept { return palettePage; }
+    int getNumPalettePages() const;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    int getNumPaletteButtons() const noexcept { return (int) presetButtons.size(); }
+    juce::Button* getPaletteButton (int i) const { return i >= 0 && i < (int) presetButtons.size() ? presetButtons[(size_t) i].get() : nullptr; }
     void resized() override;
     void paint (juce::Graphics&) override;
     static triad::mod::Shape clipboard;
@@ -75,6 +97,9 @@ private:
     void showLengthMenu();
     void showGridMenu();
     void stepLength (int direction);
+    void showCategoryMenu();
+    void rebuildPalette();
+    void saveGeneratorStyle();
     juce::String signature() const;
 
     TriadProcessor& processor;
@@ -95,6 +120,19 @@ private:
                           undoButton { triad::ui::IconButton::Icon::undo, "Undo" },
                           redoButton { triad::ui::IconButton::Icon::redo, "Redo" };
     std::vector<std::unique_ptr<juce::Button>> presetButtons;
+    int paletteCategory = 0, palettePage = 0;
+    juce::TextButton categoryButton;
+    triad::ui::IconButton prevPage { triad::ui::IconButton::Icon::left, "Previous page" },
+                          nextPage { triad::ui::IconButton::Icon::right, "Next page" };
+    juce::Label pageLabel;
+    juce::Rectangle<int> paletteArea;
+    juce::Slider angularSlider, softSlider, chaosSlider;
+    juce::TextButton hardStyleButton { "HARD" }, mixStyleButton { "MIX" }, softStyleButton { "SOFT" };
+    std::unique_ptr<juce::Button> generateButton;
+    juce::Random generatorRandom;
+    juce::StringArray recentShapes;
+    juce::Rectangle<int> generatorArea;
+    juce::SharedResourcePointer<TriadSettings> settings;
     std::vector<std::unique_ptr<triad::ui::RouteRow>> routeRows;
     juce::TextButton addRouteButton { "+ ROUTE TO..." }, removeLfoButton { "REMOVE LFO" };
     juce::Rectangle<int> routingArea;

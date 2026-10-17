@@ -8,7 +8,7 @@ namespace triad::ui
 class IconButton final : public juce::Button
 {
 public:
-    enum class Icon { trash, undo, redo, reverse, flipVertical, left, right, gear, menu, plus, close, lfo };
+    enum class Icon { trash, undo, redo, reverse, flipVertical, left, right, gear, menu, plus, close, lfo, dice };
     IconButton (Icon, const juce::String& tooltip);
     void paintButton (juce::Graphics&, bool over, bool down) override;
     static void drawIcon (juce::Graphics&, Icon, juce::Rectangle<float>, juce::Colour);

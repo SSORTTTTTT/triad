@@ -477,13 +477,18 @@ void TriadEditor::showPresetMenu()
         else if (choice >= firstPreset && choice - firstPreset < files.size()) self.loadPreset (files[choice - firstPreset]);
     });
 }
-void TriadEditor::showBandMenu (int band, juce::Component& target)
+void TriadEditor::showBandMenu (int band, juce::Component& target, bool atMouse)
 {
-    enum { saveId = 1, lfoId, leftId, rightId, removeId, folderId, firstChain = 100 };
+    enum { saveId = 1, lfoId, leftId, rightId, removeId, folderId, copyId, pasteId, firstChain = 100 };
     const auto files = filesIn (TriadSettings::chainFolder(), "*.triadchain");
     const int count = processor.getBandCount();
     juce::PopupMenu menu, chains;
     menu.addSectionHeader ("BAND " + juce::String (band + 1));
+    menu.addItem (copyId, "Copy band state");
+    menu.addItem (pasteId, TriadProcessor::hasCopiedBand() ? "Paste band state (" + TriadProcessor::copiedBandDescription() + ")"
+                                                           : juce::String ("Paste band state"),
+                  TriadProcessor::hasCopiedBand());
+    menu.addSeparator();
     menu.addItem (saveId, "Save chain as preset...");
     for (int i = 0; i < files.size(); ++i) chains.addItem (firstChain + i, files[i].getFileNameWithoutExtension());
     if (files.isEmpty()) chains.addItem (-1, "No chains saved yet", false);
@@ -496,22 +501,31 @@ void TriadEditor::showBandMenu (int band, juce::Component& target)
     menu.addItem (rightId, "Move effects to band " + juce::String (band + 2), band < count - 1);
     menu.addSeparator();
     menu.addItem (removeId, "Remove band " + juce::String (band + 1), count > 1);
+    auto options = juce::PopupMenu::Options().withTargetComponent (&target);
+    if (atMouse) options = options.withMousePosition();
     juce::Component::SafePointer<TriadEditor> safe (this);
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&target), [safe, band, files] (int choice)
+    menu.showMenuAsync (options, [safe, band, files] (int choice)
     {
         if (safe == nullptr || choice == 0) return;
-        auto& self = *safe;
-        if (choice == saveId)
-            self.prompt.show ("Save band " + juce::String (band + 1) + " chain", "Band " + juce::String (band + 1) + " chain",
-                              [safe, band] (const juce::String& name) { if (safe != nullptr) safe->saveChain (band, name); });
-        else if (choice == lfoId) self.showLfo (band, -1);
-        else if (choice == leftId) self.processor.moveBand (band, band - 1);
-        else if (choice == rightId) self.processor.moveBand (band, band + 1);
-        else if (choice == removeId) self.processor.removeBand (band);
-        else if (choice == folderId) { TriadSettings::chainFolder().createDirectory(); TriadSettings::chainFolder().revealToUser(); }
-        else if (choice >= firstChain && choice - firstChain < files.size()) self.loadChain (band, files[choice - firstChain]);
-        self.timerCallback();
+        safe->bandMenuChoice (band, choice, files);
     });
+}
+void TriadEditor::bandMenuChoice (int band, int choice, const juce::Array<juce::File>& files)
+{
+    enum { saveId = 1, lfoId, leftId, rightId, removeId, folderId, copyId, pasteId, firstChain = 100 };
+    juce::Component::SafePointer<TriadEditor> safe (this);
+    if (choice == copyId) processor.copyBandState (band);
+    else if (choice == pasteId) processor.pasteBandState (band);
+    else if (choice == saveId)
+        prompt.show ("Save band " + juce::String (band + 1) + " chain", "Band " + juce::String (band + 1) + " chain",
+                     [safe, band] (const juce::String& name) { if (safe != nullptr) safe->saveChain (band, name); });
+    else if (choice == lfoId) showLfo (band, -1);
+    else if (choice == leftId) processor.moveBand (band, band - 1);
+    else if (choice == rightId) processor.moveBand (band, band + 1);
+    else if (choice == removeId) processor.removeBand (band);
+    else if (choice == folderId) { TriadSettings::chainFolder().createDirectory(); TriadSettings::chainFolder().revealToUser(); }
+    else if (choice >= firstChain && choice - firstChain < files.size()) loadChain (band, files[choice - firstChain]);
+    timerCallback();
 }
 
 // ---- Settings -----------------------------------------------------------------------------------------

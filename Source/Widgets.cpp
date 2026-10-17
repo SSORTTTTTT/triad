@@ -96,6 +96,17 @@ void IconButton::drawIcon (juce::Graphics& g, Icon icon, juce::Rectangle<float> 
                 p.lineTo (x + w * t, y + h * (0.5f - 0.42f * std::sin (t * juce::MathConstants<float>::twoPi)));
             }
             g.strokePath (p, juce::PathStrokeType (1.5f)); return;
+        case Icon::dice:
+        {
+            const auto box = juce::Rectangle<float> (x, y, w, h).withSizeKeepingCentre (juce::jmin (w, h), juce::jmin (w, h));
+            p.addRoundedRectangle (box, box.getWidth() * 0.2f);
+            g.strokePath (p, juce::PathStrokeType (1.6f));
+            const float d = box.getWidth() * 0.17f;
+            for (const auto& f : { juce::Point<float> (0.28f, 0.28f), juce::Point<float> (0.72f, 0.28f), juce::Point<float> (0.5f, 0.5f),
+                                   juce::Point<float> (0.28f, 0.72f), juce::Point<float> (0.72f, 0.72f) })
+                g.fillEllipse (juce::Rectangle<float> (d, d).withCentre ({ box.getX() + box.getWidth() * f.x, box.getY() + box.getHeight() * f.y }));
+            return;
+        }
     }
 }
 

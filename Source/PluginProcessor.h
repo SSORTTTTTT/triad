@@ -45,7 +45,7 @@ public:
     static juce::String crossoverID (int index);           // "lowCut", "highCut", "cross3".."cross9"
     static juce::String bandMixID (int band);              // "mix0".."mix9"
     static juce::String bandGainID (int band);             // "gain0".."gain9" (dB)
-    static juce::String slopeID (int index);               // "slope0".."slope8": crossover slope order 1-8 (x 6 dB/oct)
+    static juce::String slopeID (int index);               // "slope0".."slope8": crossover slope order 1-16 (x 6 dB/oct)
     static constexpr float minGainDb = -36.0f, maxGainDb = 12.0f;
 
     // ---- Bands (positional, low to high) -------------------------------------------------
@@ -56,9 +56,9 @@ public:
     float nyquistFrequency() const { return (float) rate.load() * 0.5f; }
     double getSampleRateForDisplay() const { return rate.load(); }
     juce::RangedAudioParameter* crossoverParameter (int index) const;
-    // Crossover slopes: order 1 (6 dB/oct, soft) to 8 (48 dB/oct, hard); 4 (24 dB/oct) by default.
+    // Crossover slopes: order 1 (6 dB/oct, soft) to 16 (96 dB/oct, near brickwall); 4 (24 dB/oct) by default.
     juce::RangedAudioParameter* slopeParameter (int index) const;
-    int getCrossoverSlope (int index) const;                // order 1-8
+    int getCrossoverSlope (int index) const;                // order 1-16
     void setCrossoverSlope (int index, int order);          // as one undoable, automatable gesture
     static juce::String slopeText (int order) { return juce::String (triad::CrossoverFilter::dbPerOctave (order)) + " dB/oct"; }
     static float defaultCrossover (int index, int bandCount);
@@ -172,6 +172,14 @@ public:
     // ---- Presets -----------------------------------------------------------------------------------
     std::unique_ptr<juce::XmlElement> createChainXml (int band);     // one band's chain, LFOs, mix, volume
     juce::String loadChainXml (int band, const juce::XmlElement&);
+    // Band clipboard, shared by every Triad in this process (message thread): "Copy band state" keeps a
+    // copy of the band's whole chain (effects and their settings, slot mixes, LFOs, band mix and volume);
+    // "Paste band state" replaces another band's chain with it (the crossovers stay as they are).
+    bool copyBandState (int band);
+    juce::String pasteBandState (int band);                          // error text; empty when pasted
+    static bool hasCopiedBand();
+    static juce::String copiedBandDescription();                     // e.g. "band 2: OTT, Valhalla Delay"
+    static void clearCopiedBand();
     std::unique_ptr<juce::XmlElement> createPresetXml();             // the whole Triad
     void loadPresetXml (const juce::XmlElement&);
     juce::String getPresetName() const;

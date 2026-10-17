@@ -40,7 +40,10 @@ public:
     void chooseEffect (int band, int slot, juce::Component& target) override;
     void setCrossoverFrequency (int index, float hz) override;
     void showLfo (int band, int slot) override;
-    void showBandMenu (int band, juce::Component& target) override;
+    void showBandMenu (int band, juce::Component& target, bool atMouse = false) override;
+    // A choice from the band menu (its item ids): copy/paste band state, chains, LFOs, move, remove.
+    void bandMenuChoice (int band, int choice, const juce::Array<juce::File>& chainFiles = {});
+    enum BandMenuItem { bandMenuCopy = 7, bandMenuPaste = 8 };
     void bandDrag (int band, const juce::MouseEvent&, int phase) override;
     bool isFavourite (const juce::String& format, const juce::String& name) override;
     void setFavourite (const juce::String& format, const juce::String& name, bool) override;

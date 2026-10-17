@@ -92,7 +92,7 @@ void CrossoverDisplay::setCrossoverValue (int index, float frequency)
     endCrossoverGesture();
 }
 // ---- Slopes ---------------------------------------------------------------------------------
-// The slope dot moves on its divider between the soft end (top, 6 dB/oct) and the hard end (48 dB/oct).
+// The slope dot moves on its divider between the soft end (top, 6 dB/oct) and the hardest end (96 dB/oct).
 float CrossoverDisplay::slopeY (int order) const
 {
     const auto plot = plotBounds();
@@ -141,15 +141,23 @@ void CrossoverDisplay::showSlopeMenu (int index)
     if (index < 0 || index >= (int) cuts.size()) return;
     juce::PopupMenu menu;
     menu.addSectionHeader ("CROSSOVER " + juce::String (index + 1) + " SLOPE");
-    const int current = processor.getCrossoverSlope (index);
-    for (int order = triad::CrossoverFilter::minOrder; order <= triad::CrossoverFilter::maxOrder; ++order)
-        menu.addItem (order, TriadProcessor::slopeText (order) + (order == 1 ? "  (softest)" : order == 4 ? "  (default)" : order == 8 ? "  (hardest)" : ""),
-                      true, order == current);
+    addSlopeItems (menu, processor.getCrossoverSlope (index), 0);
     juce::Component::SafePointer<CrossoverDisplay> safe (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, index] (int choice)
     {
         if (safe != nullptr && choice > 0) safe->setSlope (index, choice);
     });
+}
+// The quick list of slopes: 6 to 48 dB/oct, then the steeper, near-brickwall cuts up to 96 dB/oct.
+void CrossoverDisplay::addSlopeItems (juce::PopupMenu& menu, int current, int idBase)
+{
+    for (int order = triad::CrossoverFilter::minOrder; order <= triad::CrossoverFilter::maxOrder; ++order)
+    {
+        if (order == triad::CrossoverFilter::steepestClassic + 1) menu.addSectionHeader ("HARDER CUTS (NEAR BRICKWALL)");
+        menu.addItem (idBase + order, TriadProcessor::slopeText (order) + (order == 1 ? "  (softest)" : order == triad::CrossoverFilter::defaultOrder ? "  (default)"
+                                                                         : order == triad::CrossoverFilter::maxOrder ? "  (hardest)" : ""),
+                      true, order == current);
+    }
 }
 juce::Rectangle<float> CrossoverDisplay::slopeReadoutBounds (int index) const
 {
@@ -258,10 +266,15 @@ void CrossoverDisplay::mouseDown (const juce::MouseEvent& e)
 }
 void CrossoverDisplay::showBandMenu (int band, float hz)
 {
-    enum { removeId = 1, addId, lfoId };
+    enum { removeId = 1, addId, lfoId, copyId, pasteId };
     const int count = processor.getBandCount();
     juce::PopupMenu menu;
     menu.addSectionHeader ("BAND " + juce::String (band + 1));
+    menu.addItem (copyId, "Copy band state");
+    menu.addItem (pasteId, TriadProcessor::hasCopiedBand() ? "Paste band state (" + TriadProcessor::copiedBandDescription() + ")"
+                                                           : juce::String ("Paste band state"),
+                  TriadProcessor::hasCopiedBand());
+    menu.addSeparator();
     menu.addItem (removeId, "Remove band " + juce::String (band + 1), count > 1);
     menu.addItem (addId, "Add a band here (" + formatHz (hz) + ")", count < triad::maxBands);
     menu.addItem (lfoId, "Edit LFO for band " + juce::String (band + 1) + " mix...");
@@ -269,7 +282,9 @@ void CrossoverDisplay::showBandMenu (int band, float hz)
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, band, hz] (int choice)
     {
         if (safe == nullptr) return;
-        if (choice == removeId) safe->processor.removeBand (band);
+        if (choice == copyId) { safe->processor.copyBandState (band); return; }
+        if (choice == pasteId) safe->processor.pasteBandState (band);
+        else if (choice == removeId) safe->processor.removeBand (band);
         else if (choice == addId) safe->processor.addBand (hz);
         else if (choice == lfoId) { if (safe->onEditBandLfo) safe->onEditBandLfo (band); return; }
         safe->refresh();
@@ -282,8 +297,7 @@ void CrossoverDisplay::showCrossoverMenu (int index)
     menu.addSectionHeader ("CROSSOVER " + juce::String (index + 1) + "  " + (index < (int) cuts.size() ? formatHz (cuts[(size_t) index]) : juce::String()));
     juce::PopupMenu slopes;
     const int current = processor.getCrossoverSlope (index);
-    for (int order = triad::CrossoverFilter::minOrder; order <= triad::CrossoverFilter::maxOrder; ++order)
-        slopes.addItem (slopeBase + order, TriadProcessor::slopeText (order), true, order == current);
+    addSlopeItems (slopes, current, slopeBase);
     menu.addSubMenu ("Slope: " + TriadProcessor::slopeText (current), slopes);
     menu.addSeparator();
     menu.addItem (removeBelow, "Remove band " + juce::String (index + 1) + " (below)");
@@ -482,7 +496,7 @@ void CrossoverDisplay::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xffb8bcba)); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
     g.drawText ("BAND CROSSOVERS", 18, 8, 175, 23, juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (11.0f)); g.setColour (juce::Colour (0xff898f8b));
-    g.drawText ("Drag a divider  /  Drag its upper dot: slope  /  Double-click: add a band  /  Right-click: remove", getWidth() - 640 - (int) meterWidth, 8, 530, 23,
+    g.drawText ("Drag a divider  /  Drag its upper dot: slope  /  Double-click: add a band  /  Right-click: band menu", getWidth() - 640 - (int) meterWidth, 8, 530, 23,
                 juce::Justification::centredRight);
     paintBandCurves (g);
     for (int i = 0; i < count && i + 1 < (int) xs.size(); ++i)
@@ -603,11 +617,10 @@ void CrossoverDisplay::Handle::mouseDrag (const juce::MouseEvent& event)
 {
     if (draggingSlope)
     {
-        // Each step of the dot's travel is one slope step (6 dB/oct); down is harder.
-        const float step = (owner.slopeY (triad::CrossoverFilter::maxOrder) - owner.slopeY (triad::CrossoverFilter::minOrder))
-                         / (float) (triad::CrossoverFilter::maxOrder - triad::CrossoverFilter::minOrder);
+        // Every slopeDragStep pixels of mouse travel is one slope step (6 dB/oct); down is harder. (The
+        // dot's own track is shorter, so 6 to 96 dB/oct stays easy to set precisely.)
         const float moved = event.getEventRelativeTo (&owner).position.y - slopeGrabY;
-        owner.dragSlopeTo (slopeGrabOrder + juce::roundToInt (moved / juce::jmax (1.0f, step)));
+        owner.dragSlopeTo (slopeGrabOrder + juce::roundToInt (moved / slopeDragStep));
         return;
     }
     if (owner.activeHandle == index) owner.dragCrossoverTo (event.getEventRelativeTo (&owner).position.x + grabOffset);

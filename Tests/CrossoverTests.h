@@ -97,7 +97,7 @@ inline void runCrossoverTests()
             GestureProbe slopeProbe;
             slope->addListener (&slopeProbe);
             const float frequency = processor.effectiveCutoffs().first;
-            const float step = (display.slopeY (8) - display.slopeY (1)) / 7.0f;
+            const float step = CrossoverDisplay::slopeDragStep;
             const float dotY = display.slopeY (processor.getCrossoverSlope (0)) - (float) lowHandle->getY();
             lowHandle->mouseDown (mouseAt (lowHandle, 12.0f, dotY));
             lowHandle->mouseDrag (mouseAt (lowHandle, 12.0f, dotY + 2.0f * step, true));
@@ -117,6 +117,23 @@ inline void runCrossoverTests()
             require (lowHandle->keyPressed (juce::KeyPress (juce::KeyPress::downKey)) && processor.getCrossoverSlope (0) == 5, "Down arrow: harder");
             lowHandle->keyPressed (juce::KeyPress (juce::KeyPress::upKey));
             require (processor.getCrossoverSlope (0) == 4, "Up arrow: softer");
+            // All the way down: the near-brickwall 96 dB/oct.
+            const float dotY3 = display.slopeY (4) - (float) lowHandle->getY();
+            lowHandle->mouseDown (mouseAt (lowHandle, 12.0f, dotY3));
+            lowHandle->mouseDrag (mouseAt (lowHandle, 12.0f, dotY3 + 60.0f * step, true));
+            lowHandle->mouseUp (mouseAt (lowHandle, 12.0f, dotY3 + 60.0f * step));
+            require (processor.getCrossoverSlope (0) == triad::CrossoverFilter::maxOrder && slope->getCurrentValueAsText() == "96 dB/oct",
+                     "Dragging the slope dot to the bottom gives the hardest cut, 96 dB/oct");
+            {
+                juce::PopupMenu menu;
+                CrossoverDisplay::addSlopeItems (menu, 4, 0);
+                int items = 0, ticked = 0;
+                for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+                    if (! it.getItem().isSectionHeader) { ++items; ticked += it.getItem().isTicked ? it.getItem().itemID : 0; }
+                require (items == 16 && ticked == 4, "The slope list has every step from 6 to 96 dB/oct, the current one ticked");
+            }
+            lowHandle->mouseDoubleClick (mouseAt (lowHandle, 12.0f, display.slopeY (triad::CrossoverFilter::maxOrder) - (float) lowHandle->getY()));
+            require (processor.getCrossoverSlope (0) == 4, "Double-click resets the hardest slope to 24 dB/oct");
             require (slopeProbe.starts == slopeProbe.ends, "Slope gestures stay balanced");
             slope->removeListener (&slopeProbe);
         }

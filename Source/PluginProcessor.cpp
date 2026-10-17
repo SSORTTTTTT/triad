@@ -319,6 +319,22 @@ int TriadProcessor::Band::slotIndex (int id) const
 }
 
 // ---- Construction ---------------------------------------------------------------------------------
+// The band clipboard (Copy / Paste band state) is shared by the Triads in this process; it is
+// emptied when the last one closes.
+namespace
+{
+struct BandClipboard
+{
+    std::unique_ptr<juce::XmlElement> xml;
+    juce::String description;
+};
+BandClipboard& bandClipboard()
+{
+    static BandClipboard clipboard;
+    return clipboard;
+}
+}
+
 TriadProcessor::TriadProcessor()
     : AudioProcessor (BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo(), true)
                                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
@@ -355,7 +371,7 @@ TriadProcessor::~TriadProcessor()
     for (auto& band : bands)
         if (band != nullptr)
             for (auto& s : band->slots) retire (std::move (s->effect));
-    if (--liveTriads == 0) EffectGraveyard::releaseAll();
+    if (--liveTriads == 0) { bandClipboard() = {}; EffectGraveyard::releaseAll(); }
 }
 bool TriadProcessor::isBusesLayoutSupported (const BusesLayout& b) const
 {
@@ -1966,6 +1982,34 @@ juce::String TriadProcessor::loadChainXml (int band, const juce::XmlElement& xml
     stateChanged();
     return {};
 }
+
+// ---- Band clipboard ---------------------------------------------------------------------------------------
+bool TriadProcessor::copyBandState (int band)
+{
+    JUCE_ASSERT_MESSAGE_THREAD
+    auto xml = createChainXml (band);
+    if (xml == nullptr) return false;
+    juce::StringArray names;
+    for (int s = 0; s < getSlotCount (band); ++s)
+        if (const auto slotInfo = getSlotInfo (band, s); slotInfo.name.isNotEmpty() && slotInfo.hasContent) names.add (slotInfo.name);
+    auto& clipboard = bandClipboard();
+    clipboard.xml = std::move (xml);
+    clipboard.description = "band " + juce::String (band + 1) + ": " + (names.isEmpty() ? juce::String ("no effects") : names.joinIntoString (", "));
+    setStatus ("Copied band " + juce::String (band + 1) + " state");
+    return true;
+}
+juce::String TriadProcessor::pasteBandState (int band)
+{
+    JUCE_ASSERT_MESSAGE_THREAD
+    const auto& clipboard = bandClipboard();
+    if (clipboard.xml == nullptr) return "No band state copied yet.";
+    const auto error = loadChainXml (band, *clipboard.xml);
+    setStatus (error.isEmpty() ? "Pasted " + clipboard.description + " into band " + juce::String (band + 1) : error);
+    return error;
+}
+bool TriadProcessor::hasCopiedBand() { return bandClipboard().xml != nullptr; }
+juce::String TriadProcessor::copiedBandDescription() { return bandClipboard().description; }
+void TriadProcessor::clearCopiedBand() { bandClipboard() = {}; }
 
 juce::AudioProcessorEditor* TriadProcessor::createEditor() { return new TriadEditor (*this); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new TriadProcessor(); }

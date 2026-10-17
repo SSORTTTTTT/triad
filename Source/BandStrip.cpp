@@ -196,7 +196,7 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
     // The editor rebuilds strips from its timer, so this strip is not deleted inside its own callback.
     removeButton.onClick = [this] { processor.removeBand (band); };
     addAndMakeVisible (removeButton);
-    menuButton.setTooltip ("Chain presets, LFOs, move or remove this band");
+    menuButton.setTooltip ("Copy / paste band state, chain presets, LFOs, move or remove this band (or right-click the band)");
     menuButton.onClick = [this] { host.showBandMenu (band, menuButton); };
     addAndMakeVisible (menuButton);
     for (auto* label : { &startLabel, &endLabel })
@@ -217,6 +217,7 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
     slotView.setScrollBarThickness (6);
     addAndMakeVisible (slotView);
     slotHolder.addAndMakeVisible (addButton);
+    slotHolder.addMouseListener (this, false);   // right-click the empty space under the slots: the band menu
     rebuildRows (processor.getSlotCount (band));
     mix.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     mix.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -362,15 +363,17 @@ void BandStrip::setLifted (bool on)
     repaint();
 }
 // Press and drag the header to move this band's chain to another band.
+// Right-click anywhere on the band (header, footer or the space under the slots): the band menu.
 void BandStrip::mouseDown (const juce::MouseEvent& e)
 {
-    if (e.y < headerHeight && e.mods.isLeftButtonDown()) host.bandDrag (band, e, 0);
+    if (e.mods.isPopupMenu()) { host.showBandMenu (band, *this, true); return; }
+    if (e.eventComponent == this && e.y < headerHeight && e.mods.isLeftButtonDown()) host.bandDrag (band, e, 0);
 }
 void BandStrip::mouseDrag (const juce::MouseEvent& e)
 {
-    if (e.mouseDownPosition.y < headerHeight) host.bandDrag (band, e, 1);
+    if (e.eventComponent == this && e.mouseDownPosition.y < headerHeight && ! e.mods.isPopupMenu()) host.bandDrag (band, e, 1);
 }
 void BandStrip::mouseUp (const juce::MouseEvent& e)
 {
-    if (e.mouseDownPosition.y < headerHeight) host.bandDrag (band, e, 2);
+    if (e.eventComponent == this && e.mouseDownPosition.y < headerHeight && ! e.mods.isPopupMenu()) host.bandDrag (band, e, 2);
 }

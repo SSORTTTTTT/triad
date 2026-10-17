@@ -74,6 +74,40 @@ void TriadSettings::setFolders (const juce::StringArray& folders)
     file->saveIfNeeded();
     loadedModification = options().getDefaultFile().getLastModificationTime();
 }
+void TriadSettings::getGenerator (float& angular, float& soft, float& chaos) const
+{
+    reload();
+    juce::StringArray parts;
+    parts.addTokens (file->getValue ("generator", "1,0,0.35"), ",", "");
+    auto part = [&parts] (int i, float fallback)
+    {
+        return parts.size() > i && parts[i].trim().containsOnly ("0123456789.") && parts[i].isNotEmpty()
+                   ? juce::jlimit (0.0f, 1.0f, parts[i].getFloatValue()) : fallback;
+    };
+    angular = part (0, 1.0f);
+    soft = part (1, 0.0f);
+    chaos = part (2, 0.35f);
+}
+void TriadSettings::setGenerator (float angular, float soft, float chaos)
+{
+    reload();
+    auto text = [] (float v) { return juce::String (juce::jlimit (0.0f, 1.0f, v), 2); };
+    file->setValue ("generator", text (angular) + "," + text (soft) + "," + text (chaos));
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
+int TriadSettings::getPaletteCategory() const
+{
+    reload();
+    return file->getIntValue ("lfoPalette", 0);
+}
+void TriadSettings::setPaletteCategory (int category)
+{
+    reload();
+    file->setValue ("lfoPalette", category);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
 juce::String TriadSettings::favouriteKey (const juce::String& format, const juce::String& name)
 {
     return (format == "AudioUnit" ? juce::String ("AU") : format) + "|" + name.trim().toLowerCase();

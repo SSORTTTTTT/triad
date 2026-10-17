@@ -71,6 +71,35 @@ private:
     mod::Shape shape;
     juce::Colour colour;
 };
+
+// The generator's big button: a dice and NEW SHAPE.
+class GenerateButton final : public juce::Button
+{
+public:
+    GenerateButton() : Button ("New shape")
+    {
+        setTooltip ("Draw a new shape in this style, on the grid (Undo brings the old one back)");
+    }
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        const auto r = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (accent.withAlpha (down ? 0.55f : over ? 0.42f : 0.3f));
+        g.fillRoundedRectangle (r, 5.0f);
+        g.setColour (accent.withAlpha (0.8f));
+        g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+        auto area = r.reduced (10.0f, 6.0f);
+        const auto label = juce::String ("NEW SHAPE");
+        const juce::Font font (juce::FontOptions (13.0f, juce::Font::bold));
+        const float textWidth = juce::GlyphArrangement::getStringWidth (font, label);
+        const float iconSize = area.getHeight();
+        auto content = area.withSizeKeepingCentre (iconSize + 8.0f + textWidth, area.getHeight());
+        triad::ui::IconButton::drawIcon (g, triad::ui::IconButton::Icon::dice, content.removeFromLeft (iconSize), textColour);
+        content.removeFromLeft (8.0f);
+        g.setColour (textColour);
+        g.setFont (font);
+        g.drawText (label, content, juce::Justification::centredLeft, false);
+    }
+};
 }
 
 // ---- Shape editor -----------------------------------------------------------------------------------
@@ -111,6 +140,11 @@ void ShapeEditor::apply (const std::function<mod::Shape (const mod::Shape&)>& op
 juce::Rectangle<float> ShapeEditor::plot() const
 {
     return getLocalBounds().toFloat().withTrimmedLeft (38.0f).withTrimmedTop (20.0f).withTrimmedRight (10.0f).withTrimmedBottom (10.0f);
+}
+float ShapeEditor::plotAspect() const
+{
+    const auto r = plot();
+    return r.getWidth() > 1.0f && r.getHeight() > 1.0f ? r.getWidth() / r.getHeight() : mod::plotAspect;
 }
 int ShapeEditor::columns() const
 {
@@ -524,13 +558,63 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p), editor (p)
     for (auto* c : std::initializer_list<juce::Component*> { &lengthButton, &prevLength, &nextLength, &gridButton, &snapButton, &clearButton,
                                                             &doubleButton, &halfButton, &reverseButton, &flipButton, &undoButton, &redoButton })
         addAndMakeVisible (*c);
-    for (int i = 0; i < mod::numPresets(); ++i)
+    // Preset palette: one category at a time.
+    categoryButton.setTooltip ("Preset shapes: choose a category");
+    categoryButton.onClick = [this] { showCategoryMenu(); };
+    addAndMakeVisible (categoryButton);
+    paletteCategory = juce::jlimit (0, mod::numPresetCategories() - 1, settings->getPaletteCategory());
+    prevPage.onClick = [this] { setPalettePage (palettePage - 1); };
+    nextPage.onClick = [this] { setPalettePage (palettePage + 1); };
+    pageLabel.setJustificationType (juce::Justification::centred);
+    pageLabel.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    pageLabel.setColour (juce::Label::textColourId, triad::ui::dimTextColour);
+    pageLabel.setTooltip ("Page (the mouse wheel over the shapes turns the pages)");
+    for (auto* c : std::initializer_list<juce::Component*> { &prevPage, &nextPage, &pageLabel }) addAndMakeVisible (*c);
+    rebuildPalette();
+    // Generator.
+    struct SliderSetup { juce::Slider* slider; double reset; juce::Colour colour; const char* tip; };
+    for (const auto& s : { SliderSetup { &angularSlider, 100.0, accent,
+                                         "Angular: hard corners - vertical steps, squares, triangles and straight lines at 30, 45 and 60 degrees" },
+                           SliderSetup { &softSlider, 0.0, juce::Colour (0xff67c6b8),
+                                         "Soft: curves and waves. With Angular up too: hard jumps into curves and waves" },
+                           SliderSetup { &chaosSlider, 35.0, juce::Colour (0xffe0a85a),
+                                         "Chaos: more points, faster and less regular rhythms, more levels. Low chaos repeats a simple pattern" } })
     {
-        auto b = std::make_unique<ShapeButton> (i, accent);
-        b->onClick = [this, i] { editor.apply ([i] (const mod::Shape&) { return mod::preset (i); }); };
-        addAndMakeVisible (*b);
-        presetButtons.push_back (std::move (b));
+        s.slider->setSliderStyle (juce::Slider::LinearHorizontal);
+        s.slider->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        s.slider->setRange (0.0, 100.0, 1.0);
+        s.slider->setDoubleClickReturnValue (true, s.reset);
+        s.slider->setColour (juce::Slider::trackColourId, s.colour);
+        s.slider->setTooltip (s.tip);
+        s.slider->onValueChange = [this, slider = s.slider]
+        {
+            repaint (generatorArea);
+            if (! slider->isMouseButtonDown()) saveGeneratorStyle();
+        };
+        s.slider->onDragEnd = [this] { saveGeneratorStyle(); };
+        addAndMakeVisible (*s.slider);
     }
+    {
+        float angular = 1.0f, soft = 0.0f, chaos = 0.35f;
+        settings->getGenerator (angular, soft, chaos);
+        angularSlider.setValue (angular * 100.0, juce::dontSendNotification);
+        softSlider.setValue (soft * 100.0, juce::dontSendNotification);
+        chaosSlider.setValue (chaos * 100.0, juce::dontSendNotification);
+    }
+    hardStyleButton.setTooltip ("Hard angles only: Angular 100%, Soft 0%");
+    mixStyleButton.setTooltip ("Hard angles into curves: Angular 100%, Soft 60%");
+    softStyleButton.setTooltip ("Soft curves only: Angular 0%, Soft 100%");
+    hardStyleButton.onClick = [this] { setGeneratorStyle (1.0f, 0.0f, (float) chaosSlider.getValue() * 0.01f); };
+    mixStyleButton.onClick = [this] { setGeneratorStyle (1.0f, 0.6f, (float) chaosSlider.getValue() * 0.01f); };
+    softStyleButton.onClick = [this] { setGeneratorStyle (0.0f, 1.0f, (float) chaosSlider.getValue() * 0.01f); };
+    for (auto* b : { &hardStyleButton, &mixStyleButton, &softStyleButton })
+    {
+        b->setColour (juce::TextButton::buttonColourId, slotRow);
+        addAndMakeVisible (*b);
+    }
+    generateButton = std::make_unique<GenerateButton>();
+    generateButton->onClick = [this] { generate(); };
+    addAndMakeVisible (*generateButton);
     addRouteButton.setTooltip ("Send this LFO to another knob in this band");
     addRouteButton.onClick = [this]
     {
@@ -555,6 +639,117 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p), editor (p)
     select (0, processor.getBandLfo (0));
 }
 LfoPage::~LfoPage() = default;
+
+void LfoPage::rebuildPalette()
+{
+    for (auto& b : presetButtons) removeChildComponent (b.get());
+    presetButtons.clear();
+    const auto list = mod::presetsIn (paletteCategory);
+    palettePage = juce::jlimit (0, getNumPalettePages() - 1, palettePage);
+    for (int k = palettePage * paletteSize; k < juce::jmin ((int) list.size(), (palettePage + 1) * paletteSize); ++k)
+    {
+        const int i = list[(size_t) k];
+        auto b = std::make_unique<ShapeButton> (i, accent);
+        b->onClick = [this, i] { editor.apply ([i] (const mod::Shape&) { return mod::preset (i); }); };
+        addAndMakeVisible (*b);
+        presetButtons.push_back (std::move (b));
+    }
+    categoryButton.setButtonText (mod::presetCategoryName (paletteCategory) + u8 (" \xe2\x96\xbe"));
+    const int pages = getNumPalettePages();
+    pageLabel.setText (juce::String (palettePage + 1) + "/" + juce::String (pages), juce::dontSendNotification);
+    prevPage.setEnabled (palettePage > 0);
+    nextPage.setEnabled (palettePage < pages - 1);
+    resized();
+}
+int LfoPage::getNumPalettePages() const
+{
+    return juce::jmax (1, ((int) mod::presetsIn (paletteCategory).size() + paletteSize - 1) / paletteSize);
+}
+void LfoPage::setPaletteCategory (int category)
+{
+    category = juce::jlimit (0, mod::numPresetCategories() - 1, category);
+    if (category == paletteCategory && ! presetButtons.empty()) return;
+    paletteCategory = category;
+    palettePage = 0;
+    settings->setPaletteCategory (category);
+    rebuildPalette();
+    repaint();
+}
+void LfoPage::setPalettePage (int page)
+{
+    page = juce::jlimit (0, getNumPalettePages() - 1, page);
+    if (page == palettePage) return;
+    palettePage = page;
+    rebuildPalette();
+    repaint();
+}
+void LfoPage::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+{
+    if (paletteArea.contains (e.getEventRelativeTo (this).getPosition()) && getNumPalettePages() > 1)
+    {
+        const float delta = std::abs (wheel.deltaY) > std::abs (wheel.deltaX) ? wheel.deltaY : -wheel.deltaX;
+        if (std::abs (delta) > 0.0f) setPalettePage (palettePage + (delta < 0.0f ? 1 : -1));
+        return;
+    }
+    Component::mouseWheelMove (e, wheel);
+}
+void LfoPage::showCategoryMenu()
+{
+    juce::PopupMenu menu;
+    bool generatedHeader = false;
+    menu.addSectionHeader ("PRESET SHAPES");
+    for (int c = 0; c < mod::numPresetCategories(); ++c)
+    {
+        if (mod::isGeneratedCategory (c) && ! generatedHeader)
+        {
+            menu.addSectionHeader ("GENERATED (FROM THE DICE)");
+            generatedHeader = true;
+        }
+        const int count = (int) mod::presetsIn (c).size(), pages = (count + paletteSize - 1) / paletteSize;
+        menu.addItem (c + 1, mod::presetCategoryName (c) + "  (" + juce::String (count) + (pages > 1 ? ", " + juce::String (pages) + " pages)" : ")"),
+                      true, c == paletteCategory);
+    }
+    juce::Component::SafePointer<LfoPage> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&categoryButton), [safe] (int choice)
+    {
+        if (safe != nullptr && choice > 0) safe->setPaletteCategory (choice - 1);
+    });
+}
+triad::mod::Style LfoPage::getGeneratorStyle() const
+{
+    return { (float) angularSlider.getValue() * 0.01f, (float) softSlider.getValue() * 0.01f, (float) chaosSlider.getValue() * 0.01f };
+}
+void LfoPage::setGeneratorStyle (float angular, float soft, float chaos)
+{
+    angularSlider.setValue (juce::jlimit (0.0f, 1.0f, angular) * 100.0, juce::dontSendNotification);
+    softSlider.setValue (juce::jlimit (0.0f, 1.0f, soft) * 100.0, juce::dontSendNotification);
+    chaosSlider.setValue (juce::jlimit (0.0f, 1.0f, chaos) * 100.0, juce::dontSendNotification);
+    saveGeneratorStyle();
+    repaint (generatorArea);
+}
+void LfoPage::saveGeneratorStyle()
+{
+    const auto style = getGeneratorStyle();
+    settings->setGenerator (style.angular, style.soft, style.chaos);
+}
+void LfoPage::generate()
+{
+    mod::GridInfo grid;
+    grid.columns = editor.columns();
+    grid.rows = 16;
+    grid.aspect = editor.plotAspect();
+    // Never the shape that is there already, nor one of the last few the dice drew.
+    auto shape = mod::generate (getGeneratorStyle(), grid, generatorRandom);
+    for (int tries = 0; tries < 8; ++tries)
+    {
+        const auto text = mod::toText (shape);
+        if (! (shape == editor.getShape()) && ! recentShapes.contains (text)) break;
+        shape = mod::generate (getGeneratorStyle(), grid, generatorRandom);
+    }
+    recentShapes.add (mod::toText (shape));
+    while (recentShapes.size() > 16) recentShapes.remove (0);
+    editor.apply ([shape] (const mod::Shape&) { return shape; });
+}
 
 juce::String LfoPage::signature() const
 {
@@ -704,6 +899,8 @@ void LfoPage::resized()
     tabHolder.setSize (juce::jmax (x, tabRow.getWidth()), 38);
     r.removeFromTop (8);
     routingArea = r.removeFromRight (250);
+    generatorArea = routingArea.removeFromBottom (158);
+    routingArea.removeFromBottom (8);
     r.removeFromRight (12);
     auto palette = r.removeFromBottom (30);
     r.removeFromBottom (6);
@@ -732,8 +929,27 @@ void LfoPage::resized()
     doubleButton.setBounds (toolbar.removeFromRight (40));
     toolbar.removeFromRight (3);
     clearButton.setBounds (toolbar.removeFromRight (30));
-    const int width = juce::jmin (52, palette.getWidth() / juce::jmax (1, (int) presetButtons.size()));
+    paletteArea = palette;
+    categoryButton.setBounds (palette.removeFromLeft (132).withTrimmedRight (4));
+    prevPage.setBounds (palette.removeFromLeft (24));
+    pageLabel.setBounds (palette.removeFromLeft (34));
+    nextPage.setBounds (palette.removeFromLeft (24));
+    palette.removeFromLeft (6);
+    const int width = juce::jmin (52, palette.getWidth() / paletteSize);
     for (auto& b : presetButtons) b->setBounds (palette.removeFromLeft (width).withTrimmedRight (4));
+    // Generator panel: header with style chips, three sliders, the dice.
+    auto gen = generatorArea.reduced (12, 10);
+    auto header = gen.removeFromTop (18);
+    for (auto* b : { &softStyleButton, &mixStyleButton, &hardStyleButton })
+    {
+        b->setBounds (header.removeFromRight (40));
+        header.removeFromRight (4);
+    }
+    gen.removeFromTop (6);
+    for (auto* slider : { &angularSlider, &softSlider, &chaosSlider })
+        slider->setBounds (gen.removeFromTop (24).withTrimmedLeft (64).withTrimmedRight (40));
+    gen.removeFromTop (8);
+    if (generateButton != nullptr) generateButton->setBounds (gen.removeFromTop (32));
     auto panel = routingArea.reduced (10, 0).withTrimmedTop (48);
     for (auto& row : routeRows) { row->setBounds (panel.removeFromTop (54)); panel.removeFromTop (4); }
     addRouteButton.setBounds (panel.removeFromTop (28));
@@ -755,8 +971,31 @@ void LfoPage::paint (juce::Graphics& g)
     g.setColour (dimTextColour);
     g.setFont (juce::FontOptions (11.0f));
     auto notes = routingArea.reduced (12, 10).removeFromBottom (44);
-    g.drawFittedText ("Amount 100%: the knob follows the line (top = 100%, bottom = 0%). The light switches a route on or off.",
-                      notes, juce::Justification::bottomLeft, 3);
+    if (notes.getY() > addRouteButton.getBottom() + 6)
+        g.drawFittedText ("Amount 100%: the knob follows the line (top = 100%, bottom = 0%). The light switches a route on or off.",
+                          notes, juce::Justification::bottomLeft, 3);
+    // Generator panel.
+    g.setColour (panel);
+    g.fillRoundedRectangle (generatorArea.toFloat(), 7.0f);
+    {
+        auto gen = generatorArea.reduced (12, 10);
+        auto top = gen.removeFromTop (18);
+        g.setColour (accent);
+        g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        g.drawText ("GENERATE", top, juce::Justification::centredLeft);
+        gen.removeFromTop (6);
+        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+        const std::pair<const char*, const juce::Slider*> rows[] { { "ANGULAR", &angularSlider }, { "SOFT", &softSlider }, { "CHAOS", &chaosSlider } };
+        for (const auto& row : rows)
+        {
+            auto line = gen.removeFromTop (24);
+            g.setColour (dimTextColour);
+            g.drawText (row.first, line.removeFromLeft (64), juce::Justification::centredLeft);
+            g.setColour (textColour);
+            g.drawText (juce::String (juce::roundToInt (row.second->getValue())) + "%", line.removeFromRight (36), juce::Justification::centredRight);
+        }
+    }
+    g.setColour (dimTextColour);
     // How to edit, under the band row.
     g.setFont (juce::FontOptions (10.5f));
     g.drawText (u8 ("Double-click: add point  \xc2\xb7  Drag: move  \xc2\xb7  Double-click a point: delete  \xc2\xb7  Drag the small dot: curve"

@@ -116,7 +116,8 @@ struct FilterSection
     }
 };
 
-// Stereo crossover filter with a slope of 6 dB/octave per order, orders 1 to 8 (6 to 48 dB/oct).
+// Stereo crossover filter with a slope of 6 dB/octave per order, orders 1 to 16 (6 to 96 dB/oct;
+// 54 dB/oct and up are the near-brickwall cuts).
 // Odd orders are Butterworth, even orders Linkwitz-Riley (a Butterworth of half the order, twice).
 // For both, low-pass + high-pass is an all-pass, so the high band is computed as all-pass minus
 // low-pass and the two always add back exactly to that all-pass (flat magnitude). processAllpass()
@@ -125,7 +126,7 @@ struct FilterSection
 class CrossoverFilter
 {
 public:
-    static constexpr int minOrder = 1, maxOrder = 8, defaultOrder = 4;
+    static constexpr int minOrder = 1, maxOrder = 16, defaultOrder = 4, steepestClassic = 8;
     static constexpr int dbPerOctave (int order) { return 6 * order; }
 
     CrossoverFilter() { configure(); }
@@ -193,9 +194,9 @@ private:
         // Pole pairs of a Butterworth filter of order n, as angles from the negative real axis.
         auto pairAngle = [] (int n, int j) { return n % 2 == 0 ? (2.0 * j - 1.0) * juce::MathConstants<double>::pi / (2.0 * n)
                                                                : j * juce::MathConstants<double>::pi / n; };
-        auto addPair = [] (std::array<FilterSection, 4>& list, int& count, double angle) { list[(size_t) count++].r2 = (float) (2.0 * std::cos (angle)); };
-        auto addReal = [] (std::array<FilterSection, 4>& list, int& count) { list[(size_t) count++].r2 = -1.0f; };
-        std::array<FilterSection, 4> apSections {};
+        auto addPair = [] (auto& list, int& count, double angle) { list[(size_t) count++].r2 = (float) (2.0 * std::cos (angle)); };
+        auto addReal = [] (auto& list, int& count) { list[(size_t) count++].r2 = -1.0f; };
+        std::array<FilterSection, maxAp> apSections {};
         if (order % 2 == 1)
         {
             // Butterworth: low-pass uses every pole; the all-pass keeps the pole pairs that are not
@@ -221,8 +222,9 @@ private:
         }
         for (int i = 0; i < numAp; ++i) ap[(size_t) i] = apSections[(size_t) i];
     }
-    std::array<FilterSection, 4> lp {};
-    std::array<FilterSection, 2> ap {};
+    static constexpr int maxLp = maxOrder / 2, maxAp = maxOrder / 4;
+    std::array<FilterSection, maxLp> lp {};
+    std::array<FilterSection, maxAp> ap {};
     int numLp = 0, numAp = 0, order = defaultOrder;
     double sampleRate = 44100.0;
     float cutoff = 2000.0f, g = 0.0f;

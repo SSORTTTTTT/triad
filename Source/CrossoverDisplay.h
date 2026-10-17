@@ -42,6 +42,8 @@ public:
     void dragSlopeTo (int order);
     void endSlopeGesture();
     void showSlopeMenu (int index);
+    static constexpr float slopeDragStep = 6.0f;   // mouse travel (pixels) per slope step when dragging the dot
+    static void addSlopeItems (juce::PopupMenu& menu, int current, int idBase);
     juce::Rectangle<float> slopeReadoutBounds (int index) const;
     int getActiveSlope() const noexcept { return activeSlope; }
     void updateSpectrum();

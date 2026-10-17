@@ -1,8 +1,8 @@
 # Triad — multiband effects host
 
-Version 0.4.0 ("Triad v4") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
+Version 0.4.1 ("Triad v4") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
 
-**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v4-0.4.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
+**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v4-0.4.1-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
 
 ## What it does
 
@@ -13,7 +13,8 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
 - **Bands you can add while working.** Triad opens with 3 bands (crossovers at 250 Hz and 2.5 kHz). Press **+ BAND** or double-click the frequency display to split a band right there, up to 10 bands. Remove a band with the **×** on its strip, or right-click its area (or a divider) on the display.
 - **Live spectrum** behind the bands, with **IN** and **OUT** level meters beside it.
 - **Draggable crossovers.** Drag any divider; double-click one to reset it; arrow keys adjust a focused divider. Click a strip's start/end frequency to type one (`250`, `2.5k`).
-- **Slope dot on every divider** (new in v4): drag it **up for a soft slope**, where the effect blends into the neighbouring bands, or **down for a hard cut** right at the crossover. Its readout shows the slope, from **6 dB/oct** (softest) to **48 dB/oct** (hardest), 24 by default; click the readout to pick from a list, double-click the dot to reset, or use the up/down arrow keys. Each band is drawn as its own coloured curve, so you can see how far each band reaches into the next. With no effects loaded the bands still add back to your original sound at every slope. Slopes are DAW-automatable and saved with projects and presets.
+- **Slope dot on every divider** (new in v4): drag it **up for a soft slope**, where the effect blends into the neighbouring bands, or **down for a hard cut** right at the crossover. Its readout shows the slope, from **6 dB/oct** (softest) to **96 dB/oct** (hardest), 24 by default. 54 to 96 dB/oct (new in 0.4.1) are near-brickwall cuts: at 96 dB/oct a band is already about 96 dB down one octave past its edge, so it barely touches the next band (steeper cuts ring a little more around the crossover, as any steep filter does). Click the readout to pick from a list (6–48, then the harder cuts), double-click the dot to reset, or use the up/down arrow keys. Each band is drawn as its own coloured curve, so you can see how far each band reaches into the next. With no effects loaded the bands still add back to your original sound at every slope. Slopes are DAW-automatable and saved with projects and presets.
+- **Copy band state / Paste band state** (new in 0.4.1): in a band's **...** menu, or right-click anywhere on the band (its strip, or its area on the display). Copy takes the band's whole chain — effects with their settings, slot mixes, LFOs and routes, Band Mix and Volume; Paste puts it on another band (replacing that band's chain), also in another Triad in the same project. The band's frequency range stays as it is.
 - **Move a band's effects to another band:** press and hold a band's header and drag it left or right. The frequency ranges stay put; the chain (effects, knobs, LFOs, mix, volume) moves. The **...** menu on each band does the same one step at a time.
 - **Effect slots per band, as many as you need**, in processing order (Slot 1 runs first). Each band starts with one slot; **+ ADD SLOT** adds another and picks its effect in one go.
   - **Click an empty slot** to choose an effect. The list shows **effects only** (no instruments), with your **favourites** at the top, then VST3 and Audio Units by company (or A-Z, in settings).
@@ -27,7 +28,11 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
 - Every effect's mix knob, and every Band Mix, already has its own LFO, linked and waiting: it switches on as soon as you draw on it. More LFOs can be added (**+**) and sent anywhere in the band.
 - Pick a band, then an LFO tab (each is labelled with the effect it moves).
 - **The grid** (in the spirit of ShaperBox, Gross Beat and Serum): top is 100%, bottom 0%. Double-click to add a point, drag to move (snaps to the grid; hold Alt or Cmd to place freely), double-click a point to delete it, drag the small dot in a line to curve it, drag in empty space to select several. Right-click: select all, move points to grid, flip horizontal/vertical, copy/paste wave, triplet grid, snap.
-- **Toolbar:** length (triplet / straight / dotted, 1/128 to 32 bars, or free-running Hz), grid size, snap, clear, **2x** (repeat the pattern twice; Shift-click for 3x), **1/2** (the opposite), reverse, flip, undo/redo, and a palette of starting shapes.
+- **Toolbar:** length (triplet / straight / dotted, 1/128 to 32 bars, or free-running Hz), grid size, snap, clear, **2x** (repeat the pattern twice; Shift-click for 3x), **1/2** (the opposite), reverse, flip, undo/redo.
+- **Preset shapes** (new in 0.4.1), under the grid, in folders: the folder button picks one, **<** and **>** (or the mouse wheel over the shapes) turn its pages, and a click replaces the LFO's shape (undoable).
+  - Hand-made: BASIC, SQUARES, STEPS, TRIANGLES, ANGLES (30°/45°/60° lines with hard 90° steps), HARD + CURVE (a hard jump into a slope or a wave), SOFT — 75 shapes.
+  - Generated by the dice, sorted by what they are made of: GEN: SQUARES, GEN: ANGLES, GEN: HARD+CURVE, GEN: SOFT, GEN: TRIPLETS, GEN: CHAOS — 44 shapes each, 4 pages, plainest on page 1 and busiest on page 4.
+- **GENERATE** (new in 0.4.1, right of the grid): **NEW SHAPE** (the dice) draws a new shape on the current grid. **Angular** = hard 90° steps, squares, triangles and 30/45/60° lines; **Soft** = curves and waves (with Angular too: hard jumps into curves); **Chaos** = more points and less regular rhythm (low Chaos repeats a simple pattern, so it is never too random). **HARD / MIX / SOFT** set the first two in one click. Studied from Thomas's Infiltrator favourites (how often they step, hold, ramp and curve, and where), never copied from them.
 - LFOs follow the song position while the DAW plays (and keep running at its tempo when stopped).
 - **Routing** (right): where this LFO goes, with an on/off light, an amount and an invert switch. At 100% the knob follows the line exactly.
 
@@ -51,7 +56,7 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
    - **CMake 3.22+**: uses one from Homebrew or `/Applications/CMake.app` if present; otherwise it downloads the official CMake 3.31.9 into `deps/` (checksum-verified) for this build only.
    - **JUCE 8.0.12**: downloaded into `deps/JUCE` at the pinned commit on the first run.
    - An internet connection is needed for the first run. A full log is written to `build-mac.log`.
-4. When it finishes, Finder shows `Installer/Triad-v4-0.4.0-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
+4. When it finishes, Finder shows `Installer/Triad-v4-0.4.1-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
    - `/Library/Audio/Plug-Ins/Components/Triad v4.component` (AU)
    - `/Library/Audio/Plug-Ins/VST3/Triad v4.vst3` (VST3)
 
@@ -112,7 +117,7 @@ The point-based mix LFO is deferred until after testing the multiband host; see 
 
 ## Implementation and limits
 
-- Crossovers for 1–10 bands with a slope per crossover from 6 to 48 dB/octave in 6 dB steps (odd steps Butterworth, even steps Linkwitz–Riley; 24 dB/oct, the default, is Linkwitz–Riley 4th order). For every slope the low and high outputs add up to an all-pass, so the bands sum to flat magnitude. Changing a slope crossfades to a second set of filters over 30 ms, so it does not click. Each band's low-pass output is followed by all-pass filters at every higher crossover, so the dry bands sum to a flat-magnitude, phase-rotated signal. This is a minimum-phase crossover, not a linear-phase or bit-identical dry bypass.
+- Crossovers for 1–10 bands with a slope per crossover from 6 to 96 dB/octave in 6 dB steps; 54–96 are the near-brickwall cuts added in 0.4.1 (odd steps Butterworth, even steps Linkwitz–Riley; 24 dB/oct, the default, is Linkwitz–Riley 4th order). For every slope the low and high outputs add up to an all-pass, so the bands sum to flat magnitude. Changing a slope crossfades to a second set of filters over 30 ms, so it does not click. Each band's low-pass output is followed by all-pass filters at every higher crossover, so the dry bands sum to a flat-magnitude, phase-rotated signal. This is a minimum-phase crossover, not a linear-phase or bit-identical dry bypass.
 - Crossover transitions are smoothed over 35 ms, mix transitions over 20 ms. Adding or removing a band restarts the filters with a 10 ms fade-in.
 - Bands, crossovers and their parameters are positional (Band 1 is always the lowest). Adding a band in the middle shifts the bands above it up by one, and their mix values move with them; DAW automation lanes stay attached to positions, so re-check automation after changing the band layout.
 - Frequencies are kept in order in the DSP. If typed values or automation cross, the higher crossover keeps priority and lower ones are limited 1% below it; the display shows the effective frequencies. The top crossover is limited to 45% of the sample rate.

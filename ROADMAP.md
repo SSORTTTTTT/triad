@@ -1,12 +1,19 @@
 # Triad roadmap
 
-## Current testing version — 0.4.0 ("Triad v4")
+## Current testing version — 0.4.1 ("Triad v4")
+
+0.4.1 (2026-10-16): the **LFO randomizer** (GENERATE panel: Angular / Soft / Chaos sliders, HARD / MIX / SOFT,
+NEW SHAPE dice; studied from Thomas's 846 Infiltrator favourite shapes, not copied), a **preset bank** in folders
+with pages (75 hand-made hard-angle shapes in 7 folders + 6 GEN folders of 44 generated shapes, 4 pages each),
+**harder crossover cuts** (54–96 dB/oct, near brickwall, after 6–48 in the slope list), and **Copy / Paste band
+state** (band ... menu and right-click on a band).
+
+### 0.4.0
 
 0.4.0 (2026-10-16): the **slope dot** from Thomas's notes below — a second dot on every crossover
 divider: up = soft slope (bands blend), down = hard cut; readout 6–48 dB/oct (24 by default), click
 it for a list; each band drawn as its own coloured response curve so the overlap shows. Slopes are
-DAW parameters, saved with projects/presets. Next in v4: the LFO randomizer (Angular, Soft and Chaos
-sliders, trained on Thomas's Infiltrator / Gross Beat presets once he sends them).
+DAW parameters, saved with projects/presets.
 
 ### 0.3.2 ("Triad v3")
 
@@ -40,7 +47,7 @@ Still to come: see "Next update" below (LFO randomizer, soft crossovers, knobs i
 Thomas: 0.3.2 "seems to be working really good"; the LFO editor feels like ShaperBox, which he likes.
 Order: **1. LFO randomizer and presets first**, then 2. soft crossovers, then 3. knobs inside third-party effects.
 
-### 1. LFO randomizer ("Generate") — do this first
+### 1. LFO randomizer ("Generate") — first version done in 0.4.1 (see above); still open: Smooth amount, "Save to my library"
 
 A dice/Generate control in the LFO tab toolbar that draws a new shape for the selected LFO, with controls that
 rein the randomness in, so results are usable rhythms rather than noise:

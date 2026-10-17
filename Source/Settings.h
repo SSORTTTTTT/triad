@@ -18,6 +18,12 @@ public:
     juce::StringArray getFolders() const;    // extra VST3 folders to scan
     void setFolders (const juce::StringArray&);
 
+    // The LFO shape generator's sliders (0..1) and the preset palette's category.
+    void getGenerator (float& angular, float& soft, float& chaos) const;
+    void setGenerator (float angular, float soft, float chaos);
+    int getPaletteCategory() const;
+    void setPaletteCategory (int);
+
     static juce::String favouriteKey (const juce::String& format, const juce::String& name);
     bool isFavourite (const juce::String& key) const;
     void setFavourite (const juce::String& key, bool);

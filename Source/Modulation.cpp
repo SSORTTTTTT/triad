@@ -146,27 +146,6 @@ Shape snapped (const Shape& in, int columns, int rows)
 
 namespace
 {
-struct Preset { const char* name; Shape shape; };
-const std::vector<Preset>& presets()
-{
-    static const std::vector<Preset> list = []
-    {
-        std::vector<Preset> p;
-        p.push_back ({ "Flat", flat (1.0f) });
-        p.push_back ({ "Ramp down", { { 0, 1, 0 }, { 1, 0, 0 } } });
-        p.push_back ({ "Ramp up", { { 0, 0, 0 }, { 1, 1, 0 } } });
-        p.push_back ({ "Triangle", { { 0, 0, 0 }, { 0.5f, 1, 0 }, { 1, 0, 0 } } });
-        p.push_back ({ "Sine", { { 0, 0.5f, -1.6f }, { 0.25f, 1, 1.6f }, { 0.5f, 0.5f, -1.6f }, { 0.75f, 0, 1.6f }, { 1, 0.5f, 0 } } });
-        p.push_back ({ "Square", { { 0, 1, 0 }, { 0.5f, 1, 0 }, { 0.5f, 0, 0 }, { 1, 0, 0 } } });
-        p.push_back ({ "Pump", { { 0, 0, -4.0f }, { 0.6f, 1, 0 }, { 1, 1, 0 } } });
-        p.push_back ({ "Pump 1/4", repeated ({ { 0, 0, -4.0f }, { 0.6f, 1, 0 }, { 1, 1, 0 } }, 4) });
-        p.push_back ({ "Saw 1/4", repeated ({ { 0, 1, 0 }, { 1, 0, 0 } }, 4) });
-        p.push_back ({ "Gate 1/8", repeated ({ { 0, 1, 0 }, { 0.5f, 1, 0 }, { 0.5f, 0, 0 }, { 1, 0, 0 } }, 8) });
-        return p;
-    }();
-    return list;
-}
-
 const std::vector<Length> lengthTable {
     { "1/16T", 1.0 / 6.0, 0, 0, 0 }, { "1/8T", 1.0 / 3.0, 0, 0, 0 }, { "1/4T", 2.0 / 3.0, 0, 0, 0 }, { "1/2T", 4.0 / 3.0, 0, 0, 0 },
     { "1/128", 1.0 / 32.0, 0, 0, 1 }, { "1/64", 1.0 / 16.0, 0, 0, 1 }, { "1/32", 0.125, 0, 0, 1 }, { "1/16", 0.25, 0, 0, 1 },
@@ -178,10 +157,6 @@ const std::vector<Length> lengthTable {
     { "2 Hz", 0, 0, 2.0, 3 }, { "4 Hz", 0, 0, 4.0, 3 }, { "8 Hz", 0, 0, 8.0, 3 }, { "16 Hz", 0, 0, 16.0, 3 },
 };
 }
-
-int numPresets() { return (int) presets().size(); }
-juce::String presetName (int i) { return i >= 0 && i < numPresets() ? presets()[(size_t) i].name : ""; }
-Shape preset (int i) { return i >= 0 && i < numPresets() ? presets()[(size_t) i].shape : flat(); }
 
 const std::vector<Length>& lengths() { return lengthTable; }
 int defaultLength() { return 11; }

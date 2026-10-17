@@ -13,6 +13,7 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginCatalog.h"
 #include "../Source/PluginEditor.h"
+#include "../Source/Generator.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -685,12 +686,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             else if (choice < 82)
             {
                 begin ("crossover slope");
-                p.setCrossoverSlope (r.nextInt (juce::jmax (1, bands - 1)), 1 + r.nextInt (8));
-            }
-            else if (choice < 82)
-            {
-                begin ("crossover slope");
-                p.setCrossoverSlope (r.nextInt (juce::jmax (1, bands - 1)), 1 + r.nextInt (8));
+                p.setCrossoverSlope (r.nextInt (juce::jmax (1, bands - 1)), 1 + r.nextInt (triad::CrossoverFilter::maxOrder));
             }
             else if (choice < 84)
             {
@@ -762,9 +758,17 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                 namespace mod = triad::mod;
                 const int lfo = r.nextInt (juce::jmax (1, p.getLfoCount (band)));
                 auto shape = p.getLfoInfo (band, lfo).shape;
-                switch (r.nextInt (6))
+                switch (r.nextInt (7))
                 {
                     case 0: shape = mod::preset (r.nextInt (mod::numPresets())); break;
+                    case 5:
+                    {
+                        // The generator, any style, any grid.
+                        mod::GridInfo grid;
+                        grid.columns = 8 + r.nextInt (121);
+                        shape = mod::generate ({ r.nextFloat(), r.nextFloat(), r.nextFloat() }, grid, r);
+                        break;
+                    }
                     case 1: shape = mod::repeated (shape, 2 + r.nextInt (2)); break;
                     case 2: shape = mod::halved (shape); break;
                     case 3: shape = mod::reversed (shape); break;
@@ -811,9 +815,18 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             else if (choice < 124) { begin ("move a band"); p.moveBand (band, r.nextInt (bands)); }
             else if (choice < 127)
             {
-                begin ("chain preset copy");
-                if (effects < maxEffects - 20)
-                    if (auto chain = p.createChainXml (band)) p.loadChainXml (r.nextInt (bands), *chain);
+                if (r.nextBool())
+                {
+                    begin ("chain preset copy");
+                    if (effects < maxEffects - 20)
+                        if (auto chain = p.createChainXml (band)) p.loadChainXml (r.nextInt (bands), *chain);
+                }
+                else
+                {
+                    begin ("copy / paste band state");
+                    if (r.nextBool() || ! TriadProcessor::hasCopiedBand()) p.copyBandState (band);
+                    if (effects < maxEffects - 20) p.pasteBandState (r.nextInt (bands));
+                }
             }
             else
             {

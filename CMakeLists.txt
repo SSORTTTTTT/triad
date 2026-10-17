@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.4.0 LANGUAGES C CXX)
+project(Triad VERSION 0.4.1 LANGUAGES C CXX)
 # Installed as "Triad v4.vst3" / "Triad v4.component"; the plug-in IDs are unchanged from Triad 0.1,
 # so projects made with the earlier "Triad", "Triad v2" and "Triad v3" open with Triad v4.
 set(TRIAD_PRODUCT_NAME "Triad v4")
@@ -34,7 +34,8 @@ juce_add_plugin(Triad
     MICROPHONE_PERMISSION_TEXT "Triad uses audio input to process your sound.")
 target_sources(Triad PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/CrossoverDisplay.cpp
     Source/BandStrip.cpp Source/PluginCatalog.cpp Source/AudioUnitList.cpp Source/Modulation.cpp Source/Settings.cpp
-    Source/Widgets.cpp Source/LfoPage.cpp Source/MatrixPage.cpp Source/PlatformWindows.cpp)
+    Source/Widgets.cpp Source/LfoPage.cpp Source/MatrixPage.cpp Source/PlatformWindows.cpp
+    Source/Generator.cpp Source/ShapeLibrary.cpp)
 if(APPLE)
     target_sources(Triad PRIVATE Source/PlatformWindowsMac.mm)
 endif()
@@ -127,6 +128,11 @@ if(TRIAD_BUILD_TESTS)
     target_compile_definitions(TriadTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(TriadTests PRIVATE Triad juce::juce_audio_utils juce::juce_dsp)
     add_dependencies(TriadTests TriadScanner TriadCrashFixture)
+    # Development tool: the preset shapes and the generator's output as JSON (to look at them).
+    juce_add_console_app(TriadShapeDump PRODUCT_NAME "Triad Shape Dump")
+    target_sources(TriadShapeDump PRIVATE Tests/ShapeDump.cpp Source/Modulation.cpp Source/Generator.cpp Source/ShapeLibrary.cpp)
+    target_compile_definitions(TriadShapeDump PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(TriadShapeDump PRIVATE juce::juce_core)
     # Stress test: hundreds of hosted effects, random edits while audio runs, many instances.
     juce_add_console_app(TriadStress PRODUCT_NAME "Triad Stress")
     target_sources(TriadStress PRIVATE Tests/Stress.cpp)

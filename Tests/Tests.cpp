@@ -16,6 +16,7 @@
 
 void require (bool b, const char* message) { if (! b) throw std::runtime_error (message); }
 #include "CrossoverTests.h"
+#include "GeneratorTests.h"
 
 namespace
 {
@@ -274,6 +275,7 @@ int main (int argc, char** argv)
         const juce::File triadVst3 = argc >= 7 ? juce::File (juce::String::fromUTF8 (argv[6])) : juce::File();
         require (crashFixture.exists() && scannerHelper.existsAsFile(), "Crash fixture and scanner helper are built");
         runCrossoverTests();
+        generatorTests::run();
 
         // ---- Built-in Linkwitz-Riley filter equals JUCE's -----------------------------------
         for (double sr : { 44100.0, 48000.0, 96000.0 })
@@ -342,7 +344,7 @@ int main (int argc, char** argv)
             std::cout << "Phase-correct reconstruction, 1 to 10 bands: max error " << worst << std::endl;
         }
 
-        // ---- Crossover slopes, 6 to 48 dB/oct ----------------------------------------------------
+        // ---- Crossover slopes, 6 to 96 dB/oct ----------------------------------------------------
         {
             constexpr int length = 16384;
             constexpr double sr = 48000.0;
@@ -392,21 +394,27 @@ int main (int argc, char** argv)
                     shape = juce::jmax (shape, std::abs (m[1][(size_t) k] - triad::CrossoverFilter::highMagnitude (order, f, 1000.0f, sr)));
                 }
                 // Steepness: the low band two octaves above the crossover, and the high band two below.
-                const auto k4 = (size_t) juce::roundToInt (4000.0f / binHz), k250 = (size_t) juce::roundToInt (250.0f / binHz);
-                const auto low4k = juce::Decibels::gainToDecibels (m[0][k4]), high250 = juce::Decibels::gainToDecibels (m[1][k250]);
+                // (Two octaves for 6-48 dB/oct; one octave for the steeper ones, which are below float noise two octaves out.)
+                const bool steep = order > triad::CrossoverFilter::steepestClassic;
+                const float above = steep ? 2000.0f : 4000.0f, below = steep ? 500.0f : 250.0f;
+                const auto kAbove = (size_t) juce::roundToInt (above / binHz), kBelow = (size_t) juce::roundToInt (below / binHz);
+                const auto lowAbove = juce::Decibels::gainToDecibels (m[0][kAbove], -300.0f), highBelow = juce::Decibels::gainToDecibels (m[1][kBelow], -300.0f);
                 std::cout << TriadProcessor::slopeText (order) << ": bands add up flat (max error " << flat << "), shapes match (max error "
-                          << shape << "), low band at 4 kHz " << juce::String (low4k, 1) << " dB, high band at 250 Hz " << juce::String (high250, 1) << " dB" << std::endl;
+                          << shape << "), low band at " << above << " Hz " << juce::String (lowAbove, 1) << " dB, high band at " << below << " Hz "
+                          << juce::String (highBelow, 1) << " dB" << std::endl;
                 require (flat < 1.0e-3f, "Bands add back flat at every slope");
                 require (shape < 2.0e-3f, "Each slope has its Butterworth / Linkwitz-Riley shape");
-                // Two octaves: about 12 dB per 6 dB/oct of slope (exactly, far from the crossover).
-                const float expectedDb = -12.0f * (float) order;
-                require (std::abs (low4k - expectedDb) < 3.5f && std::abs (high250 - expectedDb) < 3.5f, "Slope steepness");
+                // About 6 dB per octave per 6 dB/oct of slope (exactly, far from the crossover).
+                const float expectedDb = (steep ? -6.0f : -12.0f) * (float) order;
+                require (std::abs (lowAbove - expectedDb) < 3.5f && std::abs (highBelow - expectedDb) < 3.5f, "Slope steepness");
+                if (order == triad::CrossoverFilter::maxOrder)
+                    require (lowAbove < -90.0f && highBelow < -90.0f, "The hardest slope is a near-brickwall cut: below -90 dB one octave away");
             }
             // Ten bands with every slope at once: still flat.
             {
                 std::vector<float> cuts;
                 std::vector<int> orders;
-                for (int j = 0; j < 9; ++j) { cuts.push_back (TriadProcessor::defaultCrossover (j, 10)); orders.push_back (1 + (j * 3) % 8); }
+                for (int j = 0; j < 9; ++j) { cuts.push_back (TriadProcessor::defaultCrossover (j, 10)); orders.push_back (1 + (j * 3) % triad::CrossoverFilter::maxOrder); }
                 const auto m = spectra (10, cuts, orders);
                 float flat = 0.0f;
                 for (int k = 1; k < length / 2 - 1; ++k) flat = juce::jmax (flat, std::abs (m[10][(size_t) k] - 1.0f));
@@ -895,7 +903,47 @@ int main (int argc, char** argv)
             require (chain != nullptr && other.loadChainXml (2, *chain).isEmpty(), "Load a chain preset");
             require (other.getSlotInfo (2, 0).loaded && other.getLfoCount (2) == 2 && std::abs (getParam (other, TriadProcessor::bandMixID (2)) - 60.0f) < 0.01f,
                      "Chain preset brings effects, LFOs and mixes");
-            std::cout << "PASS: LFOs on slot mixes and band volume, moving bands, chain presets" << std::endl;
+            // Copy band state / Paste band state: within one Triad, and from one Triad to another.
+            // (Two bands' chains compared, apart from when the effect's plug-in info was last read.)
+            auto sameChain = [] (const std::unique_ptr<juce::XmlElement>& a, const std::unique_ptr<juce::XmlElement>& b)
+            {
+                std::function<void (juce::XmlElement&)> strip = [&strip] (juce::XmlElement& e)
+                {
+                    e.removeAttribute ("infoUpdateTime");
+                    for (auto* child : e.getChildIterator()) strip (*child);
+                };
+                if (a == nullptr || b == nullptr) return false;
+                juce::XmlElement x (*a), y (*b);
+                strip (x); strip (y);
+                return x.isEquivalentTo (&y, false);
+            };
+            TriadProcessor::clearCopiedBand();
+            require (! TriadProcessor::hasCopiedBand() && other.pasteBandState (0).isNotEmpty(), "Nothing to paste before a copy");
+            setParam (q, TriadProcessor::bandGainID (1), -4.5f);
+            const int sourceLfos = q.getLfoCount (1);
+            require (q.copyBandState (1) && TriadProcessor::hasCopiedBand(), "Copy band state");
+            require (TriadProcessor::copiedBandDescription().startsWith ("band 2: "), "The copied state says where it came from");
+            require (q.pasteBandState (0).isEmpty(), "Paste band state into another band");
+            require (q.getSlotInfo (0, 0).loaded && q.getSlotInfo (0, 0).name == q.getSlotInfo (1, 0).name && q.getLfoCount (0) == q.getLfoCount (1),
+                     "The pasted band has the same effects and LFOs");
+            require (std::abs (getParam (q, TriadProcessor::bandMixID (0)) - 60.0f) < 0.01f && std::abs (getParam (q, TriadProcessor::bandGainID (0)) + 4.5f) < 0.01f,
+                     "The pasted band has the same mix and volume");
+            require (q.getSlotInfo (1, 0).loaded && q.getLfoCount (1) == sourceLfos, "Copying leaves the source band as it was");
+            {
+                require (sameChain (q.createChainXml (0), q.createChainXml (1)), "The pasted band has the same effect settings, slot mixes and LFOs");
+            }
+            require (other.pasteBandState (0).isEmpty() && other.getSlotInfo (0, 0).loaded, "Paste band state into another Triad");
+            require (q.pasteBandState (9).isNotEmpty(), "Pasting into a band that does not exist is refused");
+            {
+                // The 3-dot menu and right-click menu items.
+                std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (q.createEditor()));
+                editor->bandMenuChoice (2, TriadEditor::bandMenuCopy);
+                require (TriadProcessor::copiedBandDescription().startsWith ("band 3: "), "Band menu: Copy band state");
+                editor->bandMenuChoice (0, TriadEditor::bandMenuPaste);
+                require (sameChain (q.createChainXml (0), q.createChainXml (2)), "Band menu: Paste band state");
+            }
+            TriadProcessor::clearCopiedBand();
+            std::cout << "PASS: LFOs on slot mixes and band volume, moving bands, chain presets, copy / paste band state" << std::endl;
         }
         {
             // Everything comes back with the project.
@@ -1121,7 +1169,7 @@ int main (int argc, char** argv)
                 std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-5bands.png"),
                                                            editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
                 // Soft and hard slopes, the first one being dragged (its two bands highlighted).
-                preview.setCrossoverSlope (0, 1); preview.setCrossoverSlope (1, 2); preview.setCrossoverSlope (2, 6); preview.setCrossoverSlope (3, 8);
+                preview.setCrossoverSlope (0, 1); preview.setCrossoverSlope (1, 2); preview.setCrossoverSlope (2, 6); preview.setCrossoverSlope (3, triad::CrossoverFilter::maxOrder);
                 editor->getDisplay().beginSlopeGesture (0);
                 editor->getDisplay().updateSpectrum();
                 std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-slopes.png"),
@@ -1161,6 +1209,89 @@ int main (int argc, char** argv)
                 require (std::abs (mod::evaluate (preview.getLfoInfo (0, lfoIndex).shape, 0.5f) - 0.75f) < 0.01f, "Dragging a point moves it");
                 shapeEditor.apply ([] (const mod::Shape& s) { return mod::repeated (s, 2); });
                 require (preview.getLfoInfo (0, lfoIndex).shape.size() >= 5, "2x from the toolbar");
+                // The grid on screen has the proportions the presets and the generator draw their angles for.
+                require (std::abs (shapeEditor.plotAspect() / mod::plotAspect - 1.0f) < 0.08f, "The LFO grid's proportions match the angles (30/45/60 degrees look right)");
+                // The generator: the dice draws a new shape in the sliders' style; Undo brings the old one back.
+                {
+                    const auto shapeBefore = preview.getLfoInfo (0, lfoIndex).shape;
+                    page.setGeneratorSeed (2);
+                    page.setGeneratorStyle (1.0f, 0.0f, 0.35f);
+                    page.getGenerateButton().onClick();
+                    const auto made = preview.getLfoInfo (0, lfoIndex).shape;
+                    require (! (made == shapeBefore) && generatorTests::validShape (made), "The dice draws a new shape");
+                    require (generatorTests::look (made).curves == 0, "Angular 100% draws hard angles only");
+                    require (preview.getLfoInfo (0, lfoIndex).active, "A generated shape switches the LFO on");
+                    require (preview.undoLfo (0, lfoIndex) && preview.getLfoInfo (0, lfoIndex).shape == shapeBefore, "Undo brings the shape from before the dice back");
+                    require (preview.redoLfo (0, lfoIndex) && preview.getLfoInfo (0, lfoIndex).shape == made, "Redo brings the generated shape back");
+                    std::set<juce::String> drawn;
+                    page.setGeneratorStyle (1.0f, 0.0f, 0.0f);
+                    for (int i = 0; i < 12; ++i)
+                    {
+                        page.generate();
+                        drawn.insert (mod::toText (preview.getLfoInfo (0, lfoIndex).shape));
+                    }
+                    require (drawn.size() == 12, "The dice never repeats a recent shape, even at 0% chaos");
+                    page.setGeneratorStyle (0.0f, 1.0f, 0.5f);
+                    page.generate();
+                    require (generatorTests::look (preview.getLfoInfo (0, lfoIndex).shape).steps == 0, "Soft 100% draws curves only");
+                }
+                // The preset palette: a category at a time, a page at a time; a click replaces the shape.
+                int generatedFolders = 0;
+                for (int c = 0; c < mod::numPresetCategories(); ++c)
+                {
+                    page.setPaletteCategory (c);
+                    const auto list = mod::presetsIn (c);
+                    const int pages = ((int) list.size() + LfoPage::paletteSize - 1) / LfoPage::paletteSize;
+                    require (page.getPalettePage() == 0 && page.getNumPalettePages() == pages, "A folder opens on page 1, with every page");
+                    generatedFolders += mod::isGeneratedCategory (c);
+                    if (mod::isGeneratedCategory (c)) require (pages >= 3, "Generated folders have several pages");
+                    std::set<int> seen;
+                    for (int pg = 0; pg < pages; ++pg)
+                    {
+                        page.setPalettePage (pg);
+                        const int expected = juce::jmin (LfoPage::paletteSize, (int) list.size() - pg * LfoPage::paletteSize);
+                        require (page.getPalettePage() == pg && page.getNumPaletteButtons() == expected, "The palette shows the chosen page");
+                        auto* last = page.getPaletteButton (expected - 1);
+                        require (last != nullptr && last->getRight() <= page.getEditor().getRight() + 1, "The palette row fits beside the grid");
+                        last->onClick();
+                        const int presetIndex = list[(size_t) (pg * LfoPage::paletteSize + expected - 1)];
+                        require (preview.getLfoInfo (0, lfoIndex).shape == mod::preset (presetIndex), "A palette button replaces the shape");
+                        for (int k = 0; k < expected; ++k) seen.insert (page.getPaletteButton (k)->getName().hashCode());
+                    }
+                    require ((int) seen.size() == (int) list.size(), "Turning the pages shows every shape in the folder once");
+                    page.setPalettePage (pages + 3);
+                    require (page.getPalettePage() == pages - 1, "Pages stop at the last one");
+                }
+                require (generatedFolders >= 5, "The palette has the generated folders");
+                // The mouse wheel over the palette turns the pages.
+                for (int c = 0; c < mod::numPresetCategories(); ++c)
+                    if (mod::isGeneratedCategory (c)) { page.setPaletteCategory (c); break; }
+                {
+                    auto* first = page.getPaletteButton (0);
+                    juce::MouseWheelDetails wheel {};
+                    wheel.deltaY = -0.2f;
+                    const auto at = first->getBounds().getCentre().toFloat();
+                    const juce::MouseEvent event (juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                                  &page, &page, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 0, false);
+                    page.mouseWheelMove (event, wheel);
+                    require (page.getPalettePage() == 1, "Mouse wheel down: next page");
+                    wheel.deltaY = 0.2f;
+                    page.mouseWheelMove (event, wheel);
+                    require (page.getPalettePage() == 0, "Mouse wheel up: previous page");
+                }
+                // The screenshot shows a generated folder's second page.
+                for (int c = 0; c < mod::numPresetCategories(); ++c)
+                    if (mod::presetCategoryName (c) == "GEN: ANGLES") page.setPaletteCategory (c);
+                page.setPalettePage (1);
+                // A generated shape for the screenshot: hard angles into curves.
+                page.setGeneratorSeed (132);
+                page.setGeneratorStyle (1.0f, 0.0f, 0.35f);
+                page.generate();
+                editor->refreshNow();
+                if (screenshotFile != juce::File())
+                    std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-generator.png"),
+                                                               editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+                page.setPaletteCategory (0);
                 preview.setLfoShape (0, lfoIndex, mod::preset (7), true);
                 preview.setLfoShape (1, preview.getSlotLfo (1, 0), mod::preset (4), true);
                 juce::MidiBuffer more;

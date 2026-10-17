@@ -10,7 +10,8 @@ public:
     virtual void chooseEffect (int band, int slot, juce::Component& target) = 0;
     virtual void setCrossoverFrequency (int index, float hz) = 0;
     virtual void showLfo (int band, int slot) = 0;                     // slot -1: the Band Mix LFO
-    virtual void showBandMenu (int band, juce::Component& target) = 0;  // chain presets, move, remove
+    // Copy/paste band state, chain presets, move, remove. atMouse: at the mouse (a right-click) rather than under `target`.
+    virtual void showBandMenu (int band, juce::Component& target, bool atMouse = false) = 0;
     virtual void bandDrag (int band, const juce::MouseEvent&, int phase) = 0;   // 0 down, 1 drag, 2 up
     virtual bool isFavourite (const juce::String& format, const juce::String& name) = 0;
     virtual void setFavourite (const juce::String& format, const juce::String& name, bool) = 0;
