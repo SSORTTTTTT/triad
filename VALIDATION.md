@@ -1,5 +1,19 @@
 # Validation — Triad
 
+## Triad v4 (0.4.0) on macOS — 2026-10-16
+
+Commit `6da619b`, run 38988111461 (macos-14 runner). New in 0.4.0: crossover slope dot, 6–48 dB/oct.
+
+| Check | Result |
+| --- | --- |
+| Installer `Triad-v4-0.4.0-macOS-AppleSilicon.pkg`, removes Triad / v2 / v3 | Built and installed; AU VALIDATION SUCCEEDED; pluginval SUCCESS (VST3 and AU) |
+| Every slope, 6 to 48 dB/oct | Bands add back flat (max error 3e-5); low/high shapes match Butterworth / Linkwitz-Riley (max 2.4e-5); two octaves away: -12.5 dB at 6 dB/oct ... -97.6 dB at 48 dB/oct |
+| Ten bands with mixed slopes | Flat (max error 4.5e-5) |
+| Slopes changed 30 times while playing | No clicks (largest sample step = the input sines' own) |
+| Slope parameters | Saved and recalled; earlier projects open at 24 dB/oct; slopes move with their crossovers |
+| Slope dot UI | Drag up/down, readout list, double-click reset, arrow keys, host gestures balanced |
+| Real plug-ins (51 effects), 5 x 3,000 random edits incl. slope changes | All passed; FILT-R and AUNewPitch produced NaN at times, silenced by Triad |
+
 ## Triad v3 (0.3.2) on macOS — 2026-10-16
 
 Same runner; commit `02ebf2d`, run 38953057961. 0.3.2 keeps one idle copy of each third-party effect loaded for the session (see 0.3.1, "Still open").
