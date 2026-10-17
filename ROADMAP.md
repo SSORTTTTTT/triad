@@ -77,6 +77,52 @@ can see at a glance whether Triad is still zero-latency (for recording vocals th
 - Background: see VALIDATION.md, "Live vocal monitoring" (Triad alone adds no latency; what the crossovers'
   phase does to timing; how Triad keeps up at 32–256-sample buffers).
 
+### Startup preset in the settings (Thomas, 2026-10-17)
+
+- Settings (gear) → **Startup preset**: "Init (empty Triad)" or any saved preset; every new Triad opens with it
+  (projects that already have Triad keep their own settings). "Use the current settings as the startup preset".
+- Preset menu → **Initialize**: back to Init (3 bands, empty slots, 24 dB/oct, LFOs off), as one undoable step.
+- Works the same in FL Studio and Ableton (it is Triad's own setting, not the DAW's default-preset feature).
+
+### Smoother interface (visual tests, 2026-10-17)
+
+Measured by the new visual check in TriadTests (drawing times of each part, plus 4x close-ups of the knobs,
+sliders and dots; the CI Mac prints its own numbers). Linux test machine, optimised build, at 1x / 2x (Retina):
+whole window BANDS 12.7 / 31.5 ms, LFO 26.3 / 42.0 ms, MATRIX 5.4 / 16.1 ms; crossover display 3.4 / 8.5 ms;
+LFO grid 8.6 / 22.9 ms; a band strip 1.1 / 1.7 ms. A frame at 60 fps has 16.7 ms.
+
+- **Frame rate:** meters, band strips and the knobs' LFO dots update 20 times a second, the spectrum and LFO
+  playhead 30 — visibly steppy (a 1/16-note LFO moves its dot round in only ~2 frames). Move to 60 fps in step
+  with the screen (VBlankAttachment), and glide the dots and meters between values.
+- **Draw less per frame:** keep the parts that do not move (grid, labels, band curves, the LFO shape and its
+  hatching) as cached pictures and redraw only what moves (spectrum, playhead, meters, dots); on the test machine the LFO grid at
+  Retina size takes longer than a 60 fps frame (22.9 ms). The window's 20 Hz timer also re-lays-out and repaints
+  the whole crossover display on top of its own 30 Hz repaint, and repaints the preset button every time: only
+  repaint what changed.
+- **Details seen in the close-ups:** the slot knobs' value text ("100%") is wider than the knob (smaller text,
+  or show it while hovering/dragging); the band meter is shorter than the volume slider above it and "-inf"
+  floats beside it; slope readouts can overlap each other and the frequency pills when dividers are close; the
+  dashed divider line runs through the pills; palette thumbnails sample the shape at 48 points, so dense shapes
+  (Gate 1/8) turn into a grey block (draw them from the shape's points).
+- **Feel:** short eased transitions (about 120 ms) for hover, press, tab and page changes; knob arcs with a little
+  depth and a soft glow while an LFO moves them; value changes that glide rather than jump.
+
+### Look and feel: Triad's own theme and font (Thomas, 2026-10-17)
+
+So Triad does not look like other plug-ins, and looks sleeker:
+
+- **References from Thomas:** screenshots of anything whose look he likes (plug-ins, apps, websites, hardware,
+  album art), each with a word on what he likes (colours, flatness or depth, glow, roundness, density), plus fonts
+  he likes. They are used as mood references only: Triad gets its own look, not another product's colours,
+  layout, knob graphics or logo.
+- **Three directions as mockups** of Triad's real screens (BANDS and LFO), side by side; Thomas picks one or mixes.
+- **Built as a theme system:** colours (background, panels, accent, the ten band colours, text), font and
+  weights, corner radius, line weights, knob style (ring, arc, dot), meter style — so several themes can ship and
+  be switched in the settings (and an accent colour picker, maybe).
+- **Font embedded in Triad** so it looks the same on every Mac: a free, openly licensed font (e.g. Inter,
+  Manrope, DM Sans, Space Grotesk, IBM Plex Sans), with tabular figures so changing numbers do not jitter.
+- Done together with "Smoother interface" above, since the knobs, meters and readouts get redrawn anyway.
+
 ## Next update — notes from Thomas (2026-10-16, after using 0.3.2)
 
 Thomas: 0.3.2 "seems to be working really good"; the LFO editor feels like ShaperBox, which he likes.

@@ -1342,6 +1342,64 @@ int main (int argc, char** argv)
                 if (screenshotFile != juce::File())
                     std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-matrix.png"),
                                                                editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+                // ---- Visual check: how long each part of the window takes to draw (1x, and 2x as on a Retina
+                // screen), and close-ups of the knobs, sliders and dots, to judge how smooth the interface can be.
+                if (screenshotFile != juce::File())
+                {
+                    auto timePaint = [] (juce::Component& c, float scale)
+                    {
+                        double total = 0.0, worst = 0.0;
+                        c.createComponentSnapshot (c.getLocalBounds(), true, scale);   // warm-up (fonts, caches)
+                        for (int i = 0; i < 12; ++i)
+                        {
+                            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                            c.createComponentSnapshot (c.getLocalBounds(), true, scale);
+                            const auto dt = juce::Time::getMillisecondCounterHiRes() - t0;
+                            total += dt; worst = juce::jmax (worst, dt);
+                        }
+                        return juce::String (total / 12.0, 1) + " ms (worst " + juce::String (worst, 1) + ")";
+                    };
+                    std::cout << "UI drawing times, whole window at 1x / 2x (a frame at 60 fps has 16.7 ms):" << std::endl;
+                    for (auto tab : { TriadEditor::Tab::bands, TriadEditor::Tab::lfo, TriadEditor::Tab::matrix })
+                    {
+                        editor->setTab (tab);
+                        editor->refreshNow();
+                        std::cout << "  " << (tab == TriadEditor::Tab::bands ? "BANDS" : tab == TriadEditor::Tab::lfo ? "LFO" : "MATRIX")
+                                  << ": " << timePaint (*editor, 1.0f) << " / " << timePaint (*editor, 2.0f) << std::endl;
+                    }
+                    editor->setTab (TriadEditor::Tab::bands);
+                    editor->refreshNow();
+                    std::cout << "  Crossover display (redrawn 30x a second): " << timePaint (editor->getDisplay(), 1.0f) << " / "
+                              << timePaint (editor->getDisplay(), 2.0f) << std::endl;
+                    std::cout << "  One band strip (its meter redraws 20x a second): " << timePaint (*editor->getStrip (0), 1.0f) << " / "
+                              << timePaint (*editor->getStrip (0), 2.0f) << std::endl;
+                    std::cout << "  One slot row (knob): " << timePaint (editor->getStrip (0)->getRow (0), 1.0f) << " / "
+                              << timePaint (editor->getStrip (0)->getRow (0), 2.0f) << std::endl;
+                    editor->showLfo (0, 1);
+                    editor->refreshNow();
+                    std::cout << "  LFO grid (redrawn 30x a second while playing): " << timePaint (editor->getLfoPage().getEditor(), 1.0f) << " / "
+                              << timePaint (editor->getLfoPage().getEditor(), 2.0f) << std::endl;
+                    // Close-ups at 4x: a strip's footer (volume slider, meter, band mix knob), slot rows, the
+                    // crossover dots and readouts, the LFO toolbar and palette.
+                    editor->setTab (TriadEditor::Tab::bands);
+                    editor->refreshNow();
+                    auto closeUp = [&] (juce::Component& c, juce::Rectangle<int> area, const char* name)
+                    {
+                        std::cout << "Close-up: " << writeImage (screenshotFile.getSiblingFile (juce::String ("Triad-closeup-") + name + ".png"),
+                                                                c.createComponentSnapshot (area, true, 4.0f)) << std::endl;
+                    };
+                    auto& strip = *editor->getStrip (0);
+                    closeUp (strip, strip.getLocalBounds().removeFromBottom (96), "strip-footer");
+                    closeUp (strip, strip.getLocalBounds().withTrimmedTop (BandStrip::headerHeight).withHeight (110), "slots");
+                    auto& display = editor->getDisplay();
+                    closeUp (display, display.getLocalBounds().withTrimmedLeft (display.getWidth() / 3).withWidth (display.getWidth() / 3), "crossovers");
+                    editor->showLfo (0, 1);
+                    editor->refreshNow();
+                    auto& page = editor->getLfoPage();
+                    closeUp (page, page.getLocalBounds().removeFromBottom (78).withWidth (page.getEditor().getRight()), "lfo-toolbar");
+                    editor->setTab (TriadEditor::Tab::bands);
+                    editor->refreshNow();
+                }
                 editor->setTab (TriadEditor::Tab::bands);
                 editor->refreshNow();
             }
