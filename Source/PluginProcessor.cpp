@@ -19,9 +19,11 @@ namespace
 // plug-ins (seen with FILT-R and REEV-R) occasionally crash doing that; with a keeper that only
 // happens once, when the DAW unloads Triad.
 //
-// Shared by every Triad instance (message thread only). Whenever something new is loaded the
-// graveyard is re-made, so at shutdown (when JUCE deletes the newest objects first) it is deleted
-// before the plug-in format caches and window managers that its contents need.
+// Shared by every Triad instance (message thread only). When the last Triad closes, everything left
+// is deleted right away: Triad's own framework shuts down straight after, and hosted effects must
+// be deleted while it still runs. Whenever something new is loaded the graveyard is re-made, so if
+// it is still there at shutdown (JUCE deletes the newest objects first) it goes before the plug-in
+// format caches and window managers that its contents need.
 class EffectGraveyard final : private juce::Timer, public juce::DeletedAtShutdown
 {
 public:
@@ -44,6 +46,7 @@ public:
         if (! fresh->entries.empty()) fresh->startTimer (250);
     }
     static int keeperCount() { return current != nullptr ? (int) current->keepers.size() : 0; }
+    static void releaseAll() { delete current; }   // the destructor deletes everything, oldest first
     ~EffectGraveyard() override
     {
         stopTimer();
@@ -92,6 +95,9 @@ private:
     std::map<juce::String, std::unique_ptr<juce::AudioPluginInstance>> keepers;
     static inline EffectGraveyard* current = nullptr;
 };
+
+// Triad instances alive in this copy of Triad (the last one to close empties the graveyard).
+std::atomic<int> liveTriads { 0 };
 
 // A hosted effect's window. It stays in front of Triad's window, and keys the effect does not use
 // (the spacebar for play/stop, DAW shortcuts) are passed back to the DAW.
@@ -180,6 +186,7 @@ float peakOf (const juce::AudioBuffer<float>& b, int channels)
 juce::String TriadProcessor::crossoverID (int i) { return i == 0 ? "lowCut" : i == 1 ? "highCut" : "cross" + juce::String (i + 1); }
 juce::String TriadProcessor::bandMixID (int b) { return "mix" + juce::String (b); }
 juce::String TriadProcessor::bandGainID (int b) { return "gain" + juce::String (b); }
+juce::String TriadProcessor::slopeID (int j) { return "slope" + juce::String (j); }
 
 juce::AudioProcessorValueTreeState::ParameterLayout TriadProcessor::makeParameters()
 {
@@ -202,6 +209,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout TriadProcessor::makeParamete
     for (int b = 0; b < triad::maxBands; ++b)
         p.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { bandGainID (b), 3 },
               "Band " + juce::String (b + 1) + " Volume", gainRange, 0.0f, db));
+    // Added in 0.4.0 (after all earlier parameters, so existing automation keeps its place).
+    for (int j = 0; j < triad::maxCrossovers; ++j)
+        p.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { slopeID (j), 4 },
+              "Crossover " + juce::String (j + 1) + " Slope", triad::CrossoverFilter::minOrder, triad::CrossoverFilter::maxOrder,
+              triad::CrossoverFilter::defaultOrder,
+              juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return slopeText (v); })
+                                                 .withValueFromStringFunction ([] (const juce::String& t)
+                                                 { return juce::jlimit (1, 8, juce::roundToInt (t.getFloatValue() / 6.0f)); })));
     return p;
 }
 
@@ -313,7 +328,11 @@ TriadProcessor::TriadProcessor()
    #if JUCE_MAC && JUCE_PLUGINHOST_AU
     formats.addFormat (std::make_unique<juce::AudioUnitPluginFormat>());
    #endif
-    for (int j = 0; j < triad::maxCrossovers; ++j) crossoverValues[(size_t) j] = parameters.getRawParameterValue (crossoverID (j));
+    for (int j = 0; j < triad::maxCrossovers; ++j)
+    {
+        crossoverValues[(size_t) j] = parameters.getRawParameterValue (crossoverID (j));
+        slopeValues[(size_t) j] = parameters.getRawParameterValue (slopeID (j));
+    }
     for (int b = 0; b < triad::maxBands; ++b)
     {
         bandMixValues[(size_t) b] = parameters.getRawParameterValue (bandMixID (b));
@@ -325,6 +344,7 @@ TriadProcessor::TriadProcessor()
         publishInfo();
     }
     startTimerHz (10);
+    ++liveTriads;
 }
 TriadProcessor::~TriadProcessor()
 {
@@ -335,6 +355,7 @@ TriadProcessor::~TriadProcessor()
     for (auto& band : bands)
         if (band != nullptr)
             for (auto& s : band->slots) retire (std::move (s->effect));
+    if (--liveTriads == 0) EffectGraveyard::releaseAll();
 }
 bool TriadProcessor::isBusesLayoutSupported (const BusesLayout& b) const
 {
@@ -344,6 +365,29 @@ bool TriadProcessor::isBusesLayoutSupported (const BusesLayout& b) const
 void TriadProcessor::readCrossovers (float* dest) const
 {
     for (int j = 0; j < triad::maxCrossovers; ++j) dest[j] = crossoverValues[(size_t) j]->load();
+}
+void TriadProcessor::readSlopes (int* dest) const
+{
+    for (int j = 0; j < triad::maxCrossovers; ++j)
+        dest[j] = juce::jlimit (triad::CrossoverFilter::minOrder, triad::CrossoverFilter::maxOrder, juce::roundToInt (slopeValues[(size_t) j]->load()));
+}
+juce::RangedAudioParameter* TriadProcessor::slopeParameter (int index) const
+{
+    return index >= 0 && index < triad::maxCrossovers ? parameters.getParameter (slopeID (index)) : nullptr;
+}
+int TriadProcessor::getCrossoverSlope (int index) const
+{
+    if (index < 0 || index >= triad::maxCrossovers) return triad::CrossoverFilter::defaultOrder;
+    return juce::jlimit (triad::CrossoverFilter::minOrder, triad::CrossoverFilter::maxOrder, juce::roundToInt (slopeValues[(size_t) index]->load()));
+}
+void TriadProcessor::setCrossoverSlope (int index, int order)
+{
+    if (auto* p = slopeParameter (index))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (p->convertTo0to1 ((float) juce::jlimit (triad::CrossoverFilter::minOrder, triad::CrossoverFilter::maxOrder, order)));
+        p->endChangeGesture();
+    }
 }
 TriadProcessor::Slot* TriadProcessor::slotAt (int band, int slot) const
 {
@@ -404,8 +448,10 @@ void TriadProcessor::prepareToPlay (double sr, int block)
     rate.store (sr); capacity = juce::jmax (1, block);
     splitter.prepare (sr, capacity);
     std::array<float, triad::maxCrossovers> cuts {};
+    std::array<int, triad::maxCrossovers> slopes {};
     readCrossovers (cuts.data());
-    splitter.setBandCount (numBands, cuts.data());
+    readSlopes (slopes.data());
+    splitter.setBandCount (numBands, cuts.data(), slopes.data());
     for (auto& buffer : split) buffer.setSize (2, capacity);
     wide.setSize (maxEffectChannels, capacity);
     childMidi.ensureSize (4096);
@@ -541,6 +587,7 @@ void TriadProcessor::handleInvalidAudio()
     setStatus (message);
 }
 int TriadProcessor::getIdleEffectCount() { return EffectGraveyard::keeperCount(); }
+void TriadProcessor::releaseIdleEffects() { EffectGraveyard::releaseAll(); }
 void TriadProcessor::retire (std::unique_ptr<juce::AudioPluginInstance> effect)
 {
     if (effect == nullptr) return;
@@ -625,8 +672,11 @@ void TriadProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBu
 void TriadProcessor::process (juce::AudioBuffer<float>& audio)
 {
     std::array<float, triad::maxCrossovers> cuts {};
+    std::array<int, triad::maxCrossovers> slopes {};
     readCrossovers (cuts.data());
+    readSlopes (slopes.data());
     splitter.setCutoffs (cuts.data());
+    splitter.setSlopes (slopes.data());
     const int total = totalLatency.load();
     for (int offset = 0; offset < audio.getNumSamples(); offset += capacity)
     {
@@ -782,6 +832,9 @@ bool TriadProcessor::addBand (float hz)
 {
     int index = 0, count = 0;
     std::array<float, triad::maxCrossovers> next {};
+    std::array<int, triad::maxCrossovers> slopes {}, nextSlopes {};
+    readSlopes (slopes.data());
+    nextSlopes.fill (triad::CrossoverFilter::defaultOrder);
     {
         const juce::ScopedLock lock (gate);
         if (numBands >= triad::maxBands) { setStatus ("Triad supports up to 10 bands."); return false; }
@@ -811,8 +864,13 @@ bool TriadProcessor::addBand (float hz)
         const auto target = hz > 0.0f ? hz : std::sqrt (lo * hi);
         const auto cut = juce::jlimit (lo * margin, hi / margin, target);
         index = b;
-        for (int j = 0; j < (int) cuts.size(); ++j) next[(size_t) (j < b ? j : j + 1)] = cuts[(size_t) j];
+        for (int j = 0; j < (int) cuts.size(); ++j)
+        {
+            next[(size_t) (j < b ? j : j + 1)] = cuts[(size_t) j];
+            nextSlopes[(size_t) (j < b ? j : j + 1)] = slopes[(size_t) j];
+        }
         next[(size_t) b] = cut;
+        nextSlopes[(size_t) b] = triad::CrossoverFilter::defaultOrder;
         muted.store (true);
         // The lower part keeps band b's effects; the new band b+1 (one empty slot) takes the upper part.
         for (int p = numBands; p > b + 1; --p) bands[(size_t) p] = std::move (bands[(size_t) p - 1]);
@@ -823,12 +881,13 @@ bool TriadProcessor::addBand (float hz)
         prepareBand (b + 1, false);
         bands[(size_t) b + 1]->mix.setCurrentAndTargetValue (1.0f);
         bands[(size_t) b + 1]->gain.setCurrentAndTargetValue (1.0f);
-        splitter.setBandCount (numBands, next.data());
+        splitter.setBandCount (numBands, next.data(), nextSlopes.data());
         alignLatency();
         startFadeIn();
         setStatus ("Added band " + juce::String (b + 2) + " at " + juce::String (juce::roundToInt (cut)) + " Hz");
     }
     for (int j = 0; j < count - 1; ++j) setParameterValue (crossoverID (j), next[(size_t) j]);
+    for (int j = 0; j < triad::maxCrossovers; ++j) setParameterValue (slopeID (j), (float) nextSlopes[(size_t) j]);
     for (int p = count - 1; p > index + 1; --p)
     {
         setParameterValue (bandMixID (p), getParameterValue (bandMixID (p - 1)));
@@ -847,6 +906,9 @@ bool TriadProcessor::removeBand (int band)
     std::unique_ptr<Band> removed;
     int count = 0;
     std::array<float, triad::maxCrossovers> next {};
+    std::array<int, triad::maxCrossovers> slopes {}, nextSlopes {};
+    readSlopes (slopes.data());
+    nextSlopes.fill (triad::CrossoverFilter::defaultOrder);
     {
         const juce::ScopedLock lock (gate);
         if (numBands <= 1 || band < 0 || band >= numBands) return false;
@@ -854,7 +916,7 @@ bool TriadProcessor::removeBand (int band)
         // The band's range joins its lower neighbour (or the upper one, for the lowest band).
         const int removedCrossover = band == 0 ? 0 : band - 1;
         for (int j = 0, k = 0; j < (int) cuts.size(); ++j)
-            if (j != removedCrossover) next[(size_t) k++] = cuts[(size_t) j];
+            if (j != removedCrossover) { nextSlopes[(size_t) k] = slopes[(size_t) j]; next[(size_t) k++] = cuts[(size_t) j]; }
         muted.store (true);
         removed = std::move (bands[(size_t) band]);
         for (int p = band; p < numBands - 1; ++p) bands[(size_t) p] = std::move (bands[(size_t) p + 1]);
@@ -865,7 +927,7 @@ bool TriadProcessor::removeBand (int band)
         bandCount.store (numBands);
         if (prepared)
             for (auto& s : removed->slots) if (s->effect) s->effect->releaseResources();
-        splitter.setBandCount (numBands, next.data());
+        splitter.setBandCount (numBands, next.data(), nextSlopes.data());
         alignLatency();
         startFadeIn();
         setStatus ("Removed band " + juce::String (band + 1));
@@ -873,6 +935,7 @@ bool TriadProcessor::removeBand (int band)
     for (auto& s : removed->slots) { retire (std::move (s->window)); retire (std::move (s->effect)); }
     removed.reset();
     for (int j = 0; j < count - 1; ++j) setParameterValue (crossoverID (j), next[(size_t) j]);
+    for (int j = 0; j < triad::maxCrossovers; ++j) setParameterValue (slopeID (j), (float) nextSlopes[(size_t) j]);
     for (int p = band; p < count; ++p)
     {
         setParameterValue (bandMixID (p), getParameterValue (bandMixID (p + 1)));
@@ -1789,6 +1852,17 @@ void TriadProcessor::restoreFrom (const juce::XmlElement& xml)
         for (int i = tree.getNumChildren(); --i >= 0;)
             if (parameters.getParameter (tree.getChild (i).getProperty ("id").toString()) == nullptr)
                 tree.removeChild (i, nullptr);
+        // Parameters a project from an earlier version did not have (crossover slopes before 0.4.0)
+        // take their defaults, so the project sounds as it did.
+        for (auto* parameter : getParameters())
+            if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+                if (! tree.getChildWithProperty ("id", ranged->getParameterID()).isValid())
+                {
+                    juce::ValueTree child ("PARAM");
+                    child.setProperty ("id", ranged->getParameterID(), nullptr);
+                    child.setProperty ("value", ranged->convertFrom0to1 (ranged->getDefaultValue()), nullptr);
+                    tree.appendChild (child, nullptr);
+                }
         parameters.replaceState (tree);
     }
     std::array<std::unique_ptr<Band>, triad::maxBands> fresh;
@@ -1821,8 +1895,10 @@ void TriadProcessor::restoreFrom (const juce::XmlElement& xml)
         bandCount.store (count);
         for (int b = 0; b < triad::maxBands; ++b) bands[(size_t) b] = std::move (fresh[(size_t) b]);
         std::array<float, triad::maxCrossovers> cuts {};
+        std::array<int, triad::maxCrossovers> slopes {};
         readCrossovers (cuts.data());
-        splitter.setBandCount (numBands, cuts.data());
+        readSlopes (slopes.data());
+        splitter.setBandCount (numBands, cuts.data(), slopes.data());
         for (int b = 0; b < triad::maxBands; ++b) prepareBand (b, false);
         alignLatency();
     }

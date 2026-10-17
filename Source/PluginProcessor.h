@@ -45,6 +45,7 @@ public:
     static juce::String crossoverID (int index);           // "lowCut", "highCut", "cross3".."cross9"
     static juce::String bandMixID (int band);              // "mix0".."mix9"
     static juce::String bandGainID (int band);             // "gain0".."gain9" (dB)
+    static juce::String slopeID (int index);               // "slope0".."slope8": crossover slope order 1-8 (x 6 dB/oct)
     static constexpr float minGainDb = -36.0f, maxGainDb = 12.0f;
 
     // ---- Bands (positional, low to high) -------------------------------------------------
@@ -55,6 +56,11 @@ public:
     float nyquistFrequency() const { return (float) rate.load() * 0.5f; }
     double getSampleRateForDisplay() const { return rate.load(); }
     juce::RangedAudioParameter* crossoverParameter (int index) const;
+    // Crossover slopes: order 1 (6 dB/oct, soft) to 8 (48 dB/oct, hard); 4 (24 dB/oct) by default.
+    juce::RangedAudioParameter* slopeParameter (int index) const;
+    int getCrossoverSlope (int index) const;                // order 1-8
+    void setCrossoverSlope (int index, int order);          // as one undoable, automatable gesture
+    static juce::String slopeText (int order) { return juce::String (triad::CrossoverFilter::dbPerOctave (order)) + " dB/oct"; }
     static float defaultCrossover (int index, int bandCount);
     // Adds a band by splitting the band containing `hz` there (or the widest band if hz <= 0).
     bool addBand (float hz = -1.0f);
@@ -85,6 +91,8 @@ public:
     // Third-party effects kept loaded, idle, after their last copy was removed (one per effect, for the
     // session): deleting a plug-in's last copy makes it shut down, which crashes some plug-ins.
     static int getIdleEffectCount();
+    // Deletes removed effects and the idle copies right away (tests; a host would just unload Triad).
+    static void releaseIdleEffects();
     // Hosts an effect instance that was created elsewhere (used by the tests).
     juce::String loadInstance (int band, int slot, std::unique_ptr<juce::AudioPluginInstance>);
     // Loads from a bundle/file; `preferredName` picks one plug-in from a multi-plug-in bundle.
@@ -272,7 +280,7 @@ private:
     int fadeRemaining = 0, fadeLength = 1;
     bool prepared = false;
     juce::String status, presetName;
-    std::array<std::atomic<float>*, triad::maxCrossovers> crossoverValues {};
+    std::array<std::atomic<float>*, triad::maxCrossovers> crossoverValues {}, slopeValues {};
     std::array<std::atomic<float>*, triad::maxBands> bandMixValues {}, bandGainValues {};
     // Song position for the LFOs, read at the start of each block (audio thread).
     double blockPpq = 0.0, blockBpm = 120.0, blockBeatsPerBar = 4.0;
@@ -285,6 +293,7 @@ private:
     void prepareBand (int index, bool prepareEffects);
     void prepareSlot (Slot&);
     void readCrossovers (float* dest) const;
+    void readSlopes (int* dest) const;
     void startFadeIn();
     void resetDelays();
     Slot* slotAt (int band, int slot) const;

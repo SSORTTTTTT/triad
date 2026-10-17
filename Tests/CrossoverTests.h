@@ -44,14 +44,15 @@ inline void runCrossoverTests()
         require (std::abs (display.frequencyForX (10000) - 24000.0f) < 0.01f, "Right drag clamps to display edge");
         // Grab the edge of the hit area and hold still: the cutoff must not jump.
         const auto before = processor.effectiveCutoffs().first;
-        lowHandle->mouseDown (mouseAt (lowHandle, 5.0f, 50.0f));
-        lowHandle->mouseDrag (mouseAt (lowHandle, 5.0f, 50.0f, true));
-        lowHandle->mouseUp (mouseAt (lowHandle, 5.0f, 50.0f));
+        // (Low on the divider: higher up is the slope dot.)
+        lowHandle->mouseDown (mouseAt (lowHandle, 5.0f, 120.0f));
+        lowHandle->mouseDrag (mouseAt (lowHandle, 5.0f, 120.0f, true));
+        lowHandle->mouseUp (mouseAt (lowHandle, 5.0f, 120.0f));
         require (std::abs (processor.effectiveCutoffs().first - before) < 0.02f, "Handle grab does not jump");
         require (lowProbe.starts == 1 && lowProbe.ends == 1, "Mouse gesture begin/end sent to host");
-        lowHandle->mouseDown (mouseAt (lowHandle, display.xForFrequency (before) - (float) lowHandle->getX(), 50.0f));
-        lowHandle->mouseDrag (mouseAt (lowHandle, display.xForFrequency (420.0f) - (float) lowHandle->getX(), 50.0f, true));
-        lowHandle->mouseUp (mouseAt (lowHandle, 12.0f, 50.0f));
+        lowHandle->mouseDown (mouseAt (lowHandle, display.xForFrequency (before) - (float) lowHandle->getX(), 120.0f));
+        lowHandle->mouseDrag (mouseAt (lowHandle, display.xForFrequency (420.0f) - (float) lowHandle->getX(), 120.0f, true));
+        lowHandle->mouseUp (mouseAt (lowHandle, 12.0f, 120.0f));
         require (std::abs (processor.effectiveCutoffs().first - 420.0f) < 0.03f, "Mouse drag moves the first crossover");
         require (lowProbe.changes > 0, "Dragging notifies parameter listeners");
         display.beginCrossoverGesture (0); display.dragCrossoverTo (10000); display.endCrossoverGesture();
@@ -74,7 +75,7 @@ inline void runCrossoverTests()
         require (afterRight > 250, "Keyboard increases crossover");
         lowHandle->keyPressed (fineLeft);
         require (processor.effectiveCutoffs().first > 250 && processor.effectiveCutoffs().first < afterRight, "Shift provides finer keyboard step");
-        lowHandle->mouseDoubleClick (mouseAt (lowHandle, 12, 50));
+        lowHandle->mouseDoubleClick (mouseAt (lowHandle, 12, 120));
         require (std::abs (processor.effectiveCutoffs().first - 250) < 0.03f, "Double-click resets crossover");
         hi->setValueNotifyingHost (hi->convertTo0to1 (5000));
         display.refresh();
@@ -87,6 +88,38 @@ inline void runCrossoverTests()
         display.beginCrossoverGesture (1); display.dragCrossoverTo (10000); display.endCrossoverGesture();
         require (processor.effectiveCutoffs().second <= 3600.01f, "Low sample-rate Nyquist guard");
         require (lowProbe.starts == lowProbe.ends && highProbe.starts == highProbe.ends, "Completed gestures remain balanced");
+
+        // ---- Slope dot: up is soft, down is hard; readout; double-click resets; arrow keys ----------
+        {
+            processor.prepareToPlay (48000, 128);
+            display.refresh();
+            auto* slope = processor.slopeParameter (0);
+            GestureProbe slopeProbe;
+            slope->addListener (&slopeProbe);
+            const float frequency = processor.effectiveCutoffs().first;
+            const float step = (display.slopeY (8) - display.slopeY (1)) / 7.0f;
+            const float dotY = display.slopeY (processor.getCrossoverSlope (0)) - (float) lowHandle->getY();
+            lowHandle->mouseDown (mouseAt (lowHandle, 12.0f, dotY));
+            lowHandle->mouseDrag (mouseAt (lowHandle, 12.0f, dotY + 2.0f * step, true));
+            lowHandle->mouseUp (mouseAt (lowHandle, 12.0f, dotY + 2.0f * step));
+            require (processor.getCrossoverSlope (0) == 6, "Dragging the slope dot down makes the slope harder");
+            require (slopeProbe.starts == 1 && slopeProbe.ends == 1, "A slope drag is one gesture for the host");
+            require (std::abs (processor.effectiveCutoffs().first - frequency) < 0.05f, "Dragging the slope dot leaves the frequency alone");
+            const float dotY2 = display.slopeY (6) - (float) lowHandle->getY();
+            lowHandle->mouseDown (mouseAt (lowHandle, 12.0f, dotY2));
+            lowHandle->mouseDrag (mouseAt (lowHandle, 12.0f, dotY2 - 40.0f * step, true));
+            lowHandle->mouseUp (mouseAt (lowHandle, 12.0f, dotY2 - 40.0f * step));
+            require (processor.getCrossoverSlope (0) == 1, "Dragging it up makes it soft, down to 6 dB/oct");
+            require (slope->getCurrentValueAsText() == "6 dB/oct", "Slope readout text");
+            require (std::abs (display.slopeReadoutBounds (0).getCentreY() - display.slopeY (1)) < 0.5f, "The readout sits next to the dot");
+            lowHandle->mouseDoubleClick (mouseAt (lowHandle, 12.0f, display.slopeY (1) - (float) lowHandle->getY()));
+            require (processor.getCrossoverSlope (0) == 4, "Double-clicking the slope dot resets it to 24 dB/oct");
+            require (lowHandle->keyPressed (juce::KeyPress (juce::KeyPress::downKey)) && processor.getCrossoverSlope (0) == 5, "Down arrow: harder");
+            lowHandle->keyPressed (juce::KeyPress (juce::KeyPress::upKey));
+            require (processor.getCrossoverSlope (0) == 4, "Up arrow: softer");
+            require (slopeProbe.starts == slopeProbe.ends, "Slope gestures stay balanced");
+            slope->removeListener (&slopeProbe);
+        }
 
         // ---- Adding bands while working --------------------------------------------------------
         processor.prepareToPlay (48000, 128);

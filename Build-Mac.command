@@ -8,15 +8,15 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$PWD"
 
-VERSION="0.3.2"
-PRODUCT="Triad v3"                 # bundle and display name (plug-in IDs unchanged from Triad 0.1)
+VERSION="0.4.0"
+PRODUCT="Triad v4"                 # bundle and display name (plug-in IDs unchanged from Triad 0.1)
 JUCE_COMMIT="29396c22c93392d6738e021b83196283d6e4d850"   # JUCE 8.0.12
 CMAKE_FALLBACK_VERSION="3.31.9"
 CMAKE_FALLBACK_SHA256="eb9d0b2b6a5b900e2f5811326a86ea393a146e4cb2384d15512c226e9c98f8bf"
 BUILD_DIR="$ROOT/build-mac"
 DEPS_DIR="$ROOT/deps"
 OUT_DIR="$ROOT/Installer"
-PKG_NAME="Triad-v3-$VERSION-macOS-AppleSilicon.pkg"
+PKG_NAME="Triad-v4-$VERSION-macOS-AppleSilicon.pkg"
 PKG_PATH="$OUT_DIR/$PKG_NAME"
 LOG="$ROOT/build-mac.log"
 STATUS="$ROOT/build-mac.status"
@@ -189,7 +189,7 @@ component_plist()   # root plist
 component_plist "$VST3_ROOT" "$PKG_WORK/vst3-components.plist"
 component_plist "$AU_ROOT"   "$PKG_WORK/au-components.plist"
 
-# Triad v3 replaces the earlier "Triad" and "Triad v2" bundles (same plug-in IDs): remove them first
+# Triad v4 replaces the earlier "Triad", "Triad v2" and "Triad v3" bundles (same plug-in IDs): remove them first
 # so a host never finds two copies of the same plug-in. Only bundles with Triad's identifier are touched.
 mkdir -p "$PKG_WORK/scripts-vst3"
 write_preinstall()   # script-dir old-bundle-paths-relative-to-volume...
@@ -210,8 +210,8 @@ EOF
     } > "$dir/preinstall"
     chmod 755 "$dir/preinstall"
 }
-write_preinstall "$PKG_WORK/scripts-vst3" "Library/Audio/Plug-Ins/VST3/Triad.vst3" "Library/Audio/Plug-Ins/VST3/Triad v2.vst3"
-write_preinstall "$PKG_WORK/scripts-au" "Library/Audio/Plug-Ins/Components/Triad.component" "Library/Audio/Plug-Ins/Components/Triad v2.component"
+write_preinstall "$PKG_WORK/scripts-vst3" "Library/Audio/Plug-Ins/VST3/Triad.vst3" "Library/Audio/Plug-Ins/VST3/Triad v2.vst3" "Library/Audio/Plug-Ins/VST3/Triad v3.vst3"
+write_preinstall "$PKG_WORK/scripts-au" "Library/Audio/Plug-Ins/Components/Triad.component" "Library/Audio/Plug-Ins/Components/Triad v2.component" "Library/Audio/Plug-Ins/Components/Triad v3.component"
 cat > "$PKG_WORK/scripts-au/postinstall" <<'EOF'
 #!/bin/sh
 # Ask macOS to refresh its Audio Unit registry so hosts see Triad on their next scan.

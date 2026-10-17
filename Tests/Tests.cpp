@@ -41,13 +41,16 @@ juce::AudioBuffer<float> input (int n)
 }
 // Independent model: Triad's splitter, per-band gain, overall delay.
 juce::AudioBuffer<float> reference (const juce::AudioBuffer<float>& in, double sr, const std::vector<float>& gains, int delay,
-                                    const std::vector<float>& cuts = threeBandCuts)
+                                    const std::vector<float>& cuts = threeBandCuts, const std::vector<int>& slopes = {})
 {
     triad::Splitter splitter;
     splitter.prepare (sr, in.getNumSamples());
     std::array<float, triad::maxCrossovers> c {};
+    std::array<int, triad::maxCrossovers> o {};
+    o.fill (triad::CrossoverFilter::defaultOrder);
     for (size_t i = 0; i < cuts.size(); ++i) c[i] = cuts[i];
-    splitter.setBandCount ((int) gains.size(), c.data());
+    for (size_t i = 0; i < slopes.size(); ++i) o[i] = slopes[i];
+    splitter.setBandCount ((int) gains.size(), c.data(), o.data());
     std::array<juce::AudioBuffer<float>, triad::maxBands> bands;
     for (auto& b : bands) b.setSize (2, in.getNumSamples());
     splitter.process (in, 0, in.getNumSamples(), bands);
@@ -67,11 +70,11 @@ void compare (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>&
 }
 // `skip`: samples ignored at the start (an LFO-moved knob glides to its value in a few milliseconds).
 void runAudioCase (TriadProcessor& p, double sr, const std::vector<float>& gains, int latency, const char* name,
-                   const std::vector<float>& cuts = threeBandCuts, int skip = 0)
+                   const std::vector<float>& cuts = threeBandCuts, int skip = 0, const std::vector<int>& slopes = {})
 {
     p.prepareToPlay (sr, 128);
     auto signal = input (8192);
-    auto expected = reference (signal, sr, gains, latency, cuts);
+    auto expected = reference (signal, sr, gains, latency, cuts, slopes);
     juce::MidiBuffer midi;
     p.processBlock (signal, midi);   // deliberately larger than the prepared block size
     if (skip > 0)
@@ -261,6 +264,7 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI gui;
     try
     {
+      {   // every Triad and effect made by the tests lives in this scope
         require (argc >= 5, "Usage: TriadTests <Test Effect.vst3> <Test Synth.vst3> <Crash Fixture.vst3> <Triad Scanner> [screenshot.png] [Triad.vst3]");
         const juce::File effect (juce::String::fromUTF8 (argv[1]));
         const juce::File synth (juce::String::fromUTF8 (argv[2]));
@@ -275,7 +279,7 @@ int main (int argc, char** argv)
         for (double sr : { 44100.0, 48000.0, 96000.0 })
         {
             const auto signal = input (8192);
-            triad::LinkwitzRiley mine, minePhase;
+            triad::CrossoverFilter mine, minePhase;   // order 4: 24 dB/oct Linkwitz-Riley
             juce::dsp::LinkwitzRileyFilter<float> theirs, theirsPhase;
             mine.prepare (sr); minePhase.prepare (sr);
             for (auto* f : { &theirs, &theirsPhase }) f->prepare ({ sr, 8192, 2 });
@@ -301,7 +305,7 @@ int main (int argc, char** argv)
             float error = 0;
             for (int c = 0; c < 6; ++c)
                 for (int s = 0; s < 8192; ++s) error = juce::jmax (error, std::abs (a.getSample (c, s) - b.getSample (c, s)));
-            std::cout << "Built-in LR4 filter vs JUCE dsp filter at " << sr << " Hz: max error " << error << std::endl;
+            std::cout << "Built-in 24 dB/oct crossover (LR4) vs JUCE dsp filter at " << sr << " Hz: max error " << error << std::endl;
             require (error < 1.0e-6f, "Built-in Linkwitz-Riley filter matches JUCE");
         }
 
@@ -336,6 +340,115 @@ int main (int argc, char** argv)
                 require (error < 2.0e-5f, "N-band crossover reconstruction");
             }
             std::cout << "Phase-correct reconstruction, 1 to 10 bands: max error " << worst << std::endl;
+        }
+
+        // ---- Crossover slopes, 6 to 48 dB/oct ----------------------------------------------------
+        {
+            constexpr int length = 16384;
+            constexpr double sr = 48000.0;
+            // Impulse responses of the bands, and their sum, as magnitude spectra.
+            auto spectra = [] (int bandCount, const std::vector<float>& cuts, const std::vector<int>& orders)
+            {
+                triad::Splitter sp;
+                sp.prepare (sr, length);
+                std::array<float, triad::maxCrossovers> c {};
+                std::array<int, triad::maxCrossovers> o {};
+                o.fill (4);
+                for (size_t i = 0; i < cuts.size(); ++i) c[i] = cuts[i];
+                for (size_t i = 0; i < orders.size(); ++i) o[i] = orders[i];
+                sp.setBandCount (bandCount, c.data(), o.data());
+                juce::AudioBuffer<float> impulse (2, length);
+                impulse.clear();
+                impulse.setSample (0, 0, 1.0f); impulse.setSample (1, 0, 1.0f);
+                std::array<juce::AudioBuffer<float>, triad::maxBands> bands;
+                for (auto& b : bands) b.setSize (2, length);
+                sp.process (impulse, 0, length, bands);
+                std::vector<std::vector<float>> result ((size_t) bandCount + 1);
+                std::vector<std::complex<float>> sum ((size_t) length);
+                for (int b = 0; b <= bandCount; ++b)
+                {
+                    std::vector<std::complex<float>> bins ((size_t) length);
+                    for (int i = 0; i < length; ++i)
+                    {
+                        const float v = b < bandCount ? bands[(size_t) b].getSample (0, i) : 0.0f;
+                        bins[(size_t) i] = { b < bandCount ? v : sum[(size_t) i].real(), 0.0f };
+                        if (b < bandCount) sum[(size_t) i] += v;
+                    }
+                    triad::fft (bins);
+                    for (int k = 0; k <= length / 2; ++k) result[(size_t) b].push_back (std::abs (bins[(size_t) k]));
+                }
+                return result;   // [band...] then the sum
+            };
+            const float binHz = (float) (sr / length);
+            for (int order = triad::CrossoverFilter::minOrder; order <= triad::CrossoverFilter::maxOrder; ++order)
+            {
+                const auto m = spectra (2, { 1000.0f }, { order });
+                float flat = 0.0f, shape = 0.0f;
+                for (int k = 1; k < length / 2 - 1; ++k)
+                {
+                    const float f = (float) k * binHz;
+                    flat = juce::jmax (flat, std::abs (m[2][(size_t) k] - 1.0f));
+                    shape = juce::jmax (shape, std::abs (m[0][(size_t) k] - triad::CrossoverFilter::lowMagnitude (order, f, 1000.0f, sr)));
+                    shape = juce::jmax (shape, std::abs (m[1][(size_t) k] - triad::CrossoverFilter::highMagnitude (order, f, 1000.0f, sr)));
+                }
+                // Steepness: the low band two octaves above the crossover, and the high band two below.
+                const auto k4 = (size_t) juce::roundToInt (4000.0f / binHz), k250 = (size_t) juce::roundToInt (250.0f / binHz);
+                const auto low4k = juce::Decibels::gainToDecibels (m[0][k4]), high250 = juce::Decibels::gainToDecibels (m[1][k250]);
+                std::cout << TriadProcessor::slopeText (order) << ": bands add up flat (max error " << flat << "), shapes match (max error "
+                          << shape << "), low band at 4 kHz " << juce::String (low4k, 1) << " dB, high band at 250 Hz " << juce::String (high250, 1) << " dB" << std::endl;
+                require (flat < 1.0e-3f, "Bands add back flat at every slope");
+                require (shape < 2.0e-3f, "Each slope has its Butterworth / Linkwitz-Riley shape");
+                // Two octaves: about 12 dB per 6 dB/oct of slope (exactly, far from the crossover).
+                const float expectedDb = -12.0f * (float) order;
+                require (std::abs (low4k - expectedDb) < 3.5f && std::abs (high250 - expectedDb) < 3.5f, "Slope steepness");
+            }
+            // Ten bands with every slope at once: still flat.
+            {
+                std::vector<float> cuts;
+                std::vector<int> orders;
+                for (int j = 0; j < 9; ++j) { cuts.push_back (TriadProcessor::defaultCrossover (j, 10)); orders.push_back (1 + (j * 3) % 8); }
+                const auto m = spectra (10, cuts, orders);
+                float flat = 0.0f;
+                for (int k = 1; k < length / 2 - 1; ++k) flat = juce::jmax (flat, std::abs (m[10][(size_t) k] - 1.0f));
+                std::cout << "Ten bands with mixed slopes add up flat: max error " << flat << std::endl;
+                require (flat < 2.0e-3f, "Ten bands with mixed slopes add back flat");
+            }
+            // Changing slopes while audio plays crossfades: no jumps, level kept, then flat again.
+            {
+                triad::Splitter sp;
+                sp.prepare (sr, 512);
+                std::array<float, triad::maxCrossovers> c { 300.0f, 3000.0f };
+                std::array<int, triad::maxCrossovers> o {};
+                o.fill (4);
+                sp.setBandCount (3, c.data(), o.data());
+                // Two sines (100 Hz and 1 kHz): any click would show as a sudden step between samples.
+                juce::AudioBuffer<float> signal (2, 48000);
+                for (int i = 0; i < signal.getNumSamples(); ++i)
+                    for (int ch = 0; ch < 2; ++ch)
+                        signal.setSample (ch, i, 0.25f * (float) (std::sin (juce::MathConstants<double>::twoPi * 100.0 * i / sr)
+                                                                 + std::sin (juce::MathConstants<double>::twoPi * 1000.0 * i / sr)));
+                const float smoothStep = 0.25f * juce::MathConstants<float>::twoPi * 1100.0f / (float) sr;
+                std::array<juce::AudioBuffer<float>, triad::maxBands> bands;
+                for (auto& b : bands) b.setSize (2, 512);
+                float worstJump = 0.0f, inPeak = 0.0f, outPeak = 0.0f;
+                float previous = 0.0f;
+                for (int start = 0, step = 0; start + 512 <= signal.getNumSamples(); start += 512, ++step)
+                {
+                    if (step % 3 == 0) { o[0] = 1 + (step / 3) % 8; o[1] = 8 - (step / 3) % 8; sp.setSlopes (o.data()); }
+                    sp.process (signal, start, 512, bands);
+                    for (int i = 0; i < 512; ++i)
+                    {
+                        const float x = bands[0].getSample (0, i) + bands[1].getSample (0, i) + bands[2].getSample (0, i);
+                        worstJump = juce::jmax (worstJump, std::abs (x - previous));
+                        previous = x;
+                        outPeak = juce::jmax (outPeak, std::abs (x));
+                        inPeak = juce::jmax (inPeak, std::abs (signal.getSample (0, start + i)));
+                    }
+                }
+                std::cout << "Slopes changed 30 times while playing: output peak " << outPeak << " (input " << inPeak << "), largest step between samples "
+                          << worstJump << " (the sines alone: " << smoothStep << ")" << std::endl;
+                require (outPeak < 1.6f * inPeak && worstJump < 1.6f * smoothStep, "Slope changes crossfade without clicks");
+            }
         }
 
         // ---- One effect per band (Triad 0.1 behaviour) ---------------------------------------
@@ -442,9 +555,43 @@ int main (int argc, char** argv)
             std::cout << "NaN from a hosted effect: silenced, restarted 3 times, then bypassed (" << info.status << ")" << std::endl;
         }
 
+        // ---- Crossover slopes as DAW parameters ---------------------------------------------
+        {
+            TriadProcessor q;
+            q.prepareToPlay (48000, 128);
+            require (q.getCrossoverSlope (0) == 4 && q.slopeParameter (0)->getCurrentValueAsText() == "24 dB/oct", "Slopes start at 24 dB/oct");
+            q.setCrossoverSlope (0, 2);
+            q.setCrossoverSlope (1, 7);
+            require (q.slopeParameter (1)->getCurrentValueAsText() == "42 dB/oct", "Slope readout");
+            runAudioCase (q, 48000, { 1, 1, 1 }, 0, "Soft and hard crossovers (12 and 42 dB/oct)", threeBandCuts, 0, { 2, 7 });
+            juce::MemoryBlock state;
+            q.getStateInformation (state);
+            TriadProcessor r;
+            r.setStateInformation (state.getData(), (int) state.getSize());
+            require (r.getCrossoverSlope (0) == 2 && r.getCrossoverSlope (1) == 7, "Slopes are saved with the project");
+            // A project from before 0.4.0 has no slope parameters: it opens at 24 dB/oct, sounding as before.
+            if (auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize()))
+            {
+                if (auto* params = xml->getChildByName ("Parameters"))
+                    for (int i = params->getNumChildElements(); --i >= 0;)
+                        if (params->getChildElement (i)->getStringAttribute ("id").startsWith ("slope"))
+                            params->removeChildElement (params->getChildElement (i), true);
+                juce::MemoryBlock old;
+                juce::AudioProcessor::copyXmlToBinary (*xml, old);
+                r.setStateInformation (old.getData(), (int) old.getSize());
+                require (r.getCrossoverSlope (0) == 4 && r.getCrossoverSlope (1) == 4, "Earlier projects open at 24 dB/oct");
+            }
+            // Each slope stays with its crossover when bands are added or removed below it.
+            require (q.addBand (100.0f), "Add a band below the others");
+            require (q.getCrossoverSlope (0) == 4 && q.getCrossoverSlope (1) == 2 && q.getCrossoverSlope (2) == 7, "Slopes move up with their crossovers");
+            require (q.removeBand (0), "Remove it again");
+            require (q.getCrossoverSlope (0) == 2 && q.getCrossoverSlope (1) == 7, "Slopes move back down");
+            std::cout << "PASS: crossover slopes are DAW parameters, saved, recalled, and move with their crossovers" << std::endl;
+        }
+
         // ---- Per-slot mix (FL-style slot knobs) ----------------------------------------------
         for (int b = 0; b < 3; ++b) p.setSlotMix (b, 0, 50);
-        require (p.getParameters().size() == triad::maxCrossovers + 2 * triad::maxBands, "Slot mixes are not DAW parameters (band volumes are)");
+        require (p.getParameters().size() == 2 * triad::maxCrossovers + 2 * triad::maxBands, "Slot mixes are not DAW parameters (band volumes and slopes are)");
         runAudioCase (p, 48000, { .625f, .625f, .625f }, 73, "50 percent slot mix");
         bandMix (p, 50);
         runAudioCase (p, 48000, { .8125f, .8125f, .8125f }, 73, "Slot mix and band mix together");
@@ -973,6 +1120,14 @@ int main (int argc, char** argv)
                 editor->getDisplay().updateSpectrum();
                 std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-5bands.png"),
                                                            editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+                // Soft and hard slopes, the first one being dragged (its two bands highlighted).
+                preview.setCrossoverSlope (0, 1); preview.setCrossoverSlope (1, 2); preview.setCrossoverSlope (2, 6); preview.setCrossoverSlope (3, 8);
+                editor->getDisplay().beginSlopeGesture (0);
+                editor->getDisplay().updateSpectrum();
+                std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-slopes.png"),
+                                                           editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+                editor->getDisplay().endSlopeGesture();
+                for (int j = 0; j < 4; ++j) preview.setCrossoverSlope (j, 4);
                 for (int s = 0; s < 11; ++s) preview.addSlot (1);
                 editor->refreshNow();
                 std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-slots.png"),
@@ -1027,8 +1182,16 @@ int main (int argc, char** argv)
             }
             editor.reset();
         }
+      }
+        // As in a DAW, the message loop keeps running after the Triads close: removed effects are
+        // deleted from it; then the idle copies Triad keeps are released before JUCE shuts down.
+        // When the last Triad closes, the effects it kept (removed ones, idle copies) are deleted at once,
+        // while Triad's framework still runs (a host may unload Triad straight after).
+        require (TriadProcessor::getIdleEffectCount() == 0 && SidechainEffect::live().empty(),
+                 "Closing the last Triad deletes the effects it was keeping");
+        std::cout << "Closing the last Triad deletes every effect it was keeping: passed" << std::endl;
         std::cout << "PASS: all integration tests" << std::endl;
-        testStage = "closing the test's Triads and shutting JUCE down, after all tests passed";
+        testStage = "shutting JUCE down, after all tests passed";
         return 0;
     }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << std::endl; return 1; }

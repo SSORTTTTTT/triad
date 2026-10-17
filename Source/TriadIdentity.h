@@ -11,7 +11,7 @@
 
 namespace triad
 {
-// True for any build of Triad itself ("Triad", "Triad v2", ...): Triad never hosts itself.
+// True for any build of Triad itself ("Triad", "Triad v2", "Triad v4", ...): Triad never hosts itself.
 inline bool isTriadName (const juce::String& name)
 {
     if (name == "Triad" || name == TRIAD_PRODUCT_NAME) return true;

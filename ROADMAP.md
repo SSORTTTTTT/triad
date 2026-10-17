@@ -1,6 +1,14 @@
 # Triad roadmap
 
-## Current testing version — 0.3.2 ("Triad v3")
+## Current testing version — 0.4.0 ("Triad v4")
+
+0.4.0 (2026-10-16): the **slope dot** from Thomas's notes below — a second dot on every crossover
+divider: up = soft slope (bands blend), down = hard cut; readout 6–48 dB/oct (24 by default), click
+it for a list; each band drawn as its own coloured response curve so the overlap shows. Slopes are
+DAW parameters, saved with projects/presets. Next in v4: the LFO randomizer (Angular, Soft and Chaos
+sliders, trained on Thomas's Infiltrator / Gross Beat presets once he sends them).
+
+### 0.3.2 ("Triad v3")
 
 0.3.2 (2026-10-16): one idle copy of each third-party effect stays loaded for the session, so a
 plug-in's last copy is never deleted mid-session (FILT-R and REEV-R occasionally crashed then).
@@ -74,6 +82,24 @@ Today each crossover is a fixed, steep Linkwitz-Riley 24 dB/octave split, so an 
   Thomas likes), and across a crossover the two colours fade into each other. A gentle slope gives a wide overlap,
   a hard cut a narrow one, so you can see at a glance how much of one band bleeds into the next.
 - ShaperBox picks the slope from a dropdown; Triad does both: drag the dot, or click the dB readout to pick from a list.
+
+### Later: SEQUENCE tab (on/off step sequencer per band)
+
+Thomas (2026-10-16), for later: a **SEQUENCE** tab beside BANDS | LFO | MATRIX, so effects can be switched on
+and off in rhythm without drawing LFOs. Reference: `docs/reference/infiltrator-sequencer.jpg` (Infiltrator 2's
+sequence page).
+
+- Pick a band (band chips, like the LFO tab). The grid shows **one row per effect in that band**, named after
+  the effect, and one column per step.
+- **Click blocks to turn that effect on for that step**; click-drag to paint or erase a run of steps.
+  An empty (off) block means the effect is switched off there and the band plays without it.
+- **Length:** 16 steps by default, with start/end handles above the grid to shorten or loop part of it.
+- **Speed** per step (1/16, 1/8, triplet and dotted values, like the LFO lengths), locked to the song.
+- **Crossfade** between on and off (5 ms by default, adjustable) so switching never clicks.
+- Tools beside the grid like Infiltrator's: clear, randomize (uses the LFO randomizer's ideas), rotate left/right.
+- A switch per row: when a row's sequencer is off, that effect simply stays on.
+- How "off" sounds, a choice per row: **cut** (the effect's sound stops at once) or **tails** (the effect stops
+  receiving sound but its reverb/delay rings out). Latency compensation stays intact either way.
 
 ### 3. Knobs inside third-party effects (detail)
 

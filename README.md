@@ -1,8 +1,8 @@
 # Triad — multiband effects host
 
-Version 0.3.2 ("Triad v3") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
+Version 0.4.0 ("Triad v4") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
 
-**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v3-0.3.2-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
+**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v4-0.4.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
 
 ## What it does
 
@@ -13,6 +13,7 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
 - **Bands you can add while working.** Triad opens with 3 bands (crossovers at 250 Hz and 2.5 kHz). Press **+ BAND** or double-click the frequency display to split a band right there, up to 10 bands. Remove a band with the **×** on its strip, or right-click its area (or a divider) on the display.
 - **Live spectrum** behind the bands, with **IN** and **OUT** level meters beside it.
 - **Draggable crossovers.** Drag any divider; double-click one to reset it; arrow keys adjust a focused divider. Click a strip's start/end frequency to type one (`250`, `2.5k`).
+- **Slope dot on every divider** (new in v4): drag it **up for a soft slope**, where the effect blends into the neighbouring bands, or **down for a hard cut** right at the crossover. Its readout shows the slope, from **6 dB/oct** (softest) to **48 dB/oct** (hardest), 24 by default; click the readout to pick from a list, double-click the dot to reset, or use the up/down arrow keys. Each band is drawn as its own coloured curve, so you can see how far each band reaches into the next. With no effects loaded the bands still add back to your original sound at every slope. Slopes are DAW-automatable and saved with projects and presets.
 - **Move a band's effects to another band:** press and hold a band's header and drag it left or right. The frequency ranges stay put; the chain (effects, knobs, LFOs, mix, volume) moves. The **...** menu on each band does the same one step at a time.
 - **Effect slots per band, as many as you need**, in processing order (Slot 1 runs first). Each band starts with one slot; **+ ADD SLOT** adds another and picks its effect in one go.
   - **Click an empty slot** to choose an effect. The list shows **effects only** (no instruments), with your **favourites** at the top, then VST3 and Audio Units by company (or A-Z, in settings).
@@ -38,7 +39,7 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
 
 - **Presets:** the **PRESET** menu saves and loads the whole Triad (`~/Music/Triad/Presets`). Each band's **...** menu saves or loads a **chain preset** (that band's effects with their settings, LFOs, mix and volume; `~/Music/Triad/Chains`).
 - **Settings (gear):** sort the effect list by company or A-Z, look for new plug-ins each time Triad opens (or only when you press Rescan), add your own plug-in folders, window size (75-150%).
-- Hosts **VST3 and Audio Unit** effects. Triad installs as AU and VST3, named **Triad v3**; projects made with Triad and Triad v2 open in it.
+- Hosts **VST3 and Audio Unit** effects. Triad installs as AU and VST3, named **Triad v4**; projects made with Triad, Triad v2 and Triad v4 open in it.
 - Compensates each effect's latency, aligns all bands to the slowest chain, and reports the total to the DAW.
 - Saves everything with your DAW project: bands, crossovers, every knob, LFO shapes and lengths, the matrix, effects and their states.
 
@@ -50,18 +51,18 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
    - **CMake 3.22+**: uses one from Homebrew or `/Applications/CMake.app` if present; otherwise it downloads the official CMake 3.31.9 into `deps/` (checksum-verified) for this build only.
    - **JUCE 8.0.12**: downloaded into `deps/JUCE` at the pinned commit on the first run.
    - An internet connection is needed for the first run. A full log is written to `build-mac.log`.
-4. When it finishes, Finder shows `Installer/Triad-v3-0.3.2-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
-   - `/Library/Audio/Plug-Ins/Components/Triad v3.component` (AU)
-   - `/Library/Audio/Plug-Ins/VST3/Triad v3.vst3` (VST3)
+4. When it finishes, Finder shows `Installer/Triad-v4-0.4.0-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
+   - `/Library/Audio/Plug-Ins/Components/Triad v4.component` (AU)
+   - `/Library/Audio/Plug-Ins/VST3/Triad v4.vst3` (VST3)
 
-   It shows up in your DAW as **Triad v3**. It replaces an earlier "Triad" or "Triad v2" (the installer removes those bundles first, so hosts never see two copies of the same plug-in), and projects made with them open in Triad v3. Quit your DAW completely before installing: macOS keeps an already-loaded plug-in running until the app quits.
+   It shows up in your DAW as **Triad v4**. It replaces an earlier "Triad", "Triad v2" or "Triad v4" (the installer removes those bundles first, so hosts never see two copies of the same plug-in), and projects made with them open in Triad v4. Quit your DAW completely before installing: macOS keeps an already-loaded plug-in running until the app quits.
 
    Use **Customize** in the installer to install only one format.
 
    **Size.** Triad is built to stay small: it links only the JUCE modules it uses (plugin hosting and UI; no audio-device or audio-file-codec code), uses its own compact Linkwitz–Riley crossover instead of the `juce_dsp` module, compiles framework/UI code for size with link-time optimisation while the audio path stays at full `-O3` speed, and dead-strips and symbol-strips the shipped binaries. `cmake -DTRIAD_SIZE_OPTIMISED=OFF` restores a plain `-O3` build.
 
    After building, the `build-mac` and `deps` folders (roughly 1 GB) can be deleted to free space; they are recreated by the next build.
-5. Reopen your DAW and rescan plugins. Load **Triad v3** on a stereo track or mixer insert.
+5. Reopen your DAW and rescan plugins. Load **Triad v4** on a stereo track or mixer insert.
 
 `Install-Mac.command` is still included as an alternative: it copies the built bundles into your *user* plugin folders (`~/Library/Audio/Plug-Ins/...`) without an installer, backing up any previous copy to `~/Library/Application Support/Triad/Backups/`. Use one method or the other so your DAW does not find two copies of Triad.
 
@@ -69,7 +70,7 @@ If macOS refuses to launch a `.command` file or the ZIP extractor loses its exec
 
 The package and plugins are signed ad hoc on the Mac that built them (no Apple Developer ID, no notarization). That is fine on your own Mac. A copy downloaded onto another Mac will be blocked by Gatekeeper until it is allowed under System Settings > Privacy & Security > Open Anyway, or until it is signed with a Developer ID Installer certificate (`productsign`) and notarized.
 
-To uninstall, quit your DAWs and delete the two Triad v3 bundles listed above, then run `sudo pkgutil --forget audio.thomasross.triad.au` and `sudo pkgutil --forget audio.thomasross.triad.vst3` in Terminal.
+To uninstall, quit your DAWs and delete the two Triad v4 bundles listed above, then run `sudo pkgutil --forget audio.thomasross.triad.au` and `sudo pkgutil --forget audio.thomasross.triad.vst3` in Terminal.
 
 Your hosted effects must have native Apple Silicon VST3 versions installed. Triad does not bridge Intel-only binaries. Their existing licenses/authorizations still apply.
 
@@ -79,7 +80,7 @@ If you would rather not install Apple's developer tools, push this folder to a G
 
 ## Use
 
-1. Load **Triad v3** on a stereo track or mixer insert. It starts with 3 bands.
+1. Load **Triad v4** on a stereo track or mixer insert. It starts with 3 bands.
 2. Drag the dividers to set the band edges, or click a strip's start/end frequency to type one. Need another band? Double-click the display where you want the split, or press **+ BAND**.
 3. Click **Slot 1** in a band and choose an effect. Its window opens straight away. Click **+ ADD SLOT** to add more effects; they run top to bottom. The arrow on a slot moves, bypasses or removes it.
 4. Use each slot's knob for that effect's dry/wet, the green light to bypass it, **Band Mix** and **Volume** for the whole band.
@@ -111,13 +112,13 @@ The point-based mix LFO is deferred until after testing the multiband host; see 
 
 ## Implementation and limits
 
-- Linkwitz–Riley 24 dB/octave crossovers for 1–10 bands. Each band's low-pass output is followed by all-pass filters at every higher crossover, so the dry bands sum to a flat-magnitude, phase-rotated signal. This is a minimum-phase crossover, not a linear-phase or bit-identical dry bypass.
+- Crossovers for 1–10 bands with a slope per crossover from 6 to 48 dB/octave in 6 dB steps (odd steps Butterworth, even steps Linkwitz–Riley; 24 dB/oct, the default, is Linkwitz–Riley 4th order). For every slope the low and high outputs add up to an all-pass, so the bands sum to flat magnitude. Changing a slope crossfades to a second set of filters over 30 ms, so it does not click. Each band's low-pass output is followed by all-pass filters at every higher crossover, so the dry bands sum to a flat-magnitude, phase-rotated signal. This is a minimum-phase crossover, not a linear-phase or bit-identical dry bypass.
 - Crossover transitions are smoothed over 35 ms, mix transitions over 20 ms. Adding or removing a band restarts the filters with a 10 ms fade-in.
 - Bands, crossovers and their parameters are positional (Band 1 is always the lowest). Adding a band in the middle shifts the bands above it up by one, and their mix values move with them; DAW automation lanes stay attached to positions, so re-check automation after changing the band layout.
 - Frequencies are kept in order in the DSP. If typed values or automation cross, the higher crossover keeps priority and lower ones are limited 1% below it; the display shows the effective frequencies. The top crossover is limited to 45% of the sample rate.
 - The spectrum shows the input (before the bands are split), with a +3 dB/octave tilt so typical music reads level.
 - Stereo effects only. No VST2, instruments, MIDI routing or mono layouts; hosted effects' parameters are not re-exposed for DAW automation. An effect whose sidechain input cannot be switched off (some Audio Units, e.g. Surge XT Effects) is hosted with that input fed silence.
-- Protection against misbehaving effects: if an effect outputs invalid audio (NaN/Inf), Triad silences it, restarts it (up to three times) and then bypasses it with a message, so it cannot break the DAW's mix. Removed effects, closed effect windows and the effects of a closed Triad are deleted about a second later, after messages the plug-ins posted to themselves have arrived (some plug-ins otherwise crash the DAW when removed right after loading or playing). One idle copy of each third-party effect you have used stays loaded in the background until the DAW unloads Triad: deleting a plug-in's last copy makes it shut itself down, which occasionally crashes some plug-ins (FILT-R, REEV-R). This uses some memory per effect type, not per use.
+- Protection against misbehaving effects: if an effect outputs invalid audio (NaN/Inf), Triad silences it, restarts it (up to three times) and then bypasses it with a message, so it cannot break the DAW's mix. Removed effects, closed effect windows and the effects of a closed Triad are deleted about a second later, after messages the plug-ins posted to themselves have arrived (some plug-ins otherwise crash the DAW when removed right after loading or playing). One idle copy of each third-party effect you have used stays loaded in the background while any Triad is open (all are deleted when the last Triad in the session closes): deleting a plug-in's last copy makes it shut itself down, which occasionally crashes some plug-ins (FILT-R, REEV-R). This uses some memory per effect type, not per use.
 - Building the effect list is crash-isolated (see above). Effects you load still run inside the DAW process, as in any host: a plug-in that crashes while playing can still take the DAW down. Loading/replacing plugins and opening some plugin editors can briefly interrupt audio. Do initial compatibility checks in a test project.
 - Latency compensation assumes each effect reports its latency correctly. Changes are reconciled on the message thread, with a brief silent interval instead of misaligned audio. Up to 262,144 samples per effect and per band chain; beyond that the effect is bypassed with a status message.
 - Projects restored from a background thread are instantiated on the message thread; audio stays silent until restoration completes. Missing plugins keep their identity and state for later recovery, and their slots pass audio through.
@@ -138,7 +139,7 @@ build/TriadTests_artefacts/Release/TriadTests \
   "$PWD/build/fixtures/Triad Crash Fixture.vst3" \
   "$PWD/build/TriadScanner_artefacts/Release/TriadScanner" \
   "$PWD/Triad-preview.png" \
-  "$PWD/build/Triad_artefacts/Release/VST3/Triad v3.vst3"
+  "$PWD/build/Triad_artefacts/Release/VST3/Triad v4.vst3"
 build/TriadStress_artefacts/Release/TriadStress \
   "$PWD/build/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
   "$PWD/build/fixtures/Triad Crash Fixture.vst3" \

@@ -61,69 +61,178 @@ private:
     int position = 0;
 };
 
-// Stereo 4th-order Linkwitz-Riley filter (two cascaded 2nd-order TPT state-variable
-// sections, Zavalishin). Self-contained so the plugin does not need the juce_dsp module,
-// which pulls in the audio-file codecs (FLAC, Ogg Vorbis, ...) and enlarges the binary.
-// Numerically matches JUCE's dsp::LinkwitzRileyFilter; the integration tests compare them.
-class LinkwitzRiley
+// One section of a crossover filter, as a TPT (Zavalishin) structure: a 2nd-order state-variable
+// filter with damping r2 = 1/Q, or a 1st-order filter (r2 < 0). It gives the low-pass or the
+// all-pass response of the section. g = tan(pi * cutoff / sampleRate).
+struct FilterSection
 {
-public:
-    void prepare (double newSampleRate) { sampleRate = newSampleRate; update(); reset(); }
-    void reset() { for (auto* s : { &s1, &s2, &s3, &s4 }) s->fill (0.0f); }
-    void setCutoffFrequency (float hz) { cutoff = hz; update(); }
-
-    // All-pass response (used to phase-align the low band with the upper split).
-    float processAllpass (int ch, float x) noexcept
+    float r2 = -1.0f, g = 0.0f, h = 0.0f, G = 0.0f;
+    std::array<float, 2> s1 {}, s2 {};
+    bool firstOrder() const noexcept { return r2 < 0.0f; }
+    void setG (float newG) noexcept
     {
-        float yH, yB, yL;
-        firstSection (ch, x, yH, yB, yL);
-        return yL - R2 * yB + yH;
+        g = newG;
+        if (firstOrder()) G = g / (1.0f + g);
+        else h = 1.0f / (1.0f + r2 * g + g * g);
     }
-    // Simultaneous LR4 low-pass and complementary high-pass outputs.
-    void processSample (int ch, float x, float& low, float& high) noexcept
+    void reset() noexcept { s1.fill (0.0f); s2.fill (0.0f); }
+    float lowpass (int ch, float x) noexcept
     {
-        float yH, yB, yL;
-        firstSection (ch, x, yH, yB, yL);
         const auto c = (size_t) ch;
-        const auto yH2 = (yL - (R2 + g) * s3[c] - s4[c]) * h;
-        const auto yB2 = g * yH2 + s3[c];
-        s3[c] = g * yH2 + yB2;
-        const auto yL2 = g * yB2 + s4[c];
-        s4[c] = g * yB2 + yL2;
-        low = yL2;
-        high = yL - R2 * yB + yH - yL2;
+        if (firstOrder())
+        {
+            const float v = (x - s1[c]) * G, y = v + s1[c];
+            s1[c] = y + v;
+            return y;
+        }
+        const float yH = (x - (r2 + g) * s1[c] - s2[c]) * h;
+        const float yB = g * yH + s1[c];
+        s1[c] = g * yH + yB;
+        const float yL = g * yB + s2[c];
+        s2[c] = g * yB + yL;
+        return yL;
+    }
+    float allpass (int ch, float x) noexcept
+    {
+        const auto c = (size_t) ch;
+        if (firstOrder())
+        {
+            const float v = (x - s1[c]) * G, y = v + s1[c];
+            s1[c] = y + v;
+            return 2.0f * y - x;
+        }
+        const float yH = (x - (r2 + g) * s1[c] - s2[c]) * h;
+        const float yB = g * yH + s1[c];
+        s1[c] = g * yH + yB;
+        const float yL = g * yB + s2[c];
+        s2[c] = g * yB + yL;
+        return yL - r2 * yB + yH;
     }
     void snapToZero() noexcept
     {
-        for (auto* s : { &s1, &s2, &s3, &s4 })
-            for (auto& v : *s)
+        for (auto* st : { &s1, &s2 })
+            for (auto& v : *st)
                 if (! (v < -1.0e-8f || v > 1.0e-8f)) v = 0.0f;
+    }
+};
+
+// Stereo crossover filter with a slope of 6 dB/octave per order, orders 1 to 8 (6 to 48 dB/oct).
+// Odd orders are Butterworth, even orders Linkwitz-Riley (a Butterworth of half the order, twice).
+// For both, low-pass + high-pass is an all-pass, so the high band is computed as all-pass minus
+// low-pass and the two always add back exactly to that all-pass (flat magnitude). processAllpass()
+// gives the same all-pass on its own, to keep lower bands in phase with this split.
+// Order 4 is Triad's original 24 dB/oct Linkwitz-Riley, which the tests compare with JUCE's.
+class CrossoverFilter
+{
+public:
+    static constexpr int minOrder = 1, maxOrder = 8, defaultOrder = 4;
+    static constexpr int dbPerOctave (int order) { return 6 * order; }
+
+    CrossoverFilter() { configure(); }
+    void prepare (double newSampleRate) { sampleRate = newSampleRate; setCutoffFrequency (cutoff); reset(); }
+    void reset() noexcept
+    {
+        for (int i = 0; i < numLp; ++i) lp[(size_t) i].reset();
+        for (int i = 0; i < numAp; ++i) ap[(size_t) i].reset();
+    }
+    // Structural change: the filter memory restarts.
+    void setOrder (int newOrder)
+    {
+        order = juce::jlimit (minOrder, maxOrder, newOrder);
+        configure();
+        setCoefficient (g);
+        reset();
+    }
+    int getOrder() const noexcept { return order; }
+    static float coefficientFor (float hz, double sr) { return (float) std::tan (juce::MathConstants<double>::pi * hz / sr); }
+    void setCutoffFrequency (float hz) { cutoff = hz; setCoefficient (coefficientFor (hz, sampleRate)); }
+    void setCoefficient (float newG) noexcept
+    {
+        g = newG;
+        for (int i = 0; i < numLp; ++i) lp[(size_t) i].setG (g);
+        for (int i = 0; i < numAp; ++i) ap[(size_t) i].setG (g);
+    }
+    float processAllpass (int ch, float x) noexcept
+    {
+        for (int i = 0; i < numAp; ++i) x = ap[(size_t) i].allpass (ch, x);
+        return x;
+    }
+    void processSample (int ch, float x, float& low, float& high) noexcept
+    {
+        float l = x;
+        for (int i = 0; i < numLp; ++i) l = lp[(size_t) i].lowpass (ch, l);
+        low = l;
+        high = processAllpass (ch, x) - l;
+    }
+    void snapToZero() noexcept
+    {
+        for (int i = 0; i < numLp; ++i) lp[(size_t) i].snapToZero();
+        for (int i = 0; i < numAp; ++i) ap[(size_t) i].snapToZero();
+    }
+    // Magnitude of the low-pass and high-pass at a frequency (for drawing the bands).
+    static float lowMagnitude (int order, float hz, float cutoffHz, double sr)
+    {
+        const double r = std::tan (juce::MathConstants<double>::pi * juce::jlimit (1.0, sr * 0.4999, (double) hz) / sr)
+                       / std::tan (juce::MathConstants<double>::pi * (double) cutoffHz / sr);
+        if (order % 2 == 1) return (float) (1.0 / std::sqrt (1.0 + std::pow (r, 2.0 * order)));
+        return (float) (1.0 / (1.0 + std::pow (r, (double) order)));
+    }
+    static float highMagnitude (int order, float hz, float cutoffHz, double sr)
+    {
+        const double r = std::tan (juce::MathConstants<double>::pi * juce::jlimit (1.0, sr * 0.4999, (double) hz) / sr)
+                       / std::tan (juce::MathConstants<double>::pi * (double) cutoffHz / sr);
+        if (order % 2 == 1) return (float) (std::pow (r, (double) order) / std::sqrt (1.0 + std::pow (r, 2.0 * order)));
+        const double p = std::pow (r, (double) order);
+        return (float) (p / (1.0 + p));
     }
 
 private:
-    void firstSection (int ch, float x, float& yH, float& yB, float& yL) noexcept
+    void configure()
     {
-        const auto c = (size_t) ch;
-        yH = (x - (R2 + g) * s1[c] - s2[c]) * h;
-        yB = g * yH + s1[c];
-        s1[c] = g * yH + yB;
-        yL = g * yB + s2[c];
-        s2[c] = g * yB + yL;
+        numLp = numAp = 0;
+        // Pole pairs of a Butterworth filter of order n, as angles from the negative real axis.
+        auto pairAngle = [] (int n, int j) { return n % 2 == 0 ? (2.0 * j - 1.0) * juce::MathConstants<double>::pi / (2.0 * n)
+                                                               : j * juce::MathConstants<double>::pi / n; };
+        auto addPair = [] (std::array<FilterSection, 4>& list, int& count, double angle) { list[(size_t) count++].r2 = (float) (2.0 * std::cos (angle)); };
+        auto addReal = [] (std::array<FilterSection, 4>& list, int& count) { list[(size_t) count++].r2 = -1.0f; };
+        std::array<FilterSection, 4> apSections {};
+        if (order % 2 == 1)
+        {
+            // Butterworth: low-pass uses every pole; the all-pass keeps the pole pairs that are not
+            // cancelled by 1 + s^n (those at odd multiples of pi/n).
+            for (int j = 1; j <= order / 2; ++j)
+            {
+                addPair (lp, numLp, pairAngle (order, j));
+                if (j % 2 == 1) addPair (apSections, numAp, pairAngle (order, j));
+            }
+            addReal (lp, numLp);
+        }
+        else
+        {
+            // Linkwitz-Riley: Butterworth of order k twice; the all-pass has the same poles once.
+            const int k = order / 2;
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                for (int j = 1; j <= k / 2; ++j) addPair (lp, numLp, pairAngle (k, j));
+                if (k % 2 == 1) addReal (lp, numLp);
+            }
+            for (int j = 1; j <= k / 2; ++j) addPair (apSections, numAp, pairAngle (k, j));
+            if (k % 2 == 1) addReal (apSections, numAp);
+        }
+        for (int i = 0; i < numAp; ++i) ap[(size_t) i] = apSections[(size_t) i];
     }
-    void update()
-    {
-        g  = (float) std::tan (juce::MathConstants<double>::pi * cutoff / sampleRate);
-        R2 = (float) std::sqrt (2.0);
-        h  = (float) (1.0 / (1.0 + R2 * g + g * g));
-    }
-    std::array<float, 2> s1 {}, s2 {}, s3 {}, s4 {};
+    std::array<FilterSection, 4> lp {};
+    std::array<FilterSection, 2> ap {};
+    int numLp = 0, numAp = 0, order = defaultOrder;
     double sampleRate = 44100.0;
-    float cutoff = 2000.0f, g = 0.0f, R2 = 0.0f, h = 0.0f;
+    float cutoff = 2000.0f, g = 0.0f;
 };
 
-// N-band Linkwitz-Riley crossover (1 to 10 bands). Band b is the LR4 low-pass at crossover b
-// of what remains above crossover b-1, followed by all-pass filters at every higher crossover.
-// The bands therefore sum to the cascade of all-passes: flat magnitude, phase-rotated.
+// N-band crossover (1 to 10 bands) with a slope per crossover. Band b is the low-pass at crossover b
+// of what remains above crossover b-1, followed by the all-pass of every higher crossover, so the
+// bands sum to the cascade of all-passes: flat magnitude, phase-rotated.
+// Changing a slope restarts that filter structure, so it happens on a second set of filters: the
+// new set runs for 10 ms to settle, then the bands crossfade to it over 20 ms (no clicks).
 class Splitter
 {
 public:
@@ -131,20 +240,42 @@ public:
     {
         juce::ignoreUnused (blockSize);
         sampleRate = sr;
-        for (auto& f : split) f.prepare (sr);
-        for (auto& row : phase) for (auto& f : row) f.prepare (sr);
+        for (auto& set : sets) set.prepare (sr);
         for (auto& s : smooth) s.reset (sr, 0.035);
+        warmupLength = juce::jmax (1, (int) (sr * 0.010));
+        fadeLength = juce::jmax (1, (int) (sr * 0.020));
         count = 0;
+        phase = Phase::none;
+        pending = false;
     }
     // Structural change (called with the processor locked): filter memory restarts.
-    void setBandCount (int bands, const float* cuts)
+    // `orders` (optional) gives each crossover's slope order; otherwise the current ones are kept.
+    void setBandCount (int bands, const float* cuts, const int* orders = nullptr)
     {
         numBands = juce::jlimit (1, maxBands, bands);
-        for (auto& f : split) f.reset();
-        for (auto& row : phase) for (auto& f : row) f.reset();
+        if (orders != nullptr)
+            for (int j = 0; j < maxCrossovers; ++j) wanted[(size_t) j] = juce::jlimit (CrossoverFilter::minOrder, CrossoverFilter::maxOrder, orders[j]);
+        phase = Phase::none;
+        pending = false;
+        sets[(size_t) active].configure (numBands, wanted.data());
         setCutoffs (cuts, true);
     }
     int getBandCount() const noexcept { return numBands; }
+    int getOrder (int crossover) const noexcept { return wanted[(size_t) juce::jlimit (0, maxCrossovers - 1, crossover)]; }
+    bool isChangingSlope() const noexcept { return phase != Phase::none || pending; }
+    // Slope orders per crossover (read from the parameters every block; changes crossfade).
+    void setSlopes (const int* orders)
+    {
+        bool changed = false;
+        for (int j = 0; j < numBands - 1; ++j)
+        {
+            const int o = juce::jlimit (CrossoverFilter::minOrder, CrossoverFilter::maxOrder, orders[j]);
+            if (o != wanted[(size_t) j]) { wanted[(size_t) j] = o; changed = true; }
+        }
+        if (! changed) return;
+        if (phase == Phase::none) startTransition();
+        else pending = true;
+    }
     void setCutoffs (const float* raw, bool immediate = false)
     {
         std::array<float, maxCrossovers> cuts {};
@@ -163,50 +294,128 @@ public:
                   std::array<juce::AudioBuffer<float>, maxBands>& bands)
     {
         const int crossovers = numBands - 1;
+        std::array<float, maxBands> a {}, b {};
         for (int s = 0; s < n; ++s)
         {
             for (int j = 0; j < crossovers; ++j) current[(size_t) j] = smooth[(size_t) j].getNextValue();
             if ((count++ & 15) == 0) updateCoefficients();
+            const float t = phase == Phase::fade ? (float) position / (float) fadeLength : 0.0f;
             for (int ch = 0; ch < 2; ++ch)
             {
-                float x = input.getSample (ch, offset + s);
-                for (int b = 0; b < crossovers; ++b)
+                const float x = input.getSample (ch, offset + s);
+                sets[(size_t) active].processSample (ch, x, a.data());
+                if (phase == Phase::none)
                 {
-                    float low, high;
-                    split[(size_t) b].processSample (ch, x, low, high);
-                    for (int j = b + 1; j < crossovers; ++j)
-                        low = phase[(size_t) b][(size_t) j].processAllpass (ch, low);
-                    bands[(size_t) b].setSample (ch, s, low);
-                    x = high;
+                    for (int band = 0; band < numBands; ++band) bands[(size_t) band].setSample (ch, s, a[(size_t) band]);
+                    continue;
                 }
-                bands[(size_t) crossovers].setSample (ch, s, x);
+                sets[(size_t) (1 - active)].processSample (ch, x, b.data());
+                for (int band = 0; band < numBands; ++band)
+                    bands[(size_t) band].setSample (ch, s, phase == Phase::warmup ? a[(size_t) band]
+                                                                               : a[(size_t) band] + t * (b[(size_t) band] - a[(size_t) band]));
             }
+            advanceTransition();
         }
-        for (int b = 0; b < crossovers; ++b)
-        {
-            split[(size_t) b].snapToZero();
-            for (int j = b + 1; j < crossovers; ++j) phase[(size_t) b][(size_t) j].snapToZero();
-        }
+        sets[(size_t) active].snapToZero();
+        if (phase != Phase::none) sets[(size_t) (1 - active)].snapToZero();
     }
 private:
+    // One complete set of crossover and phase-alignment filters.
+    struct FilterSet
+    {
+        std::array<CrossoverFilter, maxCrossovers> split;
+        std::array<std::array<CrossoverFilter, maxCrossovers>, maxBands> phase;   // [band][higher crossover]
+        int numBands = 3;
+        void prepare (double sr)
+        {
+            for (auto& f : split) f.prepare (sr);
+            for (auto& row : phase) for (auto& f : row) f.prepare (sr);
+        }
+        void configure (int bands, const int* orders)
+        {
+            numBands = bands;
+            for (int j = 0; j < maxCrossovers; ++j)
+            {
+                split[(size_t) j].setOrder (orders[j]);
+                for (int b = 0; b < j; ++b) phase[(size_t) b][(size_t) j].setOrder (orders[j]);
+            }
+        }
+        void setCoefficients (const float* g, int crossovers)
+        {
+            for (int j = 0; j < crossovers; ++j)
+            {
+                split[(size_t) j].setCoefficient (g[j]);
+                for (int b = 0; b < j; ++b) phase[(size_t) b][(size_t) j].setCoefficient (g[j]);
+            }
+        }
+        void processSample (int ch, float x, float* out) noexcept
+        {
+            const int crossovers = numBands - 1;
+            for (int b = 0; b < crossovers; ++b)
+            {
+                float low, high;
+                split[(size_t) b].processSample (ch, x, low, high);
+                for (int j = b + 1; j < crossovers; ++j) low = phase[(size_t) b][(size_t) j].processAllpass (ch, low);
+                out[b] = low;
+                x = high;
+            }
+            out[crossovers] = x;
+        }
+        void snapToZero() noexcept
+        {
+            const int crossovers = numBands - 1;
+            for (int b = 0; b < crossovers; ++b)
+            {
+                split[(size_t) b].snapToZero();
+                for (int j = b + 1; j < crossovers; ++j) phase[(size_t) b][(size_t) j].snapToZero();
+            }
+        }
+    };
+    enum class Phase { none, warmup, fade };
+    void startTransition()
+    {
+        auto& next = sets[(size_t) (1 - active)];
+        next.configure (numBands, wanted.data());
+        next.setCoefficients (coefficients.data(), numBands - 1);
+        phase = Phase::warmup;
+        position = 0;
+    }
+    void advanceTransition() noexcept
+    {
+        if (phase == Phase::warmup && ++position >= warmupLength) { phase = Phase::fade; position = 0; }
+        else if (phase == Phase::fade && ++position >= fadeLength)
+        {
+            active = 1 - active;
+            phase = Phase::none;
+            if (pending)
+            {
+                pending = false;
+                bool differs = false;
+                for (int j = 0; j < numBands - 1; ++j) differs |= sets[(size_t) active].split[(size_t) j].getOrder() != wanted[(size_t) j];
+                if (differs) startTransition();
+            }
+        }
+    }
     void updateCoefficients()
     {
         const int crossovers = numBands - 1;
         for (int j = 0; j < crossovers; ++j)
         {
-            const auto hz = smooth[(size_t) j].getCurrentValue();
-            current[(size_t) j] = hz;
-            split[(size_t) j].setCutoffFrequency (hz);
-            for (int b = 0; b < j; ++b) phase[(size_t) b][(size_t) j].setCutoffFrequency (hz);
+            current[(size_t) j] = smooth[(size_t) j].getCurrentValue();
+            coefficients[(size_t) j] = CrossoverFilter::coefficientFor (current[(size_t) j], sampleRate);
         }
+        sets[(size_t) active].setCoefficients (coefficients.data(), crossovers);
+        if (phase != Phase::none) sets[(size_t) (1 - active)].setCoefficients (coefficients.data(), crossovers);
     }
     double sampleRate = 44100.0;
     unsigned count = 0;
-    int numBands = 3;
-    std::array<LinkwitzRiley, maxCrossovers> split;
-    std::array<std::array<LinkwitzRiley, maxCrossovers>, maxBands> phase;
+    int numBands = 3, active = 0, position = 0, warmupLength = 441, fadeLength = 882;
+    Phase phase = Phase::none;
+    bool pending = false;
+    std::array<FilterSet, 2> sets;
+    std::array<int, maxCrossovers> wanted { 4, 4, 4, 4, 4, 4, 4, 4, 4 };
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, maxCrossovers> smooth;
-    std::array<float, maxCrossovers> current {};
+    std::array<float, maxCrossovers> current {}, coefficients {};
 };
 
 // Lock-free tap of the input signal for the spectrum display. The audio thread writes a mono

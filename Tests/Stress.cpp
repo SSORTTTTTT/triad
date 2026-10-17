@@ -562,6 +562,7 @@ void bigProject (const Pool& pool, double seconds)
     require (activeRoutes (reopened) == activeRoutes (*p), "Every LFO comes back with the project");
     for (int b = 0; b < triad::maxBands; ++b) require (reopened.getSlotCount (b) == slotsPerBand, "Every band reopens with its slots");
     step ("big project: closing", 600);
+    pump (100);   // a DAW's message loop runs between playing and closing
     start = juce::Time::getMillisecondCounterHiRes();
     p.reset();
     say ("Closed the 200-effect project in " + ms (juce::Time::getMillisecondCounterHiRes() - start));
@@ -681,6 +682,16 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             else if (choice < 70) { begin ("slot mix"); p.setSlotMix (band, slot, r.nextFloat() * 100.0f); }
             else if (choice < 75) { begin ("add band"); p.addBand (r.nextBool() ? -1.0f : 20.0f * std::pow (1000.0f, r.nextFloat())); }
             else if (choice < 80) { begin ("remove band"); p.removeBand (band); }
+            else if (choice < 82)
+            {
+                begin ("crossover slope");
+                p.setCrossoverSlope (r.nextInt (juce::jmax (1, bands - 1)), 1 + r.nextInt (8));
+            }
+            else if (choice < 82)
+            {
+                begin ("crossover slope");
+                p.setCrossoverSlope (r.nextInt (juce::jmax (1, bands - 1)), 1 + r.nextInt (8));
+            }
             else if (choice < 84)
             {
                 begin ("drag crossover");

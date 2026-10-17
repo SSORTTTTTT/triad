@@ -5,7 +5,7 @@ using namespace triad::ui;
 namespace
 {
 constexpr int margin = 24, headerHeight = 52, stripGap = 10, minStripWidth = 196, maxStripWidth = 420;
-constexpr int displayHeight = 174;
+constexpr int displayHeight = 210;
 enum MenuIds { scanningId = 1000001, noneId, browseId, refreshId, rescanId, emptySlotId };
 juce::Array<juce::File> filesIn (const juce::File& folder, const juce::String& pattern)
 {
@@ -160,7 +160,7 @@ void TriadEditor::paintContent (juce::Graphics& g)
     g.setColour (accent); g.setFont (juce::FontOptions (28.0f, juce::Font::bold));
     g.drawText ("TRIAD", margin, 7, 110, 38, juce::Justification::centredLeft);
     g.setColour (juce::Colour (0xffaeb6ab)); g.setFont (juce::FontOptions (11.5f));
-    g.drawText (juce::String ("VST3 + AU  /  V3  ") + TRIAD_VERSION, logicalWidth - margin - 170, 13, 170, 26, juce::Justification::centredRight);
+    g.drawText (juce::String ("VST3 + AU  /  V4  ") + TRIAD_VERSION, logicalWidth - margin - 170, 13, 170, 26, juce::Justification::centredRight);
 }
 void TriadEditor::layoutContent()
 {
