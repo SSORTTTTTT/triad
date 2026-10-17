@@ -79,8 +79,9 @@ can see at a glance whether Triad is still zero-latency (for recording vocals th
 
 ### Startup preset in the settings (Thomas, 2026-10-17)
 
-- Settings (gear) → **Startup preset**: "Init (empty Triad)" or any saved preset; every new Triad opens with it
-  (projects that already have Triad keep their own settings). "Use the current settings as the startup preset".
+- Settings (gear) → **Change startup preset ▸**: a list with "Init (empty Triad)" at the top and every saved preset
+  below it, the current choice ticked; every new Triad opens with it (projects that already have Triad keep their
+  own settings). Also "Use the current settings as the startup preset". (Thomas, 2026-10-17: just for the roadmap.)
 - Preset menu → **Initialize**: back to Init (3 bands, empty slots, 24 dB/oct, LFOs off), as one undoable step.
 - Works the same in FL Studio and Ableton (it is Triad's own setting, not the DAW's default-preset feature).
 
