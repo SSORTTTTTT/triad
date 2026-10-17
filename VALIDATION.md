@@ -1,5 +1,17 @@
 # Validation — Triad
 
+## Triad v4 (0.4.2) on macOS — 2026-10-17
+
+Commit `d60948b`, run 39010733817 (macos-14 runner; same plug-in as `bd68d52`, run 39010122678, which also passed). New in 0.4.2: EXTRA and USER folders in the LFO palette.
+
+| Check | Result |
+| --- | --- |
+| Installer `Triad-v4-0.4.2-macOS-AppleSilicon.pkg` | Built and installed; AU VALIDATION SUCCEEDED; pluginval SUCCESS (VST3 and AU) |
+| LFO presets | 1,049 shapes in 14 folders (EXTRA: 355, each also filed under its type); every page reachable |
+| USER folder | Save, same-name save, recall exact shape, rename, delete; folder lists the saved shapes a page at a time |
+| Stress test, test effects | Passed; 94 LFO palette edits (folders, pages, USER save/delete, dice) while audio plays |
+| Stress test, real plug-ins (51 effects) | All passed: 5 x 3,000 random edits incl. 82-105 palette edits each, 25-38 copy/paste band state, 42-58 slope changes; no NaN/Inf output |
+
 ## Triad v4 (0.4.1) on macOS — 2026-10-16
 
 Commit `20119a3`, run 39006301559 (macos-14 runner). New in 0.4.1: LFO generator, preset folders with pages, slopes up to 96 dB/oct, copy / paste band state.
