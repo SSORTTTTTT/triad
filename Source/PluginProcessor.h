@@ -91,6 +91,9 @@ public:
     // Third-party effects kept loaded, idle, after their last copy was removed (one per effect, for the
     // session): deleting a plug-in's last copy makes it shut down, which crashes some plug-ins.
     static int getIdleEffectCount();
+    // Audio blocks Triad output as silence because the message thread was changing the bands at that
+    // moment (Triad never waits on the audio thread); a dropout. For the live-monitoring test and meters.
+    int getSilencedBlockCount() const noexcept { return silencedBlocks.load(); }
     // Deletes removed effects and the idle copies right away (tests; a host would just unload Triad).
     static void releaseIdleEffects();
     // Hosts an effect instance that was created elsewhere (used by the tests).
@@ -276,6 +279,7 @@ private:
     std::array<std::vector<SlotInfo>, triad::maxBands> info;
     std::unique_ptr<juce::XmlElement> pendingState;
     std::atomic<bool> restoring { false }, muted { false };
+    std::atomic<int> silencedBlocks { 0 };
     std::atomic<int> pendingCreations { 0 }, bandCount { 3 }, structureVersion { 0 };
     std::atomic<double> tail { 0.0 };
     std::atomic<double> rate { 44100.0 };
@@ -297,6 +301,10 @@ private:
     void handleAsyncUpdate() override;
     void timerCallback() override;
     void alignLatency();
+    // A fingerprint of everything alignLatency() depends on (effects, their latency, channels and tail,
+    // slots on or off), so the timer only takes the lock when one of them changed.
+    juce::int64 latencySignature() const;
+    std::atomic<juce::int64> alignedSignature { 0 };
     void publishInfo();   // call with gate held
     void prepareBand (int index, bool prepareEffects);
     void prepareSlot (Slot&);

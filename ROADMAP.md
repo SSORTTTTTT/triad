@@ -1,6 +1,15 @@
 # Triad roadmap
 
-## Current testing version — 0.4.2 ("Triad v4")
+## Current testing version — 0.4.3 ("Triad v4")
+
+0.4.3 (2026-10-17): found by the new **live vocal monitoring** stress test — with Triad's window open, about one
+audio block in 4,500 came out silent (a click): Triad's 10-per-second latency check, and every project save or DAW
+autosave, briefly held the lock the audio thread uses, and the audio thread outputs silence rather than wait. Now
+the check only locks when an effect's latency actually changed, and saving no longer locks the audio: no dropouts
+in the test (window open, autosave every second, 32–256-sample buffers). Measured: Triad alone adds 0 samples of
+latency; see VALIDATION.md.
+
+### 0.4.2
 
 0.4.2 (2026-10-16): LFO palette — an **EXTRA** folder with all 355 shapes from the generator's preview sheets
 (each also filed under its type: SQUARES, STEPS, TRIANGLES, ANGLES, HARD + CURVE, SOFT), and a **USER** folder:
@@ -63,6 +72,8 @@ can see at a glance whether Triad is still zero-latency (for recording vocals th
 - **CPU load** beside it (share of the audio buffer Triad uses), since dropouts at small buffers sound like clicks.
 - Maybe: a **LIVE** switch that bypasses every effect with latency while recording (Triad then reports 0), and turns
   them back on for mixing.
+- **Lighter CPU at the extreme setting:** 10 bands at 96 dB/oct uses about 23% of one core on the test machines
+  (the default 3 bands at 24 dB/oct: about 1%); processing both channels at once (SIMD) would roughly halve it.
 - Background: see VALIDATION.md, "Live vocal monitoring" (Triad alone adds no latency; what the crossovers'
   phase does to timing; how Triad keeps up at 32–256-sample buffers).
 

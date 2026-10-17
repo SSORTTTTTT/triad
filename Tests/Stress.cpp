@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <ctime>
 #include <map>
 #include <mutex>
 #include <set>
@@ -1020,6 +1021,11 @@ void manyInstances (const Pool& pool)
 namespace live
 {
 constexpr double rate = 48000.0;
+#if JUCE_DEBUG
+constexpr bool debugBuild = true;
+#else
+constexpr bool debugBuild = false;
+#endif
 
 // Lets parameter smoothing and slope crossfades finish.
 void runSilence (TriadProcessor& p, int block, double seconds)
@@ -1078,7 +1084,16 @@ juce::String samplesAndMs (int samples) { return juce::String (samples) + " samp
 
 // The audio thread: blocks paced like an audio interface (one every block/rate seconds), each one's
 // processing time measured. The message thread keeps running (Triad's window redraws) meanwhile.
-struct Timing { double average = 0.0, worst = 0.0, p999 = 0.0; int late = 0, blocks = 0; bool realtime = false; };
+// Per block: wall-clock time, and the CPU time Triad's own work took on that thread. On a shared or
+// virtual machine the thread is sometimes paused by the system (wall time far above CPU time): that is
+// counted apart from blocks where Triad's work itself did not fit in the buffer.
+struct Timing { double average = 0.0, worst = 0.0, p999 = 0.0, worstCpu = 0.0; int late = 0, paused = 0, blocks = 0, silenced = 0; bool realtime = false; };
+double threadCpuMs()
+{
+    timespec t {};
+    clock_gettime (CLOCK_THREAD_CPUTIME_ID, &t);
+    return (double) t.tv_sec * 1000.0 + (double) t.tv_nsec / 1.0e6;
+}
 class PacedAudio final : public juce::Thread
 {
 public:
@@ -1101,12 +1116,16 @@ public:
             for (int c = 0; c < 2; ++c)
                 for (int s = 0; s < block; ++s)
                     audio.setSample (c, s, ((i / 40) % 3 == 2 ? 0.0f : 0.25f) * (r.nextFloat() * 2.0f - 1.0f));
+            const auto c0 = threadCpuMs();
             const auto t0 = juce::Time::getMillisecondCounterHiRes();
             p.processBlock (audio, midi);
             const auto dt = juce::Time::getMillisecondCounterHiRes() - t0;
+            const auto cpu = threadCpuMs() - c0;
             transport.advance (block, rate);
-            times.push_back (dt);
-            if (dt > period) ++result.late;
+            times.push_back (cpu);
+            result.worst = juce::jmax (result.worst, dt);
+            if (cpu > period) ++result.late;
+            else if (dt > period) ++result.paused;
             next += period;
             for (auto now = juce::Time::getMillisecondCounterHiRes(); now < next; now = juce::Time::getMillisecondCounterHiRes())
             {
@@ -1118,7 +1137,7 @@ public:
         result.blocks = (int) times.size();
         if (times.empty()) return;
         double total = 0.0;
-        for (auto t : times) { total += t; result.worst = juce::jmax (result.worst, t); }
+        for (auto t : times) { total += t; result.worstCpu = juce::jmax (result.worstCpu, t); }
         result.average = total / (double) times.size();
         std::sort (times.begin(), times.end());
         result.p999 = times[juce::jmin (times.size() - 1, (size_t) ((double) times.size() * 0.999))];
@@ -1132,14 +1151,27 @@ private:
 Timing play (TriadProcessor& p, Transport& transport, int block, double seconds)
 {
     PacedAudio audio (p, transport, block, seconds);
+    const int silencedBefore = p.getSilencedBlockCount();
     const auto options = juce::Thread::RealtimeOptions().withPriority (10).withApproximateAudioProcessingTime (block, rate)
                                                         .withPeriodMs (1000.0 * block / rate);
     const bool realtime = audio.startRealtimeThread (options);
     if (! realtime) audio.startThread (juce::Thread::Priority::highest);
-    while (audio.isThreadRunning()) pump (20);
+    // Meanwhile the DAW autosaves the project every second (the message thread saves every effect's state).
+    auto lastSave = juce::Time::getMillisecondCounterHiRes();
+    while (audio.isThreadRunning())
+    {
+        pump (20);
+        if (juce::Time::getMillisecondCounterHiRes() - lastSave > 1000.0)
+        {
+            juce::MemoryBlock state;
+            p.getStateInformation (state);
+            lastSave = juce::Time::getMillisecondCounterHiRes();
+        }
+    }
     audio.stopThread (2000);
     auto t = audio.result;
     t.realtime = realtime;
+    t.silenced = p.getSilencedBlockCount() - silencedBefore;
     return t;
 }
 }
@@ -1266,8 +1298,11 @@ void liveMonitoring (const Pool& pool, bool real)
                              { "Triad alone, 10 bands, 96 dB/oct, every LFO on", 10, 16, 0, true },
                              { "vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct", 3, 8, (int) chain.size(), true } };
         say ("Vocal chain effects: " + (chainNames.isEmpty() ? juce::String ("none available") : chainNames.joinIntoString (", ")));
-        say ("Each case plays " + juce::String (real ? 8 : 6) + " s per buffer size at 48 kHz on an audio thread paced like an interface, with Triad's window open;"
-             " a block is late if it takes longer than the buffer lasts.");
+        say ("Each case plays " + juce::String (real ? 8 : 6) + " s per buffer size at 48 kHz on an audio thread paced like an interface, with Triad's window open."
+             " Times are Triad's own work per block (CPU time); \"late\": the work took longer than the buffer lasts (a dropout on any machine);"
+             " \"paused by the system\": the test machine (shared, virtual) stopped the thread for a moment, not Triad's work;"
+             " \"silenced\": blocks Triad output as silence because its window was changing the bands at that moment."
+             " The project is saved every second meanwhile, like a DAW's autosave.");
         juce::Random random (5);
         for (const auto& c : cases)
         {
@@ -1302,14 +1337,17 @@ void liveMonitoring (const Pool& pool, bool real)
                 const double budget = 1000.0 * block / rate;
                 say ("  " + juce::String (c.name) + ", " + juce::String (block).paddedLeft (' ', 3) + " samples (" + juce::String (budget, 2) + " ms): average "
                      + juce::String (juce::roundToInt (t.average * 1000.0)) + " us (" + juce::String (100.0 * t.average / budget, 1) + "% of the time), 99.9% under "
-                     + juce::String (juce::roundToInt (t.p999 * 1000.0)) + " us, worst " + juce::String (juce::roundToInt (t.worst * 1000.0)) + " us; late blocks "
-                     + juce::String (t.late) + " of " + juce::String (t.blocks) + "; Triad latency " + samplesAndMs (p->getLatencySamples())
+                     + juce::String (juce::roundToInt (t.p999 * 1000.0)) + " us, worst " + juce::String (juce::roundToInt (t.worstCpu * 1000.0)) + " us; late "
+                     + juce::String (t.late) + " of " + juce::String (t.blocks) + ", silenced " + juce::String (t.silenced) + ", paused by the system "
+                     + juce::String (t.paused) + " (longest wait " + juce::String (t.worst, 1) + " ms); Triad latency " + samplesAndMs (p->getLatencySamples())
                      + (t.realtime ? "" : " (normal-priority thread)"));
                 require (p->getLatencySamples() == 0, "No added latency with zero-latency effects");
-                // Triad on its own must keep up at 64 samples and above: well under the time a block lasts on average, and
-                // (the test machines are shared and virtual, so the odd block is held up by other work) under 1% late.
-                if (c.effects == 0 && block >= 64)
-                    require (t.average < 0.5 * budget && t.late * 100 <= t.blocks,
+                require (t.silenced == 0, "No dropouts from Triad's window, its timer or saving the project while monitoring");
+                // Triad on its own must keep up at 64 samples and above: well under the time a block lasts on average,
+                // and (CPU time on a shared machine still has the odd hiccup: caches, page faults) under 0.5% late.
+                // (Only in optimised builds: a debug build runs the filters several times slower.)
+                if (c.effects == 0 && block >= 64 && ! debugBuild)
+                    require (t.average < 0.5 * budget && t.late * 200 <= t.blocks,
                              "Triad alone keeps up with live monitoring at " + juce::String (block) + " samples");
                 editor.reset();
                 p->setPlayHead (nullptr);

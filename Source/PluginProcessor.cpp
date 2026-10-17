@@ -550,16 +550,48 @@ void TriadProcessor::alignLatency()
     totalLatency.store (longest);
     tail.store (longestTail + (double) longest / rate.load());
     if (changed && prepared) resetDelays();
+    alignedSignature.store (latencySignature());
     if (getLatencySamples() != longest) setLatencySamples (longest);
     publishInfo();
 }
 void TriadProcessor::timerCallback()
 {
+    // Effects can change their latency at any time; check without the lock (the bands only change on this
+    // thread) and take it only when something changed, so the audio thread is not kept waiting ten times a
+    // second for nothing (it outputs silence rather than wait, which is a dropout while recording).
+    if (latencySignature() != alignedSignature.load())
     {
         const juce::ScopedTryLock lock (gate);
         if (lock.isLocked()) alignLatency();
     }
     handleInvalidAudio();
+}
+juce::int64 TriadProcessor::latencySignature() const
+{
+    juce::uint64 h = 1469598103934665603ull;
+    auto add = [&h] (juce::uint64 v) { h ^= v; h *= 1099511628211ull; };
+    auto addDouble = [&add] (double v) { juce::uint64 bits = 0; std::memcpy (&bits, &v, sizeof bits); add (bits); };
+    add ((juce::uint64) numBands);
+    add ((juce::uint64) prepared);
+    addDouble (rate.load());
+    for (int b = 0; b < numBands; ++b)
+    {
+        add ((juce::uint64) bands[(size_t) b]->slots.size());
+        for (auto& slotPtr : bands[(size_t) b]->slots)
+        {
+            const auto& s = *slotPtr;
+            add ((juce::uint64) reinterpret_cast<std::uintptr_t> (s.effect.get()));
+            add ((juce::uint64) s.enabled);
+            add ((juce::uint64) s.error.hashCode64());
+            if (s.effect != nullptr)
+            {
+                add ((juce::uint64) (juce::int64) s.effect->getLatencySamples());
+                add ((juce::uint64) (juce::int64) effectChannels (*s.effect));
+                addDouble (s.effect->getTailLengthSeconds());
+            }
+        }
+    }
+    return (juce::int64) h;
 }
 void TriadProcessor::handleInvalidAudio()
 {
@@ -676,7 +708,11 @@ void TriadProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBu
     readSongPosition();
     const juce::ScopedTryLock lock (gate);
     if (! lock.isLocked() || ! prepared || restoring.load() || muted.load() || audio.getNumChannels() < 2)
-    { audio.clear(); return; }
+    {
+        if (! lock.isLocked() && prepared) silencedBlocks.fetch_add (1, std::memory_order_relaxed);
+        audio.clear();
+        return;
+    }
     // Never emit misaligned audio while a hosted effect changes its reported latency.
     for (int b = 0; b < numBands; ++b)
         for (auto& s : bands[(size_t) b]->slots)
@@ -1766,7 +1802,10 @@ std::unique_ptr<TriadProcessor::Band> TriadProcessor::readBand (const juce::XmlE
 }
 std::unique_ptr<juce::XmlElement> TriadProcessor::createPresetXml()
 {
-    const juce::ScopedLock lock (gate);
+    // No audio lock: the bands only change on the message thread, and this runs on it (or holding the
+    // MessageManagerLock, from getStateInformation), so the audio keeps playing while a DAW saves or
+    // autosaves the project; hosts expect effects to save their state while they play.
+    JUCE_ASSERT_MESSAGE_MANAGER_IS_LOCKED
     auto root = std::make_unique<juce::XmlElement> ("TriadState");
     root->setAttribute ("version", 4);
     root->setAttribute ("bands", numBands);

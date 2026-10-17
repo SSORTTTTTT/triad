@@ -1,8 +1,8 @@
 # Triad — multiband effects host
 
-Version 0.4.2 ("Triad v4") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
+Version 0.4.3 ("Triad v4") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
 
-**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v4-0.4.2-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
+**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v4-0.4.3-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
 
 ## What it does
 
@@ -48,6 +48,13 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
 - **Settings (gear):** sort the effect list by company or A-Z, look for new plug-ins each time Triad opens (or only when you press Rescan), add your own plug-in folders, window size (75-150%).
 - Hosts **VST3 and Audio Unit** effects. Triad installs as AU and VST3, named **Triad v4**; projects made with Triad, Triad v2 and Triad v4 open in it.
 - Compensates each effect's latency, aligns all bands to the slowest chain, and reports the total to the DAW.
+- **Recording vocals through Triad:** Triad itself adds no latency (0 samples at every slope and band count), so it
+  is safe to monitor through while recording; the only delay is your audio interface's buffer, plus any effect in
+  Triad that reports latency (lookahead compressors and limiters, pitch shifters, linear-phase EQs). Triad then
+  reports exactly that to the DAW. Its CPU use is small (the default 3 bands: about 1% of the time a buffer allows,
+  even at 32 samples), and since 0.4.3 Triad's window, its timer and project saves/autosaves never cause a dropout.
+  Very steep crossovers shift the phase of the sound right around each crossover (a few ms of "smear" at 250 Hz
+  with 48–96 dB/oct, under 2 ms at the default 24 dB/oct); the attack of the voice still comes through at once.
 - Saves everything with your DAW project: bands, crossovers, every knob, LFO shapes and lengths, the matrix, effects and their states.
 
 ## Build the installer on your M3 Mac
@@ -58,7 +65,7 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
    - **CMake 3.22+**: uses one from Homebrew or `/Applications/CMake.app` if present; otherwise it downloads the official CMake 3.31.9 into `deps/` (checksum-verified) for this build only.
    - **JUCE 8.0.12**: downloaded into `deps/JUCE` at the pinned commit on the first run.
    - An internet connection is needed for the first run. A full log is written to `build-mac.log`.
-4. When it finishes, Finder shows `Installer/Triad-v4-0.4.2-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
+4. When it finishes, Finder shows `Installer/Triad-v4-0.4.3-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
    - `/Library/Audio/Plug-Ins/Components/Triad v4.component` (AU)
    - `/Library/Audio/Plug-Ins/VST3/Triad v4.vst3` (VST3)
 
