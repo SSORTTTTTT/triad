@@ -31,8 +31,9 @@ Shape snapped (const Shape&, int columns, int rows);
 Shape removeRedundant (const Shape&);
 
 // The preset shapes (ShapeLibrary.cpp), in categories: BASIC, SQUARES, STEPS, TRIANGLES, ANGLES,
-// HARD + CURVE, SOFT (hand-made), then the GEN folders made by the generator (GeneratedShapes.h), several
-// pages each. The first ten (BASIC) keep their numbers from earlier versions.
+// HARD + CURVE, SOFT (hand-made, followed by the EXTRA shapes that fit them), then the GEN folders made
+// by the generator (GeneratedShapes.h), then EXTRA: every shape from the generator's preview sheets
+// (ExtraShapes.h). Folders have several pages. The first ten (BASIC) keep their numbers from earlier versions.
 int numPresets();
 juce::String presetName (int);
 Shape preset (int);
@@ -41,6 +42,8 @@ juce::String presetCategoryName (int);
 int presetCategory (int preset);
 std::vector<int> presetsIn (int category);
 bool isGeneratedCategory (int category);
+bool isExtraCategory (int category);
+int numHandMadeShapes (int category);              // a hand-made folder's own shapes (before its EXTRA ones)
 
 // LFO lengths, as in ShaperBox's length menu: triplet, straight, dotted and free (Hz) columns.
 struct Length

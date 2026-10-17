@@ -31,6 +31,7 @@ public:
 
     static juce::File presetFolder();        // ~/Music/Triad/Presets
     static juce::File chainFolder();         // ~/Music/Triad/Chains
+    static juce::File lfoShapeFolder();      // ~/Music/Triad/LFO Shapes (the LFO palette's USER folder)
 
 private:
     void reload() const;

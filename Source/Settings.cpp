@@ -138,3 +138,7 @@ juce::File TriadSettings::chainFolder()
 {
     return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/Chains");
 }
+juce::File TriadSettings::lfoShapeFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/LFO Shapes");
+}

@@ -117,6 +117,10 @@ TriadEditor::TriadEditor (TriadProcessor& p)
     content.addAndMakeVisible (bandsPage);
     bandsPage.addAndMakeVisible (frequencyDisplay);
     frequencyDisplay.onEditBandLfo = [this] (int band) { showLfo (band, -1); };
+    lfoPage.askName = [this] (const juce::String& title, const juce::String& initial, std::function<void (const juce::String&)> done)
+    {
+        prompt.show (title, initial, std::move (done));
+    };
     viewport.setViewedComponent (&stripHolder, false);
     viewport.setScrollBarsShown (false, true);
     viewport.setScrollBarThickness (8);

@@ -1,6 +1,13 @@
 # Triad roadmap
 
-## Current testing version — 0.4.1 ("Triad v4")
+## Current testing version — 0.4.2 ("Triad v4")
+
+0.4.2 (2026-10-16): LFO palette — an **EXTRA** folder with all 355 shapes from the generator's preview sheets
+(each also filed under its type: SQUARES, STEPS, TRIANGLES, ANGLES, HARD + CURVE, SOFT), and a **USER** folder:
+**SAVE** on the LFO toolbar keeps the current shape (`~/Music/Triad/LFO Shapes`), right-click to rename or delete.
+The folder list is in sections: by type, generated, extra, your shapes.
+
+### 0.4.1
 
 0.4.1 (2026-10-16): the **LFO randomizer** (GENERATE panel: Angular / Soft / Chaos sliders, HARD / MIX / SOFT,
 NEW SHAPE dice; studied from Thomas's 846 Infiltrator favourite shapes, not copied), a **preset bank** in folders

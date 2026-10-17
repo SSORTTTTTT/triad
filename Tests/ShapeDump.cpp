@@ -2,9 +2,11 @@
 //   TriadShapeDump presets
 //   TriadShapeDump generate <angular 0..1> <soft 0..1> <chaos 0..1> <count> [seed] [columns]
 //   TriadShapeDump library > Source/GeneratedShapes.h      (the GEN folders of the preset palette)
+//   TriadShapeDump extras <sheet.json>... > Source/ExtraShapes.h   (the EXTRA folder: shapes from the preview sheets)
 #include "../Source/Generator.h"
 #include <cstdio>
 #include <iostream>
+#include <set>
 
 static void print (const triad::mod::Shape& s, const juce::String& name, const juce::String& category)
 {
@@ -131,6 +133,75 @@ void library()
     }
     std::cout << "};\n}\n";
 }
+
+// ---- The EXTRA folder ---------------------------------------------------------------------------------
+// Every shape from the generator's preview sheets (JSON written by `TriadShapeDump generate`), minus exact
+// repeats, each tagged with the hand-made folder it fits (SQUARES, STEPS, TRIANGLES, ANGLES, HARD + CURVE,
+// SOFT), sorted by that and then plainest first.
+int typeOf (const mod::Shape& s)
+{
+    enum { squares = 1, stairs, triangles, angles, hardCurve, soft };
+    const auto l = look (s);
+    if (l.curves > 0) return l.steps > 0 ? hardCurve : soft;
+    if (l.lines == 0)
+    {
+        std::set<int> levels;
+        for (const auto& p : s) levels.insert (juce::roundToInt (p.y * 64.0f));
+        return levels.size() <= 2 ? squares : stairs;
+    }
+    return l.steps == 0 ? triangles : angles;
+}
+void extras (const juce::StringArray& files)
+{
+    std::vector<std::vector<float>> handMade;
+    for (int i = 0; i < mod::numPresets(); ++i)
+        if (! mod::isGeneratedCategory (mod::presetCategory (i)) && mod::presetCategoryName (mod::presetCategory (i)) != "EXTRA")
+            handMade.push_back (trace (mod::preset (i)));
+    struct Item { int type; mod::Shape shape; std::vector<float> t; };
+    std::vector<Item> items;
+    int read = 0, repeats = 0, flatOnes = 0;
+    for (const auto& name : files)
+    {
+        const auto json = juce::JSON::parse (juce::File (name));
+        if (auto* list = json.getArray())
+            for (const auto& entry : *list)
+            {
+                mod::Shape s;
+                if (auto* points = entry["points"].getArray())
+                    for (const auto& p : *points)
+                        s.push_back ({ (float) (double) p[0], (float) (double) p[1], (float) (double) p[2] });
+                ++read;
+                if (s.size() < 2) continue;
+                float low = 1.0f, high = 0.0f;
+                for (const auto& p : s) { low = juce::jmin (low, p.y); high = juce::jmax (high, p.y); }
+                if (high - low < 0.1f) { ++flatOnes; continue; }
+                const auto t = trace (s);
+                bool repeat = false;
+                for (const auto& other : handMade) repeat = repeat || difference (t, other) < 0.015f;
+                for (const auto& other : items) repeat = repeat || difference (t, other.t) < 0.015f;
+                if (repeat) { ++repeats; continue; }
+                items.push_back ({ typeOf (s), s, t });
+            }
+    }
+    std::stable_sort (items.begin(), items.end(), [] (const Item& a, const Item& b)
+                      { return a.type != b.type ? a.type < b.type : a.shape.size() < b.shape.size(); });
+    std::cerr << read << " shapes read, " << repeats << " repeats and " << flatOnes << " flat ones left out, " << items.size() << " kept" << std::endl;
+    std::cout << "#pragma once\n"
+                 "// The EXTRA folder of the LFO preset palette: every shape from the generator's preview sheets\n"
+                 "// (minus repeats), each also listed in the hand-made folder it fits (`type`: 1 SQUARES, 2 STEPS,\n"
+                 "// 3 TRIANGLES, 4 ANGLES, 5 HARD + CURVE, 6 SOFT). Written by `TriadShapeDump extras`; do not edit by\n"
+                 "// hand. Each shape is \"x y curve\" points separated by ';'.\n"
+                 "namespace triad::mod::extra\n{\n"
+                 "struct Entry { int type; const char* points; };\ninline constexpr Entry entries[] {\n";
+    for (const auto& item : items)
+    {
+        juce::String text;
+        for (size_t i = 0; i < item.shape.size(); ++i)
+            text << (i ? ";" : "") << number (item.shape[i].x) << " " << number (item.shape[i].y) << " " << number (item.shape[i].curve);
+        std::cout << "    { " << item.type << ", \"" << text << "\" },\n";
+    }
+    std::cout << "};\n}\n";
+}
 }
 
 int main (int argc, char** argv)
@@ -138,6 +209,13 @@ int main (int argc, char** argv)
     namespace mod = triad::mod;
     const juce::String mode = argc > 1 ? argv[1] : "presets";
     if (mode == "library") { library(); return 0; }
+    if (mode == "extras")
+    {
+        juce::StringArray files;
+        for (int i = 2; i < argc; ++i) files.add (juce::String::fromUTF8 (argv[i]));
+        extras (files);
+        return 0;
+    }
     std::cout << "[";
     if (mode == "presets")
     {

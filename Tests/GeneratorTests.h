@@ -194,13 +194,20 @@ inline void run()
         require (mod::numPresets() >= 70 + 5 * 33, "75 hand-made preset shapes and the generated folders");
         const char* first[] { "Flat", "Ramp down", "Ramp up", "Triangle", "Sine", "Square", "Pump", "Pump 1/4", "Saw 1/4", "Gate 1/8" };
         for (int i = 0; i < 10; ++i) require (mod::presetName (i) == first[i], "The first ten presets keep their numbers");
-        std::set<juce::String> names;
         int count = 0;
         for (int c = 0; c < mod::numPresetCategories(); ++c)
         {
             const auto list = mod::presetsIn (c);
             if (mod::isGeneratedCategory (c)) require (list.size() >= 33, "Every generated folder has at least three pages of shapes");
-            else require (! list.empty() && list.size() <= 11, "Every hand-made preset category has 1 to 11 shapes (one palette row)");
+            else if (mod::isExtraCategory (c)) require (list.size() >= 300, "EXTRA has every preview shape (300 or more)");
+            else require (mod::numHandMadeShapes (c) >= 1 && mod::numHandMadeShapes (c) <= 11, "Every hand-made folder has 1 to 11 hand-made shapes (its first page)");
+            std::set<juce::String> names;
+            for (int i : list) names.insert (mod::presetName (i));
+            require (names.size() == list.size(), "Shape names are unique within a folder");
+            // The hand-made shapes come first, then the EXTRA shapes that fit the folder.
+            for (size_t k = 0; k < list.size(); ++k)
+                if (! mod::isGeneratedCategory (c) && ! mod::isExtraCategory (c))
+                    require (mod::presetName (list[k]).startsWith ("Extra ") == ((int) k >= mod::numHandMadeShapes (c)), "Hand-made shapes first in their folder");
             count += (int) list.size();
         }
         require (count == mod::numPresets(), "Every preset is in a category");
@@ -210,7 +217,6 @@ inline void run()
         {
             const auto s = mod::preset (i);
             require (validShape (s), "Preset shapes are valid");
-            names.insert (mod::presetName (i));
             const auto category = mod::presetCategoryName (mod::presetCategory (i));
             const auto l = look (s);
             if (category == "SQUARES" || category == "STEPS")
@@ -235,7 +241,16 @@ inline void run()
                 }
             if (mod::isGeneratedCategory (mod::presetCategory (i))) require (l.high - l.low >= 0.45f - 1.0e-4f, "Generated presets move (never flat)");
         }
-        require (names.size() == (size_t) mod::numPresets(), "Preset names are unique");
+        // Every EXTRA shape is also in exactly one of the folders by type.
+        {
+            int extras = 0, filed = 0;
+            for (int i = 0; i < mod::numPresets(); ++i)
+            {
+                if (mod::isExtraCategory (mod::presetCategory (i))) ++extras;
+                else if (mod::presetName (i).startsWith ("Extra ")) ++filed;
+            }
+            require (extras >= 300 && filed == extras, "Every EXTRA shape is also filed under its type (squares, steps, triangles, angles, hard + curve, soft)");
+        }
         require (tripletPoints > 0 && tripletOnGrid >= tripletPoints * 85 / 100, "Generated triplets sit on the triplet grid");
         require (angleClasses.count (30) && angleClasses.count (45) && angleClasses.count (60), "Presets have lines at 30, 45 and 60 degrees");
         std::cout << "LFO presets: " << mod::numPresets() << " shapes in " << mod::numPresetCategories() << " categories: passed" << std::endl;

@@ -59,6 +59,17 @@ private:
 // The LFO tab: band chooser, one tab per LFO (labelled with what it moves), the grid with its
 // toolbar and shape palette (presets in categories), the routing list (where this LFO goes, how
 // much) and the shape generator (Angular / Soft / Chaos and a dice that draws a new shape).
+// The USER folder of the LFO palette: shapes Thomas saved, one file each (.triadlfo) in
+// ~/Music/Triad/LFO Shapes, so every Triad and every project sees them.
+namespace triad::userShapes
+{
+struct Entry { juce::String name; triad::mod::Shape shape; juce::File file; };
+std::vector<Entry> load();                                              // sorted by name
+juce::File save (const juce::String& name, const triad::mod::Shape&);   // a new name if it is taken; {} on failure
+bool rename (const juce::File&, const juce::String& newName);
+bool remove (const juce::File&);                                        // to the Trash when there is one
+}
+
 class LfoPage final : public juce::Component
 {
 public:
@@ -79,11 +90,17 @@ public:
     // The preset palette shows one category (folder) at a time, a page of up to 11 shapes at a time;
     // the GEN folders have several pages (< and >, or the mouse wheel over the palette).
     static constexpr int paletteSize = 11;
-    void setPaletteCategory (int);
+    static constexpr int userFolder = 1000;   // the USER folder (saved shapes), after the preset folders
+    void setPaletteCategory (int);            // a preset category, or userFolder
     int getPaletteCategory() const noexcept { return paletteCategory; }
     void setPalettePage (int);
     int getPalettePage() const noexcept { return palettePage; }
     int getNumPalettePages() const;
+    // SAVE: keeps this LFO's shape in the USER folder (asks for a name through askName, when set).
+    std::function<void (const juce::String& title, const juce::String& initial, std::function<void (const juce::String&)>)> askName;
+    juce::File saveShapeToUser (const juce::String& name);   // then shows USER on the page with it
+    juce::Button& getSaveButton() noexcept { return saveButton; }
+    void showUserShapeMenu (const juce::File&);
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     int getNumPaletteButtons() const noexcept { return (int) presetButtons.size(); }
     juce::Button* getPaletteButton (int i) const { return i >= 0 && i < (int) presetButtons.size() ? presetButtons[(size_t) i].get() : nullptr; }
@@ -99,6 +116,9 @@ private:
     void stepLength (int direction);
     void showCategoryMenu();
     void rebuildPalette();
+    struct PaletteShape { juce::String name; triad::mod::Shape shape; juce::File file; };
+    std::vector<PaletteShape> paletteShapes() const;   // the shapes in the open folder
+    juce::String paletteFolderName() const;
     void saveGeneratorStyle();
     juce::String signature() const;
 
@@ -111,6 +131,7 @@ private:
     std::vector<std::unique_ptr<juce::Button>> tabs;
     triad::ui::IconButton addLfoButton { triad::ui::IconButton::Icon::plus, "Add an LFO to this band" };
     ShapeEditor editor;
+    juce::TextButton saveButton { "SAVE" };
     juce::TextButton lengthButton, gridButton, snapButton { "SNAP" }, doubleButton { "2x" }, halfButton { "1/2" };
     triad::ui::IconButton prevLength { triad::ui::IconButton::Icon::left, "Shorter" },
                           nextLength { triad::ui::IconButton::Icon::right, "Longer" },

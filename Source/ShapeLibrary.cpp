@@ -1,5 +1,6 @@
 #include "Modulation.h"
 #include "GeneratedShapes.h"
+#include "ExtraShapes.h"
 #include <array>
 #include <cstring>
 
@@ -81,7 +82,8 @@ const Shape sine { { 0, 0.5f, -1.6f }, { 0.25f, 1, 1.6f }, { 0.5f, 0.5f, -1.6f }
 
 struct Preset { int category; juce::String name; Shape shape; };
 enum Category { basic, squares, stairs, triangles, angles, hardCurve, soft, numHandMade };
-constexpr int numCategories = numHandMade + generated::numFolders;
+constexpr int extraCategory = numHandMade + generated::numFolders;
+constexpr int numCategories = extraCategory + 1;
 const char* categoryNames[] { "BASIC", "SQUARES", "STEPS", "TRIANGLES", "ANGLES", "HARD + CURVE", "SOFT" };
 
 const std::vector<Preset>& presets()
@@ -193,21 +195,40 @@ const std::vector<Preset>& presets()
             return fromGrid (g);
         }() });
         p.push_back ({ soft, "Pluck soft", grid ({ { 0, 0, -2.5f }, { 4, 16, 2.5f }, { 16, 0 } }) });
+        auto parse = [] (const char* text)
+        {
+            Shape shape;
+            for (const auto& point : juce::StringArray::fromTokens (text, ";", ""))
+            {
+                const auto v = juce::StringArray::fromTokens (point, " ", "");
+                if (v.size() == 3) shape.push_back ({ v[0].getFloatValue(), v[1].getFloatValue(), v[2].getFloatValue() });
+            }
+            return shape;
+        };
         // ---- GEN folders: shapes from the generator (GeneratedShapes.h) -----------------------------------
         std::array<int, (size_t) juce::jmax (1, generated::numFolders)> counts {};
         for (const auto& e : generated::entries)
         {
             if (e.folder < 0 || e.folder >= generated::numFolders) continue;
-            Shape shape;
-            for (const auto& point : juce::StringArray::fromTokens (e.points, ";", ""))
-            {
-                const auto v = juce::StringArray::fromTokens (point, " ", "");
-                if (v.size() == 3) shape.push_back ({ v[0].getFloatValue(), v[1].getFloatValue(), v[2].getFloatValue() });
-            }
+            const auto shape = parse (e.points);
             if (shape.size() < 2) continue;
             const int n = ++counts[(size_t) e.folder];
             p.push_back ({ numHandMade + e.folder, juce::String (generated::folderWords[e.folder]) + " " + juce::String (n).paddedLeft ('0', 2), shape });
         }
+        // ---- EXTRA: every shape from the generator's preview sheets (ExtraShapes.h); each one is also
+        // added to the hand-made folder it fits, after that folder's own shapes. ---------------------------
+        int extras = 0;
+        std::vector<Preset> sorted;
+        for (const auto& e : extra::entries)
+        {
+            if (e.type < squares || e.type >= numHandMade) continue;
+            const auto shape = parse (e.points);
+            if (shape.size() < 2) continue;
+            const auto name = "Extra " + juce::String (++extras).paddedLeft ('0', 3);
+            p.push_back ({ extraCategory, name, shape });
+            sorted.push_back ({ e.type, name, shape });
+        }
+        for (auto& e : sorted) p.push_back (std::move (e));
         return p;
     }();
     return list;
@@ -221,9 +242,19 @@ int numPresetCategories() { return numCategories; }
 juce::String presetCategoryName (int c)
 {
     if (c >= 0 && c < numHandMade) return categoryNames[c];
-    return c >= numHandMade && c < numCategories ? generated::folderNames[c - numHandMade] : "";
+    if (c == extraCategory) return "EXTRA";
+    return c >= numHandMade && c < extraCategory ? generated::folderNames[c - numHandMade] : "";
 }
-bool isGeneratedCategory (int c) { return c >= numHandMade && c < numCategories; }
+bool isGeneratedCategory (int c) { return c >= numHandMade && c < extraCategory; }
+bool isExtraCategory (int c) { return c == extraCategory; }
+int numHandMadeShapes (int c)
+{
+    // The hand-made shapes of a folder come first, before the EXTRA shapes added to it.
+    int n = 0;
+    for (const auto& preset : presets())
+        if (preset.category == c && ! preset.name.startsWith ("Extra ")) ++n;
+    return n;
+}
 int presetCategory (int i) { return i >= 0 && i < numPresets() ? presets()[(size_t) i].category : -1; }
 std::vector<int> presetsIn (int category)
 {

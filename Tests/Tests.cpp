@@ -1263,6 +1263,40 @@ int main (int argc, char** argv)
                     require (page.getPalettePage() == pages - 1, "Pages stop at the last one");
                 }
                 require (generatedFolders >= 5, "The palette has the generated folders");
+                // USER: SAVE keeps the LFO's shape in the USER folder; rename, delete, pages.
+                {
+                    std::set<juce::String> existing;
+                    for (const auto& e : triad::userShapes::load()) existing.insert (e.file.getFullPathName());
+                    auto mine = [&existing]
+                    {
+                        std::vector<triad::userShapes::Entry> list;
+                        for (auto& e : triad::userShapes::load()) if (existing.count (e.file.getFullPathName()) == 0) list.push_back (e);
+                        return list;
+                    };
+                    page.getEditor().apply ([] (const mod::Shape&) { return mod::preset (5); });
+                    const auto savedShape = preview.getLfoInfo (0, lfoIndex).shape;
+                    const auto file = page.saveShapeToUser ("Triad test shape");
+                    require (file.existsAsFile() && file.getFileNameWithoutExtension() == "Triad test shape", "SAVE writes the shape to the USER folder");
+                    require (page.getPaletteCategory() == LfoPage::userFolder, "After saving, the palette shows USER");
+                    bool shown = false;
+                    for (int k = 0; k < page.getNumPaletteButtons(); ++k) shown = shown || page.getPaletteButton (k)->getName() == "Triad test shape";
+                    require (shown, "The savedShape shape is on the USER page shown");
+                    const auto second = page.saveShapeToUser ("Triad test shape");
+                    require (second.getFileNameWithoutExtension() == "Triad test shape 2", "Saving under a taken name keeps both");
+                    require (mine().size() == 2 && mine()[0].shape == savedShape, "USER shapes come back exactly as savedShape");
+                    page.getEditor().apply ([] (const mod::Shape&) { return mod::flat (0.5f); });
+                    for (int k = 0; k < page.getNumPaletteButtons(); ++k)
+                        if (page.getPaletteButton (k)->getName() == "Triad test shape") page.getPaletteButton (k)->onClick();
+                    require (preview.getLfoInfo (0, lfoIndex).shape == savedShape, "A USER shape replaces the LFO's shape");
+                    require (triad::userShapes::rename (second, "Triad test renamed") && ! second.exists(), "Rename a USER shape");
+                    for (const auto& e : mine()) require (triad::userShapes::remove (e.file), "Delete a USER shape");
+                    require (mine().empty(), "Deleted USER shapes are gone");
+                    page.setPaletteCategory (0);
+                    page.setPaletteCategory (LfoPage::userFolder);
+                    require (page.getPaletteCategory() == LfoPage::userFolder && page.getNumPaletteButtons() == (int) existing.size()
+                             && page.getNumPalettePages() == juce::jmax (1, ((int) existing.size() + LfoPage::paletteSize - 1) / LfoPage::paletteSize),
+                             "The USER folder lists the savedShape shapes, a page at a time");
+                }
                 // The mouse wheel over the palette turns the pages.
                 for (int c = 0; c < mod::numPresetCategories(); ++c)
                     if (mod::isGeneratedCategory (c)) { page.setPaletteCategory (c); break; }

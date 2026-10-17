@@ -43,13 +43,19 @@ private:
     juce::Colour colour;
 };
 
-// A preset shape in the palette under the grid, drawn as a small picture.
+// A preset shape in the palette under the grid, drawn as a small picture. Right-click: onMenu (USER shapes).
 class ShapeButton final : public juce::Button
 {
 public:
-    ShapeButton (int index, juce::Colour c) : Button (mod::presetName (index)), shape (mod::preset (index)), colour (c)
+    ShapeButton (const juce::String& name, mod::Shape s, juce::Colour c) : Button (name), shape (std::move (s)), colour (c)
     {
-        setTooltip (mod::presetName (index) + " (replaces the shape)");
+        setTooltip (name + " (replaces the shape)");
+    }
+    std::function<void()> onMenu;
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu() && onMenu) { onMenu(); return; }
+        Button::mouseDown (e);
     }
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
@@ -518,6 +524,46 @@ void ShapeEditor::showMenu()
 }
 
 // ---- LFO page -----------------------------------------------------------------------------------------
+// ---- USER folder ------------------------------------------------------------------------------------------
+namespace triad::userShapes
+{
+static constexpr const char* extension = ".triadlfo";
+std::vector<Entry> load()
+{
+    std::vector<Entry> list;
+    for (const auto& f : TriadSettings::lfoShapeFolder().findChildFiles (juce::File::findFiles, false, juce::String ("*") + extension))
+    {
+        auto shape = mod::fromText (f.loadFileAsString());
+        if (shape.size() >= 2) list.push_back ({ f.getFileNameWithoutExtension(), std::move (shape), f });
+    }
+    std::sort (list.begin(), list.end(), [] (const Entry& a, const Entry& b) { return a.name.compareNatural (b.name) < 0; });
+    return list;
+}
+static juce::File freeFile (const juce::String& wanted, const juce::File& except = {})
+{
+    const auto folder = TriadSettings::lfoShapeFolder();
+    auto base = juce::File::createLegalFileName (wanted.trim());
+    if (base.isEmpty()) base = "My shape";
+    auto f = folder.getChildFile (base + extension);
+    for (int n = 2; f.exists() && f != except; ++n) f = folder.getChildFile (base + " " + juce::String (n) + extension);
+    return f;
+}
+juce::File save (const juce::String& name, const mod::Shape& shape)
+{
+    if (shape.size() < 2 || ! TriadSettings::lfoShapeFolder().createDirectory()) return {};
+    const auto f = freeFile (name);
+    return f.replaceWithText (mod::toText (shape)) ? f : juce::File();
+}
+bool rename (const juce::File& f, const juce::String& newName)
+{
+    return f.existsAsFile() && f.moveFileTo (freeFile (newName, f));
+}
+bool remove (const juce::File& f)
+{
+    return f.existsAsFile() && (f.moveToTrash() || f.deleteFile());
+}
+}
+
 LfoPage::LfoPage (TriadProcessor& p) : processor (p), editor (p)
 {
     setTitle ("LFO");
@@ -562,7 +608,19 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p), editor (p)
     categoryButton.setTooltip ("Preset shapes: choose a category");
     categoryButton.onClick = [this] { showCategoryMenu(); };
     addAndMakeVisible (categoryButton);
-    paletteCategory = juce::jlimit (0, mod::numPresetCategories() - 1, settings->getPaletteCategory());
+    {
+        const int saved = settings->getPaletteCategory();
+        paletteCategory = saved == userFolder ? userFolder : juce::jlimit (0, mod::numPresetCategories() - 1, saved);
+    }
+    saveButton.setTooltip ("Save this LFO's shape to the USER folder (it is kept for every project)");
+    saveButton.onClick = [this]
+    {
+        const auto initial = "My shape " + juce::String ((int) triad::userShapes::load().size() + 1);
+        if (askName == nullptr) { saveShapeToUser (initial); return; }
+        juce::Component::SafePointer<LfoPage> safe (this);
+        askName ("Save LFO shape to USER", initial, [safe] (const juce::String& name) { if (safe != nullptr) safe->saveShapeToUser (name); });
+    };
+    addAndMakeVisible (saveButton);
     prevPage.onClick = [this] { setPalettePage (palettePage - 1); };
     nextPage.onClick = [this] { setPalettePage (palettePage + 1); };
     pageLabel.setJustificationType (juce::Justification::centred);
@@ -640,40 +698,58 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p), editor (p)
 }
 LfoPage::~LfoPage() = default;
 
+std::vector<LfoPage::PaletteShape> LfoPage::paletteShapes() const
+{
+    std::vector<PaletteShape> list;
+    if (paletteCategory == userFolder)
+        for (auto& e : triad::userShapes::load()) list.push_back ({ e.name, std::move (e.shape), e.file });
+    else
+        for (const int i : mod::presetsIn (paletteCategory)) list.push_back ({ mod::presetName (i), mod::preset (i), {} });
+    return list;
+}
+juce::String LfoPage::paletteFolderName() const
+{
+    return paletteCategory == userFolder ? juce::String ("USER") : mod::presetCategoryName (paletteCategory);
+}
 void LfoPage::rebuildPalette()
 {
     for (auto& b : presetButtons) removeChildComponent (b.get());
     presetButtons.clear();
-    const auto list = mod::presetsIn (paletteCategory);
-    palettePage = juce::jlimit (0, getNumPalettePages() - 1, palettePage);
+    const auto list = paletteShapes();
+    const int pages = juce::jmax (1, ((int) list.size() + paletteSize - 1) / paletteSize);
+    palettePage = juce::jlimit (0, pages - 1, palettePage);
     for (int k = palettePage * paletteSize; k < juce::jmin ((int) list.size(), (palettePage + 1) * paletteSize); ++k)
     {
-        const int i = list[(size_t) k];
-        auto b = std::make_unique<ShapeButton> (i, accent);
-        b->onClick = [this, i] { editor.apply ([i] (const mod::Shape&) { return mod::preset (i); }); };
+        const auto& entry = list[(size_t) k];
+        auto b = std::make_unique<ShapeButton> (entry.name, entry.shape, accent);
+        b->onClick = [this, shape = entry.shape] { editor.apply ([shape] (const mod::Shape&) { return shape; }); };
+        if (entry.file != juce::File())
+        {
+            b->setTooltip (entry.name + " (replaces the shape; right-click to rename or delete)");
+            b->onMenu = [this, file = entry.file] { showUserShapeMenu (file); };
+        }
         addAndMakeVisible (*b);
         presetButtons.push_back (std::move (b));
     }
-    categoryButton.setButtonText (mod::presetCategoryName (paletteCategory) + u8 (" \xe2\x96\xbe"));
-    const int pages = getNumPalettePages();
+    categoryButton.setButtonText (paletteFolderName() + u8 (" \xe2\x96\xbe"));
     pageLabel.setText (juce::String (palettePage + 1) + "/" + juce::String (pages), juce::dontSendNotification);
     prevPage.setEnabled (palettePage > 0);
     nextPage.setEnabled (palettePage < pages - 1);
     resized();
+    repaint();
 }
 int LfoPage::getNumPalettePages() const
 {
-    return juce::jmax (1, ((int) mod::presetsIn (paletteCategory).size() + paletteSize - 1) / paletteSize);
+    return juce::jmax (1, ((int) paletteShapes().size() + paletteSize - 1) / paletteSize);
 }
 void LfoPage::setPaletteCategory (int category)
 {
-    category = juce::jlimit (0, mod::numPresetCategories() - 1, category);
+    category = category == userFolder ? userFolder : juce::jlimit (0, mod::numPresetCategories() - 1, category);
     if (category == paletteCategory && ! presetButtons.empty()) return;
     paletteCategory = category;
     palettePage = 0;
     settings->setPaletteCategory (category);
     rebuildPalette();
-    repaint();
 }
 void LfoPage::setPalettePage (int page)
 {
@@ -681,7 +757,6 @@ void LfoPage::setPalettePage (int page)
     if (page == palettePage) return;
     palettePage = page;
     rebuildPalette();
-    repaint();
 }
 void LfoPage::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
 {
@@ -693,26 +768,74 @@ void LfoPage::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelD
     }
     Component::mouseWheelMove (e, wheel);
 }
+juce::File LfoPage::saveShapeToUser (const juce::String& name)
+{
+    const auto file = triad::userShapes::save (name, processor.getLfoInfo (band, lfo).shape);
+    if (file == juce::File())
+    {
+        processor.setStatus ("Could not save the LFO shape");
+        return {};
+    }
+    processor.setStatus ("Saved LFO shape \"" + file.getFileNameWithoutExtension() + "\" to USER");
+    paletteCategory = userFolder;
+    settings->setPaletteCategory (userFolder);
+    const auto list = paletteShapes();
+    for (int k = 0; k < (int) list.size(); ++k)
+        if (list[(size_t) k].file == file) palettePage = k / paletteSize;
+    rebuildPalette();
+    return file;
+}
+void LfoPage::showUserShapeMenu (const juce::File& file)
+{
+    enum { renameId = 1, deleteId, folderId };
+    juce::PopupMenu menu;
+    menu.addSectionHeader (file.getFileNameWithoutExtension());
+    menu.addItem (renameId, "Rename...", askName != nullptr);
+    menu.addItem (deleteId, "Delete");
+    menu.addSeparator();
+    menu.addItem (folderId, "Show the USER folder");
+    juce::Component::SafePointer<LfoPage> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition(), [safe, file] (int choice)
+    {
+        if (safe == nullptr) return;
+        if (choice == renameId && safe->askName != nullptr)
+            safe->askName ("Rename LFO shape", file.getFileNameWithoutExtension(), [safe, file] (const juce::String& name)
+            {
+                if (safe != nullptr && triad::userShapes::rename (file, name)) safe->rebuildPalette();
+            });
+        else if (choice == deleteId) { triad::userShapes::remove (file); safe->rebuildPalette(); }
+        else if (choice == folderId) { TriadSettings::lfoShapeFolder().createDirectory(); TriadSettings::lfoShapeFolder().revealToUser(); }
+    });
+}
 void LfoPage::showCategoryMenu()
 {
+    enum { userId = userFolder + 1, saveId = 5000, folderId };
     juce::PopupMenu menu;
+    auto add = [&] (int id, const juce::String& name, int count, bool ticked)
+    {
+        const int pages = (count + paletteSize - 1) / paletteSize;
+        menu.addItem (id, name + "  (" + juce::String (count) + (pages > 1 ? ", " + juce::String (pages) + " pages)" : ")"), true, ticked);
+    };
+    menu.addSectionHeader ("SHAPES BY TYPE");
     bool generatedHeader = false;
-    menu.addSectionHeader ("PRESET SHAPES");
     for (int c = 0; c < mod::numPresetCategories(); ++c)
     {
-        if (mod::isGeneratedCategory (c) && ! generatedHeader)
-        {
-            menu.addSectionHeader ("GENERATED (FROM THE DICE)");
-            generatedHeader = true;
-        }
-        const int count = (int) mod::presetsIn (c).size(), pages = (count + paletteSize - 1) / paletteSize;
-        menu.addItem (c + 1, mod::presetCategoryName (c) + "  (" + juce::String (count) + (pages > 1 ? ", " + juce::String (pages) + " pages)" : ")"),
-                      true, c == paletteCategory);
+        if (mod::isGeneratedCategory (c) && ! generatedHeader) { menu.addSectionHeader ("GENERATED (FROM THE DICE)"); generatedHeader = true; }
+        if (mod::isExtraCategory (c)) menu.addSectionHeader ("EXTRA (EVERY PREVIEW SHAPE)");
+        add (c + 1, mod::presetCategoryName (c), (int) mod::presetsIn (c).size(), c == paletteCategory);
     }
+    menu.addSectionHeader ("YOUR SHAPES");
+    add (userId, "USER", (int) triad::userShapes::load().size(), paletteCategory == userFolder);
+    menu.addItem (saveId, "Save this LFO's shape to USER...");
+    menu.addItem (folderId, "Show the USER folder");
     juce::Component::SafePointer<LfoPage> safe (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&categoryButton), [safe] (int choice)
     {
-        if (safe != nullptr && choice > 0) safe->setPaletteCategory (choice - 1);
+        if (safe == nullptr || choice <= 0) return;
+        if (choice == saveId) safe->saveButton.onClick();
+        else if (choice == folderId) { TriadSettings::lfoShapeFolder().createDirectory(); TriadSettings::lfoShapeFolder().revealToUser(); }
+        else if (choice == userId) safe->setPaletteCategory (userFolder);
+        else safe->setPaletteCategory (choice - 1);
     });
 }
 triad::mod::Style LfoPage::getGeneratorStyle() const
@@ -916,6 +1039,8 @@ void LfoPage::resized()
     gridButton.setBounds (toolbar.removeFromLeft (84));
     toolbar.removeFromLeft (3);
     snapButton.setBounds (toolbar.removeFromLeft (52));
+    toolbar.removeFromLeft (10);
+    saveButton.setBounds (toolbar.removeFromLeft (56));
     redoButton.setBounds (toolbar.removeFromRight (30));
     toolbar.removeFromRight (3);
     undoButton.setBounds (toolbar.removeFromRight (30));
@@ -957,6 +1082,13 @@ void LfoPage::resized()
 }
 void LfoPage::paint (juce::Graphics& g)
 {
+    if (paletteCategory == userFolder && presetButtons.empty())
+    {
+        g.setColour (dimTextColour);
+        g.setFont (juce::FontOptions (11.5f));
+        g.drawText ("No saved shapes yet: press SAVE to keep this LFO's shape here", paletteArea.withTrimmedLeft (226),
+                    juce::Justification::centredLeft);
+    }
     g.setColour (panel);
     g.fillRoundedRectangle (routingArea.toFloat(), 7.0f);
     const auto info = processor.getLfoInfo (band, lfo);
