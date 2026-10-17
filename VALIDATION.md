@@ -1,5 +1,19 @@
 # Validation — Triad
 
+## Triad v4 (0.4.3) on macOS — 2026-10-17
+
+Commit `801c304`, run 39027201610 (macos-14 runner, virtual Apple M1, 3 cores). New in 0.4.3: no dropouts from
+Triad's latency timer or from saving; the live vocal monitoring test (TriadStress section 4).
+
+| Check | Result |
+| --- | --- |
+| Installer `Triad-v4-0.4.3-macOS-AppleSilicon.pkg` | Built and installed; AU VALIDATION SUCCEEDED; pluginval SUCCESS (VST3 and AU); integration tests passed |
+| Stress tests (test effects; 51 real effects, 5 x 3,000 edits) | All passed; no NaN/Inf output |
+| Latency Triad adds | 0 samples at every slope (6-96 dB/oct) and band count (3 and 10 bands); measured with an impulse |
+| Effects that add latency (11 of 51) | BYOD 4 samples, CHOWTapeModel 39, FILT-R 49, AUPeakLimiter 96, AUDynamicsProcessor and AUMultibandCompressor 256, AUPitch 3,719, AUNewPitch 4,096; Triad reports exactly the largest band total (measured: AUNewPitch, 4,096) |
+| Crossover phase (group delay of the bands added back) | 24 dB/oct: 2.0 ms at 250 Hz, 0.3 ms at 1 kHz; 96 dB/oct: 12.3 ms at 250 Hz, 1.1 ms at 1 kHz; 6 dB/oct: none |
+| Real-time, 48 kHz, window open, autosave every second | Default 3 bands: 0.5-1.5% of each buffer's time at 32-256 samples; 5-effect vocal chain with LFOs: 2-6%; 10 bands at 96 dB/oct: 11-35%. Silenced blocks (dropouts): 0 in every case (before 0.4.3: about 1 in 4,500 with the window open) |
+
 ## Triad v4 (0.4.2) on macOS — 2026-10-17
 
 Commit `d60948b`, run 39010733817 (macos-14 runner; same plug-in as `bd68d52`, run 39010122678, which also passed). New in 0.4.2: EXTRA and USER folders in the LFO palette.
