@@ -373,13 +373,13 @@ void CrossoverDisplay::setMeters (float input, float output, float cpu, double d
     cpuShown += k * (cpu - cpuShown);
     liveButton.setToggleState (processor.isLiveMode(), juce::dontSendNotification);
 }
-void CrossoverDisplay::setLatency (int samples, double sampleRate, const juce::String& breakdown)
+void CrossoverDisplay::setLatency (int latency, double sampleRate, const juce::String& breakdown)
 {
-    if (samples != latencySamples || ! juce::exactlyEqual (sampleRate, latencyRate)) repaint (getWidth() - (int) meterWidth - 24, 0, (int) meterWidth + 24, getHeight());
-    latencySamples = samples;
+    if (latency != latencySamples || ! juce::exactlyEqual (sampleRate, latencyRate)) repaint (getWidth() - (int) meterWidth - 24, 0, (int) meterWidth + 24, getHeight());
+    latencySamples = latency;
     latencyRate = sampleRate > 0.0 ? sampleRate : 48000.0;
-    meterTip.setTooltip ("Latency: " + getLatencyText() + (samples == 0 ? juce::String (" - Triad adds none, safe to sing or play through.")
-                                                                         : " (" + juce::String (samples) + " samples), from: " + breakdown + ".")
+    meterTip.setTooltip ("Latency: " + getLatencyText() + (latency == 0 ? juce::String (" - Triad adds none, safe to sing or play through.")
+                                                                         : " (" + juce::String (latency) + " samples) - the effects' own latency; Triad adds none.\n" + breakdown)
                          + "\nCPU: the share of each audio buffer's time Triad needs (" + juce::String (juce::roundToInt (cpuShown * 100.0f)) + "% now).");
 }
 juce::String CrossoverDisplay::getLatencyText() const

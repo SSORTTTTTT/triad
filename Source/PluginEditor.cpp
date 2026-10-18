@@ -114,6 +114,10 @@ TriadEditor::TriadEditor (TriadProcessor& p)
     content.addAndMakeVisible (presetButton);
     gearButton.onClick = [this] { showGearMenu(); };
     content.addAndMakeVisible (gearButton);
+    undoButton.onClick = [this] { undo(); };
+    redoButton.onClick = [this] { redo(); };
+    content.addAndMakeVisible (undoButton);
+    content.addAndMakeVisible (redoButton);
     content.addAndMakeVisible (bandsPage);
     bandsPage.addAndMakeVisible (frequencyDisplay);
     frequencyDisplay.onEditBandLfo = [this] (int band) { showLfo (band, -1); };
@@ -164,7 +168,7 @@ void TriadEditor::paintContent (juce::Graphics& g)
     g.setColour (accent); g.setFont (juce::FontOptions (28.0f, juce::Font::bold));
     g.drawText ("TRIAD", margin, 7, 110, 38, juce::Justification::centredLeft);
     g.setColour (juce::Colour (0xffaeb6ab)); g.setFont (juce::FontOptions (11.5f));
-    g.drawText (juce::String ("VST3 + AU  /  V4  ") + TRIAD_VERSION, logicalWidth - margin - 170, 13, 170, 26, juce::Justification::centredRight);
+    g.drawText (juce::String ("VST3 + AU  /  ") + juce::String (TRIAD_PRODUCT_NAME).fromLastOccurrenceOf (" ", false, false).toUpperCase() + "  " + TRIAD_VERSION, logicalWidth - margin - 170, 13, 170, 26, juce::Justification::centredRight);
 }
 void TriadEditor::layoutContent()
 {
@@ -172,6 +176,8 @@ void TriadEditor::layoutContent()
     for (auto* t : tabButtons) { t->setBounds (x, 11, 84, 30); x += 88; }
     presetButton.setBounds (420, 11, 260, 30);
     gearButton.setBounds (logicalWidth - margin - 170 - 40, 12, 30, 28);
+    redoButton.setBounds (gearButton.getX() - 38, 12, 30, 28);
+    undoButton.setBounds (redoButton.getX() - 34, 12, 30, 28);
     const auto page = juce::Rectangle<int> (margin, headerHeight + 8, logicalWidth - 2 * margin, logicalHeight - headerHeight - 8 - 30);
     bandsPage.setBounds (page);
     lfoPage.setBounds (page);
@@ -228,14 +234,24 @@ void TriadEditor::timerCallback()
 {
     if (processor.getBandCount() != builtCount) rebuildStrips();
     {
-        // The latency meter's tooltip names the effects that add latency.
-        juce::StringArray from;
-        const double sr = processor.getSampleRateForDisplay();
+        // The latency meter's tooltip: each band's latency and the effects in it, and all of them added up.
+        // Bands play side by side, so the slowest band sets Triad's delay (the others wait for it).
+        juce::StringArray lines;
+        const double sr = juce::jmax (1.0, processor.getSampleRateForDisplay());
+        auto ms = [sr] (int samples) { return juce::String (1000.0 * samples / sr, 1) + " ms"; };
+        int all = 0;
         for (int b = 0; b < builtCount; ++b)
+        {
+            juce::StringArray effects;
+            int chain = 0;
             for (int s = 0; s < processor.getSlotCount (b); ++s)
-                if (const auto info = processor.getSlotInfo (b, s); info.latency > 0)
-                    from.add (info.name + " (band " + juce::String (b + 1) + ", " + juce::String (1000.0 * info.latency / juce::jmax (1.0, sr), 1) + " ms)");
-        frequencyDisplay.setLatency (processor.getLatencySamples(), sr, from.joinIntoString (", "));
+                if (const auto info = processor.getSlotInfo (b, s); info.latency > 0) { effects.add (info.name + " " + ms (info.latency)); chain += info.latency; }
+            all += chain;
+            if (chain > 0) lines.add ("Band " + juce::String (b + 1) + ": " + ms (chain) + " (" + effects.joinIntoString (" + ") + ")");
+        }
+        if (! lines.isEmpty())
+            lines.add ("All effects added up: " + ms (all) + ". Bands play side by side, so the slowest band sets the delay you hear.");
+        frequencyDisplay.setLatency (processor.getLatencySamples(), sr, lines.joinIntoString ("\n"));
     }
     if (tab == Tab::bands)
     {
@@ -246,6 +262,15 @@ void TriadEditor::timerCallback()
     else if (tab == Tab::lfo) lfoPage.refresh();
     else matrixPage.refresh();
     if (const auto name = processor.getPresetName(); name != presetButton.presetName) { presetButton.presetName = name; presetButton.repaint(); }
+    {
+        const int back = processor.getUndoSteps(), forward = processor.getRedoSteps();
+        undoButton.setEnabled (processor.canUndo());
+        redoButton.setEnabled (processor.canRedo());
+        undoButton.setTooltip (back > 0 ? "Undo the last change (" + juce::String (back) + " step" + (back == 1 ? "" : "s") + " back)"
+                                        : juce::String ("Undo: nothing to undo yet"));
+        redoButton.setTooltip (forward > 0 ? "Redo (" + juce::String (forward) + " step" + (forward == 1 ? "" : "s") + " forward)"
+                                           : juce::String ("Redo: nothing to redo"));
+    }
     juce::String text;
     for (int b = 0; b < builtCount && text.isEmpty(); ++b)
         for (int s = 0; s < processor.getSlotCount (b); ++s)
@@ -256,7 +281,7 @@ void TriadEditor::timerCallback()
     if (text.isEmpty())
         text = tab == Tab::lfo ? "Each knob has its own LFO: draw on the grid and the knob follows it in time with your song."
              : tab == Tab::matrix ? "Each row: an LFO (source), how much it moves its destination (amount), and the knob it moves."
-             : "Click a slot to load an effect, + to add a slot, ~ for its LFO. Drag a band's header to move its effects to another band.";
+             : "Click a slot to load an effect, + to add a slot, ~ for its LFO. Drag an effect up or down to reorder it, or a band's header to move the band.";
     status.setText (text, juce::dontSendNotification);
 }
 void TriadEditor::animate (double frameTime)
@@ -273,6 +298,16 @@ void TriadEditor::animate (double frameTime)
 void TriadEditor::changeListenerCallback (juce::ChangeBroadcaster*) { timerCallback(); }
 void TriadEditor::setCrossoverFrequency (int index, float hz) { frequencyDisplay.setCrossoverValue (index, hz); }
 
+void TriadEditor::undo()
+{
+    processor.undo();
+    timerCallback();   // the bands, slots and pages as they are now
+}
+void TriadEditor::redo()
+{
+    processor.redo();
+    timerCallback();
+}
 void TriadEditor::showLfo (int band, int slot)
 {
     setTab (Tab::lfo);
@@ -520,7 +555,7 @@ void TriadEditor::showPresetMenu()
 }
 void TriadEditor::showBandMenu (int band, juce::Component& target, bool atMouse)
 {
-    enum { saveId = 1, lfoId, leftId, rightId, removeId, folderId, copyId, pasteId, firstChain = 100 };
+    enum { saveId = 1, lfoId, leftId, rightId, removeId, folderId, copyId, pasteId, pastePluginId, firstChain = 100 };
     const auto files = filesIn (TriadSettings::chainFolder(), "*.triadchain");
     const int count = processor.getBandCount();
     juce::PopupMenu menu, chains;
@@ -529,6 +564,8 @@ void TriadEditor::showBandMenu (int band, juce::Component& target, bool atMouse)
     menu.addItem (pasteId, TriadProcessor::hasCopiedBand() ? "Paste band state (" + TriadProcessor::copiedBandDescription() + ")"
                                                            : juce::String ("Paste band state"),
                   TriadProcessor::hasCopiedBand());
+    if (TriadProcessor::hasCopiedEffect())
+        menu.addItem (pastePluginId, "Paste plugin (" + TriadProcessor::copiedEffectName() + ") into a new slot");
     menu.addSeparator();
     menu.addItem (saveId, "Save chain as preset...");
     for (int i = 0; i < files.size(); ++i) chains.addItem (firstChain + i, files[i].getFileNameWithoutExtension());
@@ -553,10 +590,11 @@ void TriadEditor::showBandMenu (int band, juce::Component& target, bool atMouse)
 }
 void TriadEditor::bandMenuChoice (int band, int choice, const juce::Array<juce::File>& files)
 {
-    enum { saveId = 1, lfoId, leftId, rightId, removeId, folderId, copyId, pasteId, firstChain = 100 };
+    enum { saveId = 1, lfoId, leftId, rightId, removeId, folderId, copyId, pasteId, pastePluginId, firstChain = 100 };
     juce::Component::SafePointer<TriadEditor> safe (this);
     if (choice == copyId) processor.copyBandState (band);
     else if (choice == pasteId) processor.pasteBandState (band);
+    else if (choice == pastePluginId) processor.pasteEffectState (band, processor.getSlotCount (band));
     else if (choice == saveId)
         prompt.show ("Save band " + juce::String (band + 1) + " chain", "Band " + juce::String (band + 1) + " chain",
                      [safe, band] (const juce::String& name) { if (safe != nullptr) safe->saveChain (band, name); });

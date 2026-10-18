@@ -50,7 +50,7 @@ void SlotRow::update (const TriadProcessor::SlotInfo& next, int slotCount)
     const auto latencyNote = info.reportedLatency <= 0 ? juce::String()
                            : info.liveBypassed ? "\nLIVE is on: passed by, because it adds " + latencyText (info.reportedLatency) + " of latency"
                                                : "\nAdds " + latencyText (info.reportedLatency) + " of latency (" + juce::String (info.reportedLatency) + " samples)";
-    setTooltip (info.loaded ? label + " (" + info.format + ")  -  click to open, arrow for options" + latencyNote
+    setTooltip (info.loaded ? label + " (" + info.format + ")  -  click to open, arrow for options, drag to move" + latencyNote
                             : info.hasContent ? label + "  -  " + (info.pending ? juce::String ("loading...") : info.status)
                                               : "Slot " + juce::String (slot + 1) + "  -  click to load an effect");
     knob.setTooltip (label + " mix (dry/wet). Double-click for 100%.");
@@ -127,6 +127,11 @@ void SlotRow::animate()
 }
 void SlotRow::paintOverChildren (juce::Graphics& g)
 {
+    if (lifted)
+    {
+        g.setColour (colour);
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.75f), 3.0f, 1.5f);
+    }
     if (! info.modulated) return;
     // Where the LFO has the mix right now: a dot riding round the knob.
     const auto k = knob.getBounds().toFloat();
@@ -138,8 +143,17 @@ void SlotRow::paintOverChildren (juce::Graphics& g)
     g.setColour (juce::Colours::white);
     g.fillEllipse (juce::Rectangle<float> (4.5f, 4.5f).withCentre (dot));
 }
+void SlotRow::mouseDown (const juce::MouseEvent& e)
+{
+    if (auto* strip = findParentComponentOfClass<BandStrip>()) strip->slotDrag (slot, e, 0);
+}
+void SlotRow::mouseDrag (const juce::MouseEvent& e)
+{
+    if (auto* strip = findParentComponentOfClass<BandStrip>()) strip->slotDrag (slot, e, 1);
+}
 void SlotRow::mouseUp (const juce::MouseEvent& e)
 {
+    if (auto* strip = findParentComponentOfClass<BandStrip>(); strip != nullptr && strip->slotDrag (slot, e, 2)) return;   // dropped
     if (! e.mouseWasClicked()) return;
     if (e.mods.isPopupMenu() || arrowArea().contains (e.getPosition())) { showMenu(); return; }
     if (ledArea().contains (e.getPosition())) { processor.setSlotEnabled (band, slot, ! info.enabled); return; }
@@ -149,9 +163,11 @@ void SlotRow::mouseUp (const juce::MouseEvent& e)
 }
 void SlotRow::showMenu()
 {
-    // A band's only, empty slot has nothing to manage: go straight to the effect list.
-    if (! info.hasContent && count <= 1) { host.chooseEffect (band, slot, *this); return; }
-    enum { menuOpen = 1, menuReplace, menuUp, menuDown, menuToggle, menuRemove, menuLfo, menuFavourite };
+    // A band's only, empty slot has nothing to manage: go straight to the effect list (unless a plug-in was
+    // copied, which can be pasted into it).
+    const auto copied = TriadProcessor::copiedEffectName();
+    if (! info.hasContent && count <= 1 && copied.isEmpty()) { host.chooseEffect (band, slot, *this); return; }
+    enum { menuOpen = 1, menuReplace, menuUp, menuDown, menuToggle, menuRemove, menuLfo, menuFavourite, menuCopyEffect, menuPasteEffect };
     juce::PopupMenu menu;
     menu.addSectionHeader (info.name.isNotEmpty() ? info.name : "Slot " + juce::String (slot + 1));
     if (info.hasContent) menu.addItem (menuOpen, "Open window", info.loaded);
@@ -159,6 +175,12 @@ void SlotRow::showMenu()
     menu.addItem (menuLfo, "Edit LFO for this mix knob...");
     const bool favourite = info.loaded && host.isFavourite (info.format, info.name);
     if (info.loaded) menu.addItem (menuFavourite, favourite ? "Remove from favourites" : "Add to favourites");
+    menu.addSeparator();
+    // Copy plugin state: the effect with every knob as it is now, to paste into a slot of any band.
+    menu.addItem (menuCopyEffect, "Copy plugin state", info.loaded && ! info.pending);
+    menu.addItem (menuPasteEffect, copied.isEmpty() ? juce::String ("Paste plugin state")
+                                                    : (info.hasContent ? "Paste plugin state (" : "Paste plugin (") + copied + ")",
+                  copied.isNotEmpty());
     menu.addSeparator();
     menu.addItem (menuUp, "Move up", slot > 0);
     menu.addItem (menuDown, "Move down", slot < count - 1);
@@ -181,6 +203,8 @@ void SlotRow::showMenu()
             case menuRemove:    self.processor.removeSlot (self.band, self.slot); break;
             case menuLfo:       self.host.showLfo (self.band, self.slot); break;
             case menuFavourite: self.host.setFavourite (self.info.format, self.info.name, ! favourite); break;
+            case menuCopyEffect: self.processor.copyEffectState (self.band, self.slot); break;
+            case menuPasteEffect: self.processor.pasteEffectState (self.band, self.slot); break;
             default: break;
         }
     });
@@ -286,14 +310,61 @@ void BandStrip::rebuildRows (int count)
 void BandStrip::layoutRows()
 {
     const int width = slotView.getWidth() - (slotView.isVerticalScrollBarShown() ? 8 : 0);
-    int y = 0;
-    for (auto& row : rows)
+    const int step = rowHeight + rowGap;
+    // While a slot is dragged, the others make room where it would land.
+    const bool dragging = slotDragState.active && slotDragState.slot >= 0 && slotDragState.slot < (int) rows.size();
+    int position = 0;
+    for (int i = 0; i < (int) rows.size(); ++i)
     {
-        row->setBounds (0, y, juce::jmax (40, width), rowHeight);
-        y += rowHeight + rowGap;
+        if (dragging && i == slotDragState.slot) continue;
+        if (dragging && position == slotDragState.target) ++position;
+        rows[(size_t) i]->setBounds (0, position * step, juce::jmax (40, width), rowHeight);
+        ++position;
     }
+    if (dragging) rows[(size_t) slotDragState.slot]->setSize (juce::jmax (40, width), rowHeight);
+    const int y = (int) rows.size() * step;
     addButton.setBounds (0, y, juce::jmax (40, width), addHeight);
     slotHolder.setSize (juce::jmax (40, width), y + addHeight + 2);
+}
+void BandStrip::refreshRows()
+{
+    const int count = processor.getSlotCount (band);
+    for (int s = 0; s < juce::jmin (count, (int) rows.size()); ++s) rows[(size_t) s]->update (processor.getSlotInfo (band, s), count);
+}
+bool BandStrip::slotDrag (int slot, const juce::MouseEvent& e, int phase)
+{
+    if (slot < 0 || slot >= (int) rows.size()) return false;
+    auto& row = *rows[(size_t) slot];
+    const float y = e.getEventRelativeTo (&slotHolder).position.y;
+    if (phase == 0)
+    {
+        slotDragState = {};
+        if (! e.mods.isPopupMenu() && e.mods.isLeftButtonDown() && rows.size() > 1)
+            slotDragState = { slot, y, row.getY(), false, slot };
+        return false;
+    }
+    if (slotDragState.slot != slot) return false;
+    if (phase == 1)
+    {
+        if (! slotDragState.active && std::abs (y - slotDragState.startY) < 5.0f) return false;
+        if (! slotDragState.active) { slotDragState.active = true; row.setLifted (true); row.toFront (false); }
+        const int step = rowHeight + rowGap;
+        const int top = juce::jlimit (0, ((int) rows.size() - 1) * step, slotDragState.startTop + juce::roundToInt (y - slotDragState.startY));
+        row.setTopLeftPosition (0, top);
+        slotDragState.target = juce::jlimit (0, (int) rows.size() - 1, juce::roundToInt ((float) top / (float) step));
+        layoutRows();
+        const auto inView = e.getEventRelativeTo (&slotView).getPosition();
+        slotView.autoScroll (inView.x, inView.y, 24, 8);
+        return true;
+    }
+    const bool dropped = slotDragState.active;
+    const int from = slotDragState.slot, to = slotDragState.target;
+    if (dropped) row.setLifted (false);
+    slotDragState = {};
+    if (dropped && to != from && to >= 0) processor.moveSlotTo (band, from, to);
+    layoutRows();
+    if (dropped) refreshRows();   // the rows show the slots in their new order right away
+    return dropped;
 }
 void BandStrip::update (const std::vector<float>& crossovers, int bandCount, float nyquist)
 {
@@ -307,6 +378,7 @@ void BandStrip::update (const std::vector<float>& crossovers, int bandCount, flo
     startLabel.setTooltip (band > 0 ? "Click to type the band's lower edge (e.g. 250 or 2.5k)" : "The lowest band starts at 0 Hz");
     endLabel.setTooltip (band < bandCount - 1 ? "Click to type the band's upper edge" : "The highest band ends at Nyquist (half the sample rate)");
     removeButton.setVisible (bandCount > 1);
+    if (slotDragState.active) return;   // the rows stay as they are until the dragged slot is dropped
     const int count = processor.getSlotCount (band);
     if (count != (int) rows.size())
     {

@@ -717,18 +717,25 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p), editor (p)
     generateButton = std::make_unique<GenerateButton>();
     generateButton->onClick = [this] { generate(); };
     addAndMakeVisible (*generateButton);
-    addRouteButton.setTooltip ("Send this LFO to another knob in this band");
+    addRouteButton.setTooltip ("Send this LFO to another knob in this band: a mix, the band's volume, or a knob inside one of its effects "
+                               "(from the list, or LEARN: move the knob in the effect's window)");
     addRouteButton.onClick = [this]
     {
+        if (processor.isLearningParameter()) { processor.cancelParameterLearn(); updateToolbar(); return; }
+        enum { learnId = 100000 };
         juce::PopupMenu menu;
         menu.addSectionHeader ("ROUTE " + processor.getLfoInfo (band, lfo).name.toUpperCase() + " TO");
-        const auto list = processor.getDestinations (band);
-        for (int i = 0; i < (int) list.size(); ++i) menu.addItem (i + 1, list[(size_t) i].second);
+        std::vector<TriadProcessor::Destination> list;
+        addDestinationItems (menu, processor, band, nullptr, list);
+        menu.addSeparator();
+        menu.addItem (learnId, "LEARN: move a knob in an effect's window...", processor.getSlotCount (band) > 0);
         juce::Component::SafePointer<LfoPage> safe (this);
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&addRouteButton), [safe, list] (int choice)
         {
-            if (safe == nullptr || choice < 1 || choice > (int) list.size()) return;
-            safe->processor.addRoute (safe->band, safe->lfo, list[(size_t) choice - 1].first);
+            if (safe == nullptr) return;
+            if (choice == learnId) { safe->startLearn(); return; }
+            if (choice < 1 || choice > (int) list.size()) return;
+            safe->processor.addRoute (safe->band, safe->lfo, list[(size_t) choice - 1]);
             safe->refresh();
         });
     };
@@ -939,8 +946,23 @@ void LfoPage::select (int b, int l)
     builtSignature.clear();
     refresh();
 }
+void LfoPage::startLearn()
+{
+    if (! processor.beginParameterLearn (band, lfo)) { processor.setStatus ("LEARN: this band has no effect loaded"); return; }
+    // With a single effect in the band, open its window to move a knob in.
+    int loaded = -1, count = 0;
+    for (int s = 0; s < processor.getSlotCount (band); ++s)
+        if (processor.getSlotInfo (band, s).loaded) { loaded = s; ++count; }
+    if (count == 1) processor.showEffect (band, loaded);
+    updateToolbar();
+}
 void LfoPage::refresh()
 {
+    if (processor.isLearningParameter())
+    {
+        if (processor.pollParameterLearn() >= 0) rebuild();
+        updateToolbar();
+    }
     if (band >= processor.getBandCount() || lfo >= processor.getLfoCount (band))
     {
         band = juce::jmin (band, processor.getBandCount() - 1);
@@ -990,6 +1012,9 @@ void LfoPage::rebuild()
 }
 void LfoPage::updateToolbar()
 {
+    addRouteButton.setButtonText (processor.isLearningParameter() ? "LEARNING: MOVE A KNOB... (CLICK TO STOP)" : "+ ROUTE TO...");
+    if (processor.isLearningParameter()) addRouteButton.setColour (juce::TextButton::buttonColourId, accent.withAlpha (0.35f));
+    else addRouteButton.removeColour (juce::TextButton::buttonColourId);
     const auto info = processor.getLfoInfo (band, lfo);
     lengthButton.setButtonText (juce::String (mod::lengths()[(size_t) juce::jlimit (0, (int) mod::lengths().size() - 1, info.length)].label));
     gridButton.setButtonText ("GRID 1/" + juce::String (editor.gridDivision) + (editor.triplet ? "T" : ""));

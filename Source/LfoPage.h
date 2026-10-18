@@ -110,6 +110,8 @@ public:
     juce::File saveShapeToUser (const juce::String& name);   // then shows USER on the page with it
     juce::Button& getSaveButton() noexcept { return saveButton; }
     void showUserShapeMenu (const juce::File&);
+    void startLearn();   // LEARN: the next knob moved in one of the band's effect windows is linked to this LFO
+    juce::Button& getAddRouteButton() noexcept { return addRouteButton; }
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     int getNumPaletteButtons() const noexcept { return (int) presetButtons.size(); }
     juce::Button* getPaletteButton (int i) const { return i >= 0 && i < (int) presetButtons.size() ? presetButtons[(size_t) i].get() : nullptr; }

@@ -114,6 +114,7 @@ public:
     void setSlotMix (int band, int slot, float percent);
     float getSlotMix (int band, int slot) const;
     bool moveSlot (int band, int slot, int direction);   // -1 = up (earlier), +1 = down (later)
+    bool moveSlotTo (int band, int from, int to);         // drag and drop: the slots in between shift over
     void showEffect (int band, int slot);
     void showEffect (int band) { showEffect (band, 0); }
     void closeWindows();
@@ -150,10 +151,20 @@ public:
     // ---- Matrix (message thread) -----------------------------------------------------------------
     struct Destination
     {
-        enum Kind { slotMix = 0, bandMix = 1, bandVolume = 2 };
+        // effectParameter: a knob inside the effect in slot `slotId` (its index in the effect's parameter
+        // list, and the effect's own ID for it, which is what projects keep).
+        enum Kind { slotMix = 0, bandMix = 1, bandVolume = 2, effectParameter = 3 };
+        Destination() = default;
+        Destination (int k, int slot, int index = -1, juce::String id = {})
+            : kind (k), slotId (slot), parameter (index), parameterId (std::move (id)) {}
         int kind = bandMix;
         int slotId = 0;
-        bool operator== (const Destination& o) const { return kind == o.kind && (kind != slotMix || slotId == o.slotId); }
+        int parameter = -1;
+        juce::String parameterId;
+        bool operator== (const Destination& o) const
+        {
+            return kind == o.kind && (kind == bandMix || kind == bandVolume || slotId == o.slotId) && (kind != effectParameter || parameter == o.parameter);
+        }
     };
     struct RouteInfo
     {
@@ -174,6 +185,13 @@ public:
     void setRouteMuted (int band, int route, bool);
     void removeRoute (int band, int route);
     std::vector<std::pair<Destination, juce::String>> getDestinations (int band) const;
+    // The knobs inside a slot's effect that an LFO can move (what the effect lets a host automate).
+    std::vector<std::pair<Destination, juce::String>> getEffectParameters (int band, int slot) const;
+    // LEARN: the next knob moved in the window of one of this band's effects is linked to the LFO.
+    bool beginParameterLearn (int band, int lfo);
+    void cancelParameterLearn();
+    bool isLearningParameter() const noexcept { return learn != nullptr; }
+    int pollParameterLearn();   // message thread: once a knob was moved, links it and returns the new route (else -1)
 
     // ---- Meters ------------------------------------------------------------------------------------
     // Peak levels (linear) since the last call, and the share of the audio's time Triad spent processing it
@@ -195,8 +213,34 @@ public:
     static bool hasCopiedBand();
     static juce::String copiedBandDescription();                     // e.g. "band 2: OTT, Valhalla Delay"
     static void clearCopiedBand();
-    std::unique_ptr<juce::XmlElement> createPresetXml();             // the whole Triad
-    void loadPresetXml (const juce::XmlElement&);
+    // Plug-in clipboard, also shared by every Triad in this process: "Copy plugin state" keeps the effect in a
+    // slot with all its settings (and the slot's mix); "Paste plugin state" puts it into another slot (only the
+    // settings change when that slot holds the same effect) or, with slot == the band's slot count, a new slot.
+    bool copyEffectState (int band, int slot);
+    juce::String pasteEffectState (int band, int slot);              // error text; empty when pasted
+    static bool hasCopiedEffect();
+    static juce::String copiedEffectName();                          // e.g. "Infiltrator"
+    static void clearCopiedEffect();
+
+    // ---- Undo / redo (message thread) -----------------------------------------------------------------
+    // The main page's back / forward arrows. A moment after each change (an effect added, moved or removed,
+    // a knob turned in Triad or inside an effect's window, an LFO drawn or linked, a crossover moved) Triad
+    // keeps a snapshot of itself; undo goes back to the previous one. Effects that are still there are kept
+    // loaded (only their settings change, if they differ), so undo is quick and open windows stay open.
+    // A project or preset opened by the DAW starts a fresh history; LIVE is not part of it.
+    bool undo();
+    bool redo();
+    bool canUndo() const;
+    bool canRedo() const;
+    int getUndoSteps() const;                  // how many steps back (and forward) there are
+    int getRedoSteps() const;
+    void commitHistory();                      // take the pending snapshot now (tests; undo/redo do this themselves)
+    void clearHistory();
+    static constexpr double historyQuietMs = 350.0;   // a snapshot is taken this long after the last change
+    static constexpr int maxHistorySteps = 100;
+    std::unique_ptr<juce::XmlElement> createPresetXml (bool forHistory = false);   // the whole Triad
+    // undoable: a preset the user picked in Triad (one undo step); the startup preset is not.
+    void loadPresetXml (const juce::XmlElement&, bool undoable = true);
     // Init: an empty Triad (3 bands, empty slots, 24 dB/oct, mixes 100%, volumes 0 dB, LFOs off).
     static std::unique_ptr<juce::XmlElement> createInitXml();
     void initialize();
@@ -232,11 +276,18 @@ private:
         std::atomic<bool> invert { false }, muted { true };
         bool automatic = false;          // made by Triad; switches on when its LFO is first drawn
         Lfo* lfo = nullptr;              // resolved under gate
+        // A knob inside an effect: its value when it was linked (the LFO moves it from there, by `amount`),
+        // the parameter (resolved under gate), and the last value sent (audio thread).
+        std::atomic<float> base { 0.5f };
+        juce::AudioProcessorParameter* parameter = nullptr;
+        float lastSent = -1.0f;
         float value (int frame) const noexcept { const float v = lfo->value (frame); return invert.load (std::memory_order_relaxed) ? 1.0f - v : v; }
     };
     struct Slot
     {
+        Slot();
         int id = 0;
+        int serial = 0;                  // unique in this process: undo finds the same slot (and effect) again
         std::unique_ptr<juce::AudioPluginInstance> effect;
         std::unique_ptr<juce::DocumentWindow> window;
         juce::PluginDescription description;
@@ -254,6 +305,7 @@ private:
         std::atomic<float> mixPercent { 100.0f };
         std::atomic<float> liveMix { 100.0f };
         std::vector<Route*> modulators;   // resolved under gate
+        std::vector<Route*> parameterModulators;   // routes to knobs inside this effect, resolved under gate
         triad::StereoDelay dryDelay;
         juce::SmoothedValue<float> mix;
         bool isActive() const { return effect != nullptr && enabled && error.isEmpty() && ! liveBypassed; }
@@ -262,6 +314,7 @@ private:
     struct Band
     {
         explicit Band (bool withSlot = true);
+        int serial = 0;                  // unique in this process (undo keeps LFO undo lists with their band)
         std::vector<std::unique_ptr<Slot>> slots;
         std::vector<std::unique_ptr<Lfo>> lfos;
         std::vector<std::unique_ptr<Route>> routes;
@@ -279,6 +332,7 @@ private:
         Slot* findSlot (int id) const;
         int lfoIndex (int id) const;
         int slotIndex (int id) const;
+        static juce::AudioProcessorParameter* resolveParameter (const Slot&, Destination&);
     };
     struct PendingLoad { int slot; const juce::XmlElement* node; };
 
@@ -302,8 +356,13 @@ private:
     std::atomic<bool> restoring { false }, muted { false };
     std::atomic<int> silencedBlocks { 0 };
     std::atomic<bool> liveMode { false };
+    struct Learn;
+    std::unique_ptr<Learn> learn;
+    void endParameterLearn();
+    void applyParameterModulation (Slot&, int frame);
     std::atomic<juce::int64> busyTicks { 0 }, audioSamples { 0 };
     std::atomic<bool> stateReceived { false };   // setStateInformation was called (a project, a preset)
+    std::atomic<bool> keepHistory { false }, historyReset { false };   // see setStateInformation
     bool startupDecided = false;
     double createdAt = 0.0;
     std::atomic<int> pendingCreations { 0 }, bandCount { 3 }, structureVersion { 0 };
@@ -349,15 +408,31 @@ private:
     void readSongPosition();
     void advanceLfos (Band&, int offset, int frames);
     void process (juce::AudioBuffer<float>&);
+    // Undo history: snapshots of createPresetXml (history), the one showing now at `historyCursor`.
+    struct HistorySignal;            // changes reported from other threads (gestures on knobs)
+    struct EffectWatch;              // listens to the hosted effects' knob gestures
+    std::shared_ptr<HistorySignal> historySignal;
+    std::vector<std::unique_ptr<juce::XmlElement>> history;
+    std::vector<size_t> historySizes;
+    int historyCursor = -1;
+    bool historyDirty = false, historyApplying = false, historyRefresh = false, historyAwaitingLoads = false;
+    double lastChange = 0.0;
+    void noteChange();
+    void historyTick();
+    bool historyBusy() const;        // loads pending, a mouse button down or a knob being turned: not now
+    void applyHistory (const juce::XmlElement&);
+    void watchEffect (juce::AudioPluginInstance&);
+    struct OwnWatch;
+    std::unique_ptr<OwnWatch> ownWatch;
     void setParameterValue (const juce::String& id, float plainValue);
     float getParameterValue (const juce::String& id) const;
     void refreshWindowTitles();
     void restoreFrom (const juce::XmlElement&);
-    void writeBand (juce::XmlElement&, const Band&) const;
+    void writeBand (juce::XmlElement&, const Band&, bool forHistory = false) const;
     std::unique_ptr<Band> readBand (const juce::XmlElement* node, int version, const std::function<float (int)>& legacyMix,
                                     std::vector<PendingLoad>& loads) const;
     juce::String destinationName (const Band&, const Destination&) const;
-    void stateChanged();
+    void stateChanged (bool undoable = true);
     bool sendKeyToHost();
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (TriadProcessor)

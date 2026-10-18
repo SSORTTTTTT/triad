@@ -1,6 +1,65 @@
 # Triad roadmap
 
-## Current testing version — 0.5.0 ("Triad v4")
+Release names (Thomas, 2026-10-17): every new installer gets the next name, **Triad v5**, then **Triad v6**, **Triad v7**
+and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
+installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
+
+## Current testing version — 0.6.0 ("Triad v5")
+
+0.6.0 (2026-10-17), from Thomas's notes after 0.5.0:
+- **LFOs on the knobs inside your effects.** In the LFO page, **+ ROUTE TO...** lists every knob inside the band's effects
+  (a submenu per effect, 40 knobs a page, names from the plug-in), or choose **LEARN** and turn a knob in the effect's
+  own window: it is linked to the LFO. The knob moves from where it was set, by the route's amount (invert and on/off
+  as for any route); switching the link off or removing it puts the knob back. Links are saved with projects, presets,
+  chain presets and Copy band state, by the effect's own parameter ID; a link to an effect that is missing waits for it.
+  Triad sets the knob every 64 samples, just before the effect plays.
+- **Copy plugin state / Paste plugin state** in an effect's arrow menu (with Open window, Replace, Add to favourites):
+  copies the effect with every knob as it is, and its mix. Paste onto the same effect in another slot or band (only
+  its settings change), onto a different effect or an empty slot (the copied effect is loaded there), or into a new
+  slot from the band's ... menu ("Paste plugin (name) into a new slot"). Works between Triads in the same project.
+- **Drag effects up and down**: press an effect's row and drag it to another place in its band; the others make
+  room, and its mix knob, LFO and links go with it. (Move up / Move down are still in the menu.)
+- **Undo / Redo arrows** left of the settings gear, for everything on the main page and in the LFO and MATRIX tabs:
+  effects loaded, replaced, removed, moved or dragged, pasted plugin or band states, slot and band mixes, volumes,
+  crossovers and slopes, bands added, removed or moved, LFOs drawn or linked, presets loaded or Initialize, and knobs
+  turned inside the effects' windows. Effects that are still there stay loaded (only their settings go back), so undo
+  is quick and their windows stay open; an effect that was removed is loaded again with its settings. Up to 100 steps.
+  A project opened by the DAW starts a fresh history. LIVE is not an undo step. Each LFO still has its own undo too.
+- **Latency tooltip** on the LAT meter: each band's latency and the effects in it, all the effects added up, and the
+  total Triad reports (see "Latency questions" below).
+
+### Latency questions (Thomas, 2026-10-17)
+
+- **"Combine the latencies":** with Infiltrator in band 2 (2.0 ms) and Omnisphere FX in another band (0.8 ms), the LAT
+  meter shows 2.0 ms, not 2.8 ms. The bands play **side by side**, not one after the other, so the slowest band sets
+  the delay and the others wait for it (they are delayed to line up). Two effects in the **same** band do add up,
+  and the band's footer shows that sum. Since 0.6.0, the LAT meter's tooltip lists each band ("Band 2: 2.0 ms
+  (Infiltrator 2.0 ms)"), all effects added up (2.8 ms), and explains the total.
+- **Infiltrator presets with 60 or 170 ms:** that is Infiltrator's own latency, reported by the plug-in for those
+  presets (modules such as pitch shifting, spectral or granular effects and look-ahead need audio "ahead" of time).
+  Triad adds none (0 samples). Every host shows the same: FL Studio's mixer and Ableton's device delay would report
+  the same 60 or 170 ms. For tracking vocals, use a preset without those modules, or LIVE.
+- **LIVE:** you still hear your voice and every effect that adds no latency; only the effects that add latency are
+  passed by (their slot shows "LIVE OFF"), so what you hear is not delayed. Switch LIVE off for mixing and they play
+  again. The DAW records your dry voice either way (Triad sits on the track's insert, after the recording point).
+- **Normal?** Yes: every host works this way (DAWs, Infiltrator itself, other effect racks). Effects that look ahead
+  have to delay the sound; the host delays the other tracks to keep them in time.
+
+### Look and feel — waiting for Thomas's fonts, colours and lighting styles
+
+Thomas will send fonts and aesthetic references soon; the theme work (see "Look and feel" below) starts then.
+
+### Ideas from this work (later)
+
+- Drag an effect onto **another band's** strip to move it there (today: up and down within its band, or Copy / Paste
+  plugin state).
+- Right-click the undo arrow for a list of the last steps ("Undo: removed Infiltrator from band 2", ...), and
+  Cmd+Z / Cmd+Shift+Z while Triad's window has focus (DAWs use those keys themselves, so as an option).
+- **DAW automation of the knobs inside effects:** FL Studio and Ableton cannot see inside Triad; a set of macro
+  parameters (e.g. 16) that the DAW can automate, each linked to any knob inside any hosted effect.
+- Links: a value range per link (min / max instead of amount), and the LFO line showing the value the effect took.
+
+### 0.5.0 ("Triad v4")
 
 0.5.0 (2026-10-17), from Thomas's notes after 0.4.3:
 - **Latency meter** (LAT) and **CPU meter** beside IN / OUT; each band's latency in its strip; a latency badge on each
@@ -15,7 +74,7 @@
   divider lines stop at pills; palette thumbnails are drawn from the shapes' points (Gate 1/8 was a grey block).
 - New tests: visual check (drawing time of each moving part, cached pictures not redrawn per frame), GUI stress
   (400 random interface actions, window drawn every 20), and a stress-test section that moves the parameters
-  inside every hosted effect from the audio thread (for "LFOs on knobs inside effects", below).
+  inside every hosted effect from the audio thread (for "LFOs on knobs inside effects", done in 0.6.0).
 
 ### 0.4.3
 
@@ -75,7 +134,7 @@ Built from the notes below (2026-10-15/16):
 
 Still to come: see "Next update" below (LFO randomizer, soft crossovers, knobs inside third-party effects) and "Later" (most-used sorting, routing between bands).
 
-## Next: LFOs on the knobs inside your effects (Thomas, 2026-10-17) — feasible
+## LFOs on the knobs inside your effects (Thomas, 2026-10-17) — feasible; done in 0.6.0
 
 Asked: can Triad's LFOs move parameters inside the hosted plug-ins, linked from the LFO page? **Yes.** Tested in 0.5.0's
 stress test with the 51 effects on the CI Mac: 50 expose automatable parameters (median 15 each, up to 666 for
@@ -229,7 +288,7 @@ sequence page).
 - How "off" sounds, a choice per row: **cut** (the effect's sound stops at once) or **tails** (the effect stops
   receiving sound but its reverb/delay rings out). Latency compensation stays intact either way.
 
-### 3. Knobs inside third-party effects (detail)
+### 3. Knobs inside third-party effects (detail) — Learn and the list done in 0.6.0; DAW macros still to come
 
 Possible, and planned (see "Later" further down):
 

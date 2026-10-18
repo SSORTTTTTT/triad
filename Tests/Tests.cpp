@@ -1079,6 +1079,277 @@ int main (int argc, char** argv)
             std::cout << "PASS: latency meter (total, per slot), CPU meter, LIVE switch" << std::endl;
         }
 
+        // ---- Knob linking: LFOs on the knobs inside effects ------------------------------------------
+        {
+            namespace mod = triad::mod;
+            TriadProcessor q;
+            q.prepareToPlay (48000, 512);
+            require (q.loadFile (1, 0, effect).isEmpty(), "Load an effect with a knob");
+            const auto knobs = q.getEffectParameters (1, 0);
+            require (! knobs.empty() && knobs.front().first.kind == TriadProcessor::Destination::effectParameter && knobs.front().second == "Gain",
+                     "The effect's knobs are offered as destinations");
+            {
+                juce::PopupMenu menu;
+                std::vector<TriadProcessor::Destination> chosen;
+                triad::ui::addDestinationItems (menu, q, 1, nullptr, chosen);
+                require (std::any_of (chosen.begin(), chosen.end(), [] (auto& d) { return d.kind == TriadProcessor::Destination::effectParameter; }),
+                         "The route menu lists the knobs inside the effect");
+            }
+            auto* gain = q.getHostedEffect (1, 0)->getParameters()[knobs.front().first.parameter];
+            const float base = gain->getValue();
+            const int lfo = q.addLfo (1);
+            q.setLfoShape (1, lfo, mod::preset (5), false);   // Square: top half a cycle, bottom the other half
+            int quarter = 0;
+            for (int i = 0; i < (int) mod::lengths().size(); ++i) if (juce::String (mod::lengths()[(size_t) i].label) == "1/16") quarter = i;
+            q.setLfoLength (1, lfo, quarter);
+            const int route = q.addRoute (1, lfo, knobs.front().first);
+            require (route >= 0 && q.getRouteInfo (1, route).destinationName.endsWith (": Gain"), "Link an LFO to the effect's Gain knob");
+            juce::Random r (3);
+            juce::MidiBuffer midi;
+            float lowest = 1.0f, highest = 0.0f;
+            for (int i = 0; i < 200; ++i)
+            {
+                juce::AudioBuffer<float> audio (2, 128);
+                fillTestNoise (audio, r);
+                q.processBlock (audio, midi);
+                lowest = juce::jmin (lowest, gain->getValue());
+                highest = juce::jmax (highest, gain->getValue());
+            }
+            require (lowest < 0.02f && highest > 0.98f, "The knob follows the LFO (square: 0% and 100%)");
+            q.setRouteMuted (1, route, true);
+            { juce::AudioBuffer<float> audio (2, 128); audio.clear(); q.processBlock (audio, midi); }
+            require (std::abs (gain->getValue() - base) < 1.0e-3f, "Switched off, the knob goes back to where it was");
+            q.setRouteMuted (1, route, false);
+            // Saved with the project, found again by the effect's own parameter ID.
+            juce::MemoryBlock state;
+            q.getStateInformation (state);
+            {
+                TriadProcessor restored;
+                restored.setStateInformation (state.getData(), (int) state.getSize());
+                restored.prepareToPlay (48000, 512);
+                const auto info = restored.getRouteInfo (1, route);
+                require (info.destination.kind == TriadProcessor::Destination::effectParameter && info.destinationName.endsWith (": Gain"),
+                         "The link comes back with the project");
+                auto* restoredGain = restored.getHostedEffect (1, 0)->getParameters()[info.destination.parameter];
+                float lo = 1.0f, hi = 0.0f;
+                for (int i = 0; i < 200; ++i)
+                {
+                    juce::AudioBuffer<float> audio (2, 128);
+                    fillTestNoise (audio, r);
+                    restored.processBlock (audio, midi);
+                    lo = juce::jmin (lo, restoredGain->getValue()); hi = juce::jmax (hi, restoredGain->getValue());
+                }
+                require (lo < 0.02f && hi > 0.98f, "The restored link moves the knob");
+            }
+            // Copy / paste band state takes the link along, onto the pasted effect.
+            require (q.copyBandState (1) && q.pasteBandState (0).isEmpty(), "Copy band 2 onto band 1");
+            {
+                bool linked = false;
+                for (int i = 0; i < q.getRouteCount (0); ++i)
+                    linked |= q.getRouteInfo (0, i).destination.kind == TriadProcessor::Destination::effectParameter;
+                require (linked, "The pasted band keeps its knob link");
+            }
+            TriadProcessor::clearCopiedBand();
+            q.removeRoute (1, route);
+            require (std::abs (gain->getValue() - base) < 1.0e-3f, "Unlinked, the knob goes back to where it was");
+            // LEARN: move a knob in the effect's window and it is linked.
+            require (q.beginParameterLearn (1, lfo) && q.isLearningParameter(), "Start LEARN");
+            require (q.pollParameterLearn() < 0, "Nothing linked before a knob moves");
+            gain->beginChangeGesture();
+            gain->setValueNotifyingHost (0.6f);
+            gain->endChangeGesture();
+            const int learned = q.pollParameterLearn();
+            require (learned >= 0 && ! q.isLearningParameter() && q.getRouteInfo (1, learned).destinationName.endsWith (": Gain"),
+                     "LEARN links the knob that was moved");
+            require (q.beginParameterLearn (1, lfo), "LEARN again");
+            q.removeEffect (1, 0);
+            require (! q.isLearningParameter(), "Removing the effect ends LEARN (it stops listening first)");
+            require (q.getRouteInfo (1, learned).destinationName.isNotEmpty(), "A link to an effect that is gone waits (no crash)");
+            { juce::AudioBuffer<float> audio (2, 128); fillTestNoise (audio, r); q.processBlock (audio, midi); }
+            require (q.loadFile (1, 0, effect).isEmpty(), "Load the effect again");
+            {
+                auto* again = q.getHostedEffect (1, 0)->getParameters()[0];
+                float lo = 1.0f, hi = 0.0f;
+                for (int i = 0; i < 200; ++i)
+                {
+                    juce::AudioBuffer<float> audio (2, 128);
+                    fillTestNoise (audio, r);
+                    q.processBlock (audio, midi);
+                    lo = juce::jmin (lo, again->getValue()); hi = juce::jmax (hi, again->getValue());
+                }
+                require (hi - lo > 0.3f, "The waiting link finds the effect again");
+            }
+            std::cout << "PASS: knob linking (LFOs on knobs inside effects): menu, follows the LFO, off/unlink restore, saved, copy/paste, LEARN" << std::endl;
+        }
+
+        // ---- Undo / redo, Copy / Paste plugin state, dragging slots ------------------------------------
+        {
+            namespace mod = triad::mod;
+            auto pump = [] (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); };
+            TriadProcessor q;
+            q.prepareToPlay (48000, 512);
+            q.loadPresetXml (*TriadProcessor::createInitXml(), false);   // as a project from the DAW: a fresh history
+            pump ((int) TriadProcessor::startupDelayMs + 250);
+            require (! q.canUndo() && ! q.canRedo(), "A fresh Triad has nothing to undo");
+            require (q.loadFile (0, 0, effect).isEmpty(), "Undo test: load an effect");
+            pump (700);   // a snapshot is taken a moment after the change
+            require (q.canUndo() && q.getUndoSteps() == 1, "Loading an effect is one undo step (taken by itself)");
+            auto* first = q.getHostedEffect (0, 0);
+            auto* firstGain = first->getParameters()[0];
+            // A knob turned in the effect's own window (a gesture on its parameter).
+            firstGain->beginChangeGesture();
+            firstGain->setValueNotifyingHost (0.8f);
+            firstGain->endChangeGesture();
+            pump (700);
+            require (q.getUndoSteps() == 2, "Turning a knob inside an effect is an undo step");
+            require (q.loadFile (0, 1, effect).isEmpty(), "Undo test: a second effect in a new slot");
+            q.commitHistory();
+            auto* second = q.getHostedEffect (0, 1);
+            q.setSlotMix (0, 1, 40.0f);
+            q.commitHistory();
+            require (q.moveSlotTo (0, 1, 0) && q.getHostedEffect (0, 0) == second && q.getHostedEffect (0, 1) == first,
+                     "Move the second effect above the first");
+            q.commitHistory();
+            auto* cross = q.crossoverParameter (0);
+            const float crossBefore = cross->getValue();
+            cross->beginChangeGesture();   // a crossover dragged on the display
+            cross->setValueNotifyingHost (0.3f);
+            cross->endChangeGesture();
+            pump (700);
+            require (q.addBand(), "Undo test: add a band");
+            q.commitHistory();
+            const int steps = q.getUndoSteps();
+            require (steps == 7, ("Each change is one undo step (" + juce::String (steps) + ")").toRawUTF8());
+            require (q.undo() && q.getBandCount() == 3, "Undo: the band that was added goes");
+            require (q.undo() && std::abs (cross->getValue() - crossBefore) < 1.0e-4f, "Undo: the crossover goes back");
+            require (q.undo() && q.getHostedEffect (0, 0) == first && q.getHostedEffect (0, 1) == second,
+                     "Undo: the effects go back in their order, still loaded (not reloaded)");
+            require (q.undo() && std::abs (q.getSlotMix (0, 1) - 100.0f) < 0.01f, "Undo: the slot mix goes back");
+            require (q.undo() && q.getSlotCount (0) == 1 && q.getHostedEffect (0, 0) == first, "Undo: the second effect goes");
+            require (q.undo() && std::abs (firstGain->getValue() - 0.25f) < 1.0e-3f && q.getHostedEffect (0, 0) == first,
+                     "Undo: the knob inside the effect goes back (the same effect, still loaded)");
+            require (q.undo() && ! q.getSlotInfo (0, 0).hasContent && ! q.canUndo(), "Undo: back to the start");
+            require (! q.undo(), "Nothing more to undo");
+            for (int i = 0; i < steps; ++i) require (q.redo(), "Redo, step by step");
+            require (! q.canRedo() && q.getBandCount() == 4 && q.getSlotCount (0) == 2 && std::abs (q.getSlotMix (0, 0) - 40.0f) < 0.01f
+                     && std::abs (q.crossoverParameter (0)->getValue() - 0.3f) < 1.0e-4f, "Redo: everything is back");
+            require (std::abs (q.getHostedEffect (0, 1)->getParameters()[0]->getValue() - 0.8f) < 1.0e-3f,
+                     "Redo: the effect that came back has its knob where it was");
+            {
+                juce::Random r (11);
+                juce::MidiBuffer midi;
+                for (int i = 0; i < 40; ++i)
+                {
+                    juce::AudioBuffer<float> audio (2, 512);
+                    fillTestNoise (audio, r);
+                    q.processBlock (audio, midi);
+                    for (int c = 0; c < 2; ++c)
+                        for (int k = 0; k < 512; ++k) require (std::isfinite (audio.getSample (c, k)), "Audio after undo/redo is finite");
+                }
+            }
+            q.undo(); q.undo();
+            require (q.canRedo() && q.getRedoSteps() == 2, "Two steps to redo");
+            q.setSlotMix (0, 0, 10.0f);
+            q.commitHistory();
+            require (! q.canRedo(), "A new change after undo: the undone steps are gone");
+            // An LFO's own undo list stays with it through the main undo.
+            const int lfo = q.getSlotLfo (0, 0);
+            q.setLfoShape (0, lfo, mod::preset (3), true);
+            q.commitHistory();
+            q.setSlotMix (0, 0, 20.0f);
+            q.commitHistory();
+            require (q.undo() && q.getLfoInfo (0, q.getSlotLfo (0, 0)).canUndo, "The LFO's own undo survives a main undo");
+            require (q.undo() && q.getLfoInfo (0, q.getSlotLfo (0, 0)).shape.size() != 3, "Undo: the LFO shape goes back");
+            require (q.redo(), "Redo the LFO shape");
+            // A preset picked in Triad is one step; a project opened by the DAW starts a fresh history.
+            q.loadPresetXml (*TriadProcessor::createInitXml());
+            require (! q.getSlotInfo (0, 0).hasContent && q.getSlotCount (0) == 1, "Initialize");
+            require (q.undo() && q.getSlotCount (0) == 2 && q.getSlotInfo (0, 0).loaded && q.getSlotInfo (0, 1).loaded,
+                     "Undo a preset (Initialize): the effects come back");
+            juce::MemoryBlock project;
+            q.getStateInformation (project);
+            q.setStateInformation (project.getData(), (int) project.getSize());
+            require (! q.canUndo() && ! q.canRedo(), "A project opened by the DAW starts a fresh history");
+            q.commitHistory();
+            for (int i = 0; i < 130; ++i) { q.setSlotMix (0, 0, (float) (i % 90)); q.commitHistory(); }
+            require (q.getUndoSteps() == TriadProcessor::maxHistorySteps, "The history keeps the last 100 steps");
+            require (q.isLiveMode() == false, "LIVE is off");
+            q.setLiveMode (true);
+            q.commitHistory();
+            require (q.getUndoSteps() == TriadProcessor::maxHistorySteps && q.undo() && q.isLiveMode(), "LIVE is not an undo step and undo leaves it on");
+            q.setLiveMode (false);
+            std::cout << "PASS: undo / redo (effects kept loaded, knobs inside effects, crossovers, bands, LFOs, presets, history limit)" << std::endl;
+
+            // Copy plugin state: the effect with its settings, pasted into a new slot, onto the same effect, into an empty slot.
+            TriadProcessor c;
+            c.prepareToPlay (48000, 512);
+            require (c.pasteEffectState (0, 0).isNotEmpty() || TriadProcessor::hasCopiedEffect(), "Nothing to paste yet");
+            TriadProcessor::clearCopiedEffect();
+            require (c.pasteEffectState (0, 0).isNotEmpty(), "Pasting with nothing copied says so");
+            require (c.loadFile (0, 0, effect).isEmpty() && c.loadFile (1, 0, effect).isEmpty(), "Copy test: two effects");
+            c.getHostedEffect (0, 0)->getParameters()[0]->setValueNotifyingHost (0.7f);
+            c.setSlotMix (0, 0, 55.0f);
+            require (! c.copyEffectState (2, 0), "An empty slot has no plug-in state to copy");
+            require (c.copyEffectState (0, 0) && TriadProcessor::hasCopiedEffect() && TriadProcessor::copiedEffectName() == "Triad Test Effect",
+                     "Copy plugin state");
+            auto* target = c.getHostedEffect (1, 0);
+            require (c.pasteEffectState (1, 0).isEmpty() && c.getHostedEffect (1, 0) == target
+                     && std::abs (target->getParameters()[0]->getValue() - 0.7f) < 1.0e-3f && std::abs (c.getSlotMix (1, 0) - 55.0f) < 0.01f,
+                     "Paste onto the same effect: only its settings change (it stays loaded)");
+            require (c.pasteEffectState (2, 0).isEmpty() && c.getSlotInfo (2, 0).loaded
+                     && std::abs (c.getHostedEffect (2, 0)->getParameters()[0]->getValue() - 0.7f) < 1.0e-3f, "Paste into an empty slot");
+            require (c.pasteEffectState (2, c.getSlotCount (2)).isEmpty() && c.getSlotCount (2) == 2
+                     && std::abs (c.getHostedEffect (2, 1)->getParameters()[0]->getValue() - 0.7f) < 1.0e-3f, "Paste into a new slot");
+            {
+                TriadProcessor other;   // the clipboard is shared by every Triad in the session
+                other.prepareToPlay (48000, 512);
+                require (other.pasteEffectState (0, 0).isEmpty() && other.getSlotInfo (0, 0).loaded, "Paste into another Triad");
+            }
+            std::cout << "PASS: copy / paste plugin state" << std::endl;
+
+            // Drag a slot (in the band strip) to another place in its band.
+            std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (c.createEditor()));
+            editor->setVisible (true);
+            require (c.loadFile (0, 1, effect).isEmpty() && c.loadFile (0, 2, effect).isEmpty(), "Drag test: three effects in band 1");
+            c.setSlotMix (0, 0, 11.0f); c.setSlotMix (0, 1, 22.0f); c.setSlotMix (0, 2, 33.0f);
+            editor->refreshNow();
+            auto* strip = editor->getStrip (0);
+            require (strip->getNumRows() == 3, "Three rows");
+            auto& row = strip->getRow (0);
+            auto* holder = row.getParentComponent();
+            const float x = 60.0f, startY = (float) row.getY() + 15.0f;
+            auto at = [&] (float holderY, bool dragging) { return mouseAt (&row, x, holderY - (float) row.getY(), dragging); };
+            row.mouseDown (at (startY, false));
+            for (int i = 1; i <= 8; ++i) row.mouseDrag (at (startY + 9.0f * (float) i, true));
+            require (strip->isDraggingSlot() && row.getY() > 30, "The row follows the mouse");
+            row.mouseUp (at (startY + 72.0f, true));
+            require (! strip->isDraggingSlot(), "Dropped");
+            require (std::abs (c.getSlotMix (0, 0) - 22.0f) < 0.01f && std::abs (c.getSlotMix (0, 1) - 33.0f) < 0.01f && std::abs (c.getSlotMix (0, 2) - 11.0f) < 0.01f,
+                     "Dragging the first effect to the bottom moves it there (the others move up)");
+            juce::ignoreUnused (holder);
+            // A short wobble is a click, not a drag.
+            auto& top = strip->getRow (0);
+            top.mouseDown (mouseAt (&top, x, 15.0f));
+            top.mouseDrag (mouseAt (&top, x, 17.0f, true));
+            require (! strip->isDraggingSlot(), "A small movement does not start a drag");
+            top.mouseUp (mouseAt (&top, x, 17.0f, true));
+            // Undo / redo buttons.
+            c.commitHistory();
+            editor->refreshNow();
+            require (editor->getUndoButton().isEnabled() == c.canUndo(), "The undo arrow is lit when there is something to undo");
+            require (c.moveSlotTo (0, 2, 0), "Move back with moveSlotTo");
+            c.commitHistory();
+            editor->undo();
+            require (std::abs (c.getSlotMix (0, 2) - 11.0f) < 0.01f, "The undo arrow undoes the move");
+            editor->refreshNow();
+            require (editor->getRedoButton().isEnabled(), "The redo arrow is lit after an undo");
+            editor->redo();
+            require (std::abs (c.getSlotMix (0, 0) - 11.0f) < 0.01f, "The redo arrow redoes it");
+            editor.reset();
+            TriadProcessor::clearCopiedEffect();
+            std::cout << "PASS: drag slots to reorder, undo / redo arrows" << std::endl;
+        }
+
         // ---- Effects-only plug-in list, without ever loading a plug-in inside Triad ----------------
         {
             auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadCatalogTest");

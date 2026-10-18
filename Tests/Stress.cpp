@@ -563,6 +563,34 @@ void bigProject (const Pool& pool, double seconds)
     require (reopened.getBandCount() == triad::maxBands && loadedCount (reopened) == loaded, "Big project reopens complete");
     require (activeRoutes (reopened) == activeRoutes (*p), "Every LFO comes back with the project");
     for (int b = 0; b < triad::maxBands; ++b) require (reopened.getSlotCount (b) == slotsPerBand, "Every band reopens with its slots");
+    {
+        // Undo with 200 effects: each snapshot asks every effect for its settings.
+        step ("big project: undo / redo", 900);
+        auto now = [] { return juce::Time::getMillisecondCounterHiRes(); };
+        reopened.commitHistory();
+        reopened.setSlotMix (3, 5, 37.0f);
+        auto t = now();
+        reopened.commitHistory();
+        const double snapshot = now() - t;
+        auto* kept = reopened.getHostedEffect (6, 0);
+        reopened.removeSlot (4, 2);
+        reopened.commitHistory();
+        t = now();
+        require (reopened.undo(), "Undo with 200 effects");
+        settle (reopened);
+        const double undoRemoval = now() - t;
+        require (reopened.getSlotCount (4) == slotsPerBand && loadedCount (reopened) == loaded && reopened.getHostedEffect (6, 0) == kept,
+                 "Undo brings the removed effect back; the other 199 stay loaded");
+        t = now();
+        require (reopened.undo() && std::abs (reopened.getSlotMix (3, 5) - 37.0f) > 0.01f, "Undo a slot mix with 200 effects");
+        const double undoMix = now() - t;
+        t = now();
+        require (reopened.redo() && reopened.redo() && reopened.getSlotCount (4) == slotsPerBand - 1, "Redo with 200 effects");
+        const double redoBoth = now() - t;
+        noteInvalidAudio (reopened);
+        say ("Undo with 200 effects: a snapshot takes " + ms (snapshot) + "; undoing a removed effect " + ms (undoRemoval)
+             + " (it is loaded again, the others stay as they are); undoing a slot mix " + ms (undoMix) + "; redoing both " + ms (redoBoth));
+    }
     step ("big project: closing", 600);
     pump (100);   // a DAW's message loop runs between playing and closing
     start = juce::Time::getMillisecondCounterHiRes();
@@ -656,7 +684,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             const int slots = p.getSlotCount (band);
             const int slot = r.nextInt (slots);
             const int effects = loadedCount (p);
-            int choice = r.nextInt (136);
+            int choice = r.nextInt (152);
             if (effects >= maxEffects && choice < 30) choice = 30 + r.nextInt (70);   // full: edit or remove instead
             juce::String name;
             auto begin = [&] (const char* what, const juce::String& extra = {})
@@ -831,7 +859,86 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                     if (effects < maxEffects - 20) p.pasteBandState (r.nextInt (bands));
                 }
             }
-            else if (choice >= 134) { begin ("LIVE on/off"); p.setLiveMode (! p.isLiveMode()); }
+            else if (choice >= 134 && choice < 136) { begin ("LIVE on/off"); p.setLiveMode (! p.isLiveMode()); }
+            else if (choice >= 136 && choice < 140)
+            {
+                // Knob linking: an LFO linked to a knob inside an effect (from the list, or by LEARN with a knob
+                // turned in the effect's window), or a link moved to another knob.
+                begin ("knob link / LEARN");
+                const auto knobs = p.getEffectParameters (band, slot);
+                const int lfos = juce::jmax (1, p.getLfoCount (band));
+                switch (r.nextInt (4))
+                {
+                    case 0:
+                    case 1:
+                        if (! knobs.empty()) p.addRoute (band, r.nextInt (lfos), knobs[(size_t) r.nextInt ((int) knobs.size())].first);
+                        break;
+                    case 2:
+                        if (! knobs.empty() && p.getRouteCount (band) > 0)
+                            p.setRouteDestination (band, r.nextInt (p.getRouteCount (band)), knobs[(size_t) r.nextInt ((int) knobs.size())].first);
+                        break;
+                    default:
+                        if (p.beginParameterLearn (band, r.nextInt (lfos)))
+                        {
+                            if (auto* fx = p.getHostedEffect (band, slot); fx != nullptr && ! knobs.empty() && r.nextBool())
+                            {
+                                auto* knob = fx->getParameters()[knobs[(size_t) r.nextInt ((int) knobs.size())].first.parameter];
+                                knob->beginChangeGesture();
+                                knob->setValueNotifyingHost (r.nextFloat());
+                                knob->endChangeGesture();
+                            }
+                            pump (2);
+                            if (p.pollParameterLearn() < 0) p.cancelParameterLearn();
+                        }
+                        break;
+                }
+            }
+            else if (choice >= 140 && choice < 143)
+            {
+                begin ("copy / paste plugin state");
+                if (r.nextBool() || ! TriadProcessor::hasCopiedEffect()) p.copyEffectState (band, slot);
+                const int to = r.nextInt (bands);
+                if (TriadProcessor::hasCopiedEffect() && effects < maxEffects - 5)
+                    p.pasteEffectState (to, r.nextBool() ? p.getSlotCount (to) : r.nextInt (p.getSlotCount (to)));
+            }
+            else if (choice >= 143 && choice < 146)
+            {
+                // Drag a slot to another place in its band (in the band strip when Triad's window is open).
+                begin ("drag a slot");
+                const int to = r.nextInt (slots);
+                auto* e = dynamic_cast<TriadEditor*> (editor.get());
+                auto* strip = e != nullptr && e->getTab() == TriadEditor::Tab::bands ? e->getStrip (band) : nullptr;
+                if (strip != nullptr && strip->getNumRows() == slots && slots > 1)
+                {
+                    auto& row = strip->getRow (slot);
+                    const float startY = (float) row.getY() + 15.0f;
+                    const float endY = startY + (float) ((to - slot) * 32);
+                    auto at = [&row] (float holderY, bool dragging)
+                    {
+                        const juce::Point<float> point (60.0f, holderY - (float) row.getY());
+                        return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), point,
+                                                 juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 1, 0, 0, 0, 0,
+                                                 &row, &row, juce::Time::getCurrentTime(), point, juce::Time::getCurrentTime(), 1, dragging);
+                    };
+                    row.mouseDown (at (startY, false));
+                    for (int i = 1; i <= 6; ++i) row.mouseDrag (at (startY + (endY - startY) * (float) i / 6.0f + 0.01f, true));
+                    row.mouseUp (at (endY, true));
+                }
+                else p.moveSlotTo (band, slot, to);
+            }
+            else if (choice >= 146)
+            {
+                // The back / forward arrows, sometimes several clicks in a row, sometimes right after a change.
+                begin ("undo / redo");
+                if (r.nextBool()) p.commitHistory();
+                auto* e = dynamic_cast<TriadEditor*> (editor.get());
+                for (int n = 1 + r.nextInt (3); --n >= 0;)
+                {
+                    const bool back = r.nextInt (3) != 0;
+                    if (e != nullptr) { if (back) e->undo(); else e->redo(); }
+                    else if (back) p.undo(); else p.redo();
+                }
+            }
             else if (choice < 130)
             {
                 begin ("band volume");
@@ -1359,19 +1466,16 @@ void liveMonitoring (const Pool& pool, bool real)
     }
 }
 
-// ---- 5. Parameters inside the effects: can Triad's LFOs move them? -----------------------------------
-// For "LFOs on the knobs inside third-party effects": for every effect, how many parameters it lets a host
-// automate, and whether moving them from the audio thread every block (as an LFO would) works: the value
-// arrives, the sound changes, the output stays finite. Each effect is tried in a separate process, so an
-// effect that crashes when its parameters move is reported instead of ending the test.
-struct ParameterProbe { int parameters = 0; bool arrived = false, changed = false, finite = true; juce::String example; };
-bool isLinkable (juce::AudioProcessorParameter& parameter)
-{
-    const auto name = parameter.getName (64);
-    return parameter.isAutomatable() && ! parameter.isMetaParameter() && name.isNotEmpty() && ! name.containsIgnoreCase ("bypass");
-}
+// ---- 5. Knobs inside the effects: Triad's LFO links, LEARN and undo with every effect ---------------------------
+// For every effect: how many knobs it lets a host automate; then, in Triad itself, an LFO linked to up to four of
+// them (one by LEARN, the others from the list) while audio plays: the knobs follow the LFO, the sound changes, the
+// output stays finite. A knob turned (a gesture, as in its window) and undone goes back. Each effect is tried in a
+// separate process, so an effect that crashes when its knobs move is reported instead of ending the test.
+struct ParameterProbe { int parameters = 0, linked = 0; bool arrived = false, changed = false, finite = true, learned = false, undone = false; juce::String example; };
+bool isLinkable (const juce::String& name) { return name.isNotEmpty() && ! name.containsIgnoreCase ("bypass"); }
 ParameterProbe probeParameters (const juce::PluginDescription& description)
 {
+    namespace mod = triad::mod;
     constexpr double rate = 48000.0;
     constexpr int block = 128;
     ParameterProbe result;
@@ -1383,30 +1487,49 @@ ParameterProbe probeParameters (const juce::PluginDescription& description)
         settle (q);
         auto* fx = q.getHostedEffect (0, 0);
         if (fx == nullptr) return false;
-        std::vector<juce::AudioProcessorParameter*> list;
-        int count = 0;
-        for (auto* parameter : fx->getParameters())
-            if (isLinkable (*parameter)) { ++count; if (list.size() < 4) list.push_back (parameter); }
-        result.parameters = count;
-        if (! list.empty()) result.example = list.front()->getName (40);
+        std::vector<TriadProcessor::Destination> knobs;
+        for (auto& [destination, knobName] : q.getEffectParameters (0, 0))
+            if (isLinkable (knobName)) { knobs.push_back (destination); if (result.example.isEmpty()) result.example = knobName; }
+        result.parameters = (int) knobs.size();
+        if (knobs.empty()) return true;
+        std::vector<int> linked;
+        if (modulate)
+        {
+            const int lfo = q.addLfo (0);
+            q.setLfoShape (0, lfo, mod::preset (3), false);   // Triangle
+            for (int i = 0; i < (int) mod::lengths().size(); ++i)
+                if (juce::String (mod::lengths()[(size_t) i].label) == "1/4") q.setLfoLength (0, lfo, i);
+            // LEARN: a gesture on the first knob (as when it is turned in the effect's window) links it.
+            if (q.beginParameterLearn (0, lfo))
+            {
+                auto* knob = fx->getParameters()[knobs.front().parameter];
+                knob->beginChangeGesture();
+                knob->setValueNotifyingHost (knob->getValue());
+                knob->endChangeGesture();
+                const int route = q.pollParameterLearn();
+                result.learned = route >= 0;
+                if (route >= 0) linked.push_back (knobs.front().parameter);
+                else q.cancelParameterLearn();
+            }
+            for (size_t j = 1; j < knobs.size() && linked.size() < 4; ++j)
+                if (q.addRoute (0, lfo, knobs[j]) >= 0) linked.push_back (knobs[j].parameter);
+            result.linked = (int) linked.size();
+        }
+        std::vector<float> lowest (linked.size(), 1.0f), highest (linked.size(), 0.0f);
         juce::AudioBuffer<float> audio (2, block);
         juce::MidiBuffer midi;
         juce::Random noise (5);
-        bool arrived = true;
         for (int i = 0; i < (int) (2.0 * rate / block); ++i)
         {
             for (int c = 0; c < 2; ++c)
                 for (int k = 0; k < block; ++k) audio.setSample (c, k, (noise.nextFloat() * 2.0f - 1.0f) * 0.25f);
-            if (modulate)
-                for (size_t j = 0; j < list.size(); ++j)
-                {
-                    // A 1/4-bar ramp up then hold, a different phase per parameter, set every block.
-                    const float phase = std::fmod ((float) i * block / (float) rate * 4.0f + (float) j * 0.25f, 1.0f);
-                    const float value = phase < 0.5f ? phase * 2.0f : 1.0f;
-                    list[j]->setValue (value);
-                    if (i % 50 == 0 && std::abs (list[j]->getValue() - value) > 0.02f) arrived = false;
-                }
             q.processBlock (audio, midi);
+            for (size_t j = 0; j < linked.size(); ++j)
+            {
+                const float v = fx->getParameters()[linked[j]]->getValue();
+                lowest[j] = juce::jmin (lowest[j], v);
+                highest[j] = juce::jmax (highest[j], v);
+            }
             for (int c = 0; c < 2; ++c)
                 for (int k = 0; k < block; ++k)
                 {
@@ -1415,7 +1538,28 @@ ParameterProbe probeParameters (const juce::PluginDescription& description)
                     if (c == 0 && k % 16 == 0) trace.push_back (v);
                 }
         }
-        if (modulate) result.arrived = arrived && ! list.empty();
+        if (modulate)
+        {
+            result.arrived = ! linked.empty();
+            for (size_t j = 0; j < linked.size(); ++j) result.arrived &= highest[j] - lowest[j] > 0.25f;
+        }
+        else
+        {
+            // Undo: a knob turned in the effect's window goes back (the effect stays loaded; its settings are restored).
+            auto* knob = fx->getParameters()[knobs.front().parameter];
+            const float before = knob->getValue();
+            q.commitHistory();
+            knob->beginChangeGesture();
+            knob->setValueNotifyingHost (before < 0.5f ? 0.9f : 0.1f);
+            knob->endChangeGesture();
+            for (int i = 0; i < 4; ++i) q.processBlock (audio, midi);
+            const bool moved = std::abs (knob->getValue() - before) > 0.02f;
+            q.commitHistory();
+            q.undo();
+            for (int i = 0; i < 4; ++i) q.processBlock (audio, midi);
+            pump (20);
+            result.undone = q.getHostedEffect (0, 0) == fx && (! moved || std::abs (knob->getValue() - before) < 0.02f);
+        }
         return true;
     };
     std::vector<float> plain, moved;
@@ -1433,13 +1577,14 @@ int parameterProbeChild (const juce::File& descriptionFile, const juce::File& re
     if (auto xml = juce::XmlDocument::parse (descriptionFile); xml == nullptr || ! description.loadFromXml (*xml)) return 2;
     const auto r = probeParameters (description);
     resultFile.replaceWithText (juce::String (r.parameters) + "|" + (r.arrived ? "1" : "0") + "|" + (r.changed ? "1" : "0") + "|"
-                                + (r.finite ? "1" : "0") + "|" + r.example);
+                                + (r.finite ? "1" : "0") + "|" + (r.learned ? "1" : "0") + "|" + (r.undone ? "1" : "0") + "|"
+                                + juce::String (r.linked) + "|" + r.example);
     return 0;
 }
 void parameterLinking (const Pool& pool)
 {
-    say ("\n== 5. Parameters inside the effects: can Triad's LFOs move them? ==");
-    int withParameters = 0, followed = 0, changedSound = 0, tested = 0;
+    say ("\n== 5. Knobs inside the effects: Triad's LFO links, LEARN and undo, with every effect ==");
+    int withParameters = 0, followed = 0, changedSound = 0, tested = 0, learned = 0, undone = 0;
     std::vector<int> counts;
     juce::StringArray notes, crashed;
     const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadParameterProbe");
@@ -1447,7 +1592,7 @@ void parameterLinking (const Pool& pool)
     for (size_t e = 0; e < pool.effects.size(); ++e)
     {
         const auto& name = pool.names[(int) e];
-        step ("parameters: " + name, 150);
+        step ("knobs: " + name, 150);
         const auto descriptionFile = folder.getChildFile ("effect.xml"), resultFile = folder.getChildFile ("result.txt");
         resultFile.deleteFile();
         pool.effects[e].createXml()->writeTo (descriptionFile);
@@ -1458,35 +1603,41 @@ void parameterLinking (const Pool& pool)
         const bool finished = child.waitForProcessToFinish (120000);
         if (! finished) child.kill();
         const auto fields = juce::StringArray::fromTokens (resultFile.loadFileAsString(), "|", "");
-        if (! finished || child.getExitCode() != 0 || fields.size() < 4)
+        if (! finished || child.getExitCode() != 0 || fields.size() < 7)
         {
             crashed.add (name);
             continue;
         }
         ++tested;
         const int parameters = fields[0].getIntValue();
-        const bool arrived = fields[1] == "1", changed = fields[2] == "1", finite = fields[3] == "1";
+        const bool arrived = fields[1] == "1", changed = fields[2] == "1", finite = fields[3] == "1", learnt = fields[4] == "1", back = fields[5] == "1";
         counts.push_back (parameters);
-        if (parameters == 0) { notes.add (name + ": no automatable parameters"); continue; }
+        if (parameters == 0) { notes.add (name + ": no automatable knobs"); continue; }
         ++withParameters;
         followed += arrived ? 1 : 0;
         changedSound += changed ? 1 : 0;
-        if (! finite) notes.add (name + ": produced NaN/Inf when its parameters moved (Triad silences that)");
-        if (! arrived) notes.add (name + ": some values read back differently (the effect steps or limits them)");
-        if (! changed) notes.add (name + ": its first parameters did not change the sound of the test noise");
+        learned += learnt ? 1 : 0;
+        undone += back ? 1 : 0;
+        if (! finite) notes.add (name + ": produced NaN/Inf when its knobs moved (Triad silences that)");
+        if (! arrived) notes.add (name + ": a linked knob did not follow the LFO all the way (the effect steps or limits it)");
+        if (! changed) notes.add (name + ": its first knobs did not change the sound of the test noise");
+        if (! learnt) notes.add (name + ": LEARN did not link its first knob");
+        if (! back) notes.add (name + ": undo did not put its first knob back");
         if (verbose)
-            say ("  " + name + ": " + juce::String (parameters) + " automatable parameters (e.g. " + fields[4] + "); moved every block: "
-                 + (arrived ? "values arrive" : "values differ") + (changed ? ", the sound follows" : ", no audible change on noise"));
+            say ("  " + name + ": " + juce::String (parameters) + " knobs (e.g. " + fields[7] + "); " + fields[6] + " linked: "
+                 + (arrived ? "they follow the LFO" : "not all follow") + (changed ? ", the sound follows" : ", no audible change on noise")
+                 + (learnt ? ", LEARN works" : ", LEARN failed") + (back ? ", undo works" : ", undo failed"));
     }
     std::sort (counts.begin(), counts.end());
     const int median = counts.empty() ? 0 : counts[counts.size() / 2];
-    say (juce::String (withParameters) + " of " + juce::String (tested + crashed.size()) + " effects let a host automate their parameters (median "
-         + juce::String (median) + " each, up to " + juce::String (counts.empty() ? 0 : counts.back()) + "); moved from the audio thread every 128 samples: "
-         + "values arrived in " + juce::String (followed) + ", the sound followed in " + juce::String (changedSound)
-         + (crashed.isEmpty() ? juce::String (", none crashed") : ", " + juce::String (crashed.size()) + " crashed (inside the effect): " + crashed.joinIntoString (", ")));
+    say (juce::String (withParameters) + " of " + juce::String (tested + crashed.size()) + " effects have knobs an LFO can link to (median "
+         + juce::String (median) + " each, up to " + juce::String (counts.empty() ? 0 : counts.back()) + "). With Triad's own links (an LFO on up to "
+         + "4 knobs, set every 64 samples): the knobs followed in " + juce::String (followed) + ", the sound followed in " + juce::String (changedSound)
+         + "; LEARN linked a knob in " + juce::String (learned) + "; undo put a turned knob back in " + juce::String (undone)
+         + (crashed.isEmpty() ? juce::String ("; none crashed") : "; " + juce::String (crashed.size()) + " crashed (inside the effect): " + crashed.joinIntoString (", ")));
     for (const auto& n : notes) say ("  note: " + n);
     folder.deleteRecursively();
-    require (tested > 0, "Parameter probe ran");
+    require (tested > 0, "Knob linking probe ran");
 }
 
 // ---- 6. Plug-in list with crashing plug-ins -------------------------------------------------------

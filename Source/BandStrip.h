@@ -20,7 +20,8 @@ public:
 // One effect slot, laid out like an FL Studio mixer slot:
 //   [>] Slot 3 / plug-in name ....... (~ LFO) (mix knob with %) (green on/off light)
 // Click the name: open the loaded effect's window, or choose an effect for an empty slot.
-// Click the arrow (or right-click): replace, move, bypass, LFO, favourite or remove.
+// Click the arrow (or right-click): replace, copy / paste plugin state, move, bypass, LFO, favourite or remove.
+// Press and drag a row up or down to move the effect to another slot of its band.
 class SlotRow final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -29,10 +30,13 @@ public:
     void paint (juce::Graphics&) override;
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
     void mouseExit (const juce::MouseEvent&) override { hover = false; repaint(); }
     void showMenu();
+    void setLifted (bool on) { lifted = on; setAlpha (on ? 0.92f : 1.0f); repaint(); }   // drawn as picked up while dragged
     double latencyMs (int samples) const;
     void animate();   // every frame: the LFO dot riding round the knob
     juce::String latencyText (int samples) const;
@@ -46,7 +50,7 @@ private:
     int band, slot, count = 1;
     juce::Colour colour;
     TriadProcessor::SlotInfo info;
-    bool hover = false, first = true;
+    bool hover = false, first = true, lifted = false;
 };
 
 // The "+" under the last slot: adds a slot and picks its effect in one go.
@@ -81,6 +85,10 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void setLifted (bool);   // drawn as picked up while being dragged
+    // A slot row pressed and dragged (phase 0 down, 1 drag, 2 up): the effect moves to where it is dropped.
+    // Returns true while (and when) a drag is under way, so the row does not also take it as a click.
+    bool slotDrag (int slot, const juce::MouseEvent&, int phase);
+    bool isDraggingSlot() const noexcept { return slotDragState.active; }
     int getNumRows() const noexcept { return (int) rows.size(); }
     SlotRow& getRow (int slot) { return *rows[(size_t) slot]; }
     AddSlotButton& getAddButton() noexcept { return addButton; }
@@ -92,6 +100,7 @@ public:
 private:
     void rebuildRows (int count);
     void layoutRows();
+    void refreshRows();
     TriadProcessor& processor;
     StripHost& host;
     int band;
@@ -108,4 +117,5 @@ private:
     int chainLatency = 0;
     double holdTime = 0.0;
     bool lifted = false;
+    struct SlotDragState { int slot = -1; float startY = 0.0f; int startTop = 0; bool active = false; int target = -1; } slotDragState;
 };

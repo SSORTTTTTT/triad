@@ -43,7 +43,7 @@ public:
     void showBandMenu (int band, juce::Component& target, bool atMouse = false) override;
     // A choice from the band menu (its item ids): copy/paste band state, chains, LFOs, move, remove.
     void bandMenuChoice (int band, int choice, const juce::Array<juce::File>& chainFiles = {});
-    enum BandMenuItem { bandMenuCopy = 7, bandMenuPaste = 8 };
+    enum BandMenuItem { bandMenuCopy = 7, bandMenuPaste = 8, bandMenuPastePlugin = 9 };
     void bandDrag (int band, const juce::MouseEvent&, int phase) override;
     bool isFavourite (const juce::String& format, const juce::String& name) override;
     void setFavourite (const juce::String& format, const juce::String& name, bool) override;
@@ -67,6 +67,11 @@ public:
     void setStartupPreset (const juce::String& choice);
     bool useCurrentSettingsAtStartup();   // saves the current settings and opens new Triads with them
     bool saveChain (int band, const juce::String& name);
+    // The back / forward arrows left of the gear.
+    void undo();
+    void redo();
+    triad::ui::IconButton& getUndoButton() noexcept { return undoButton; }
+    triad::ui::IconButton& getRedoButton() noexcept { return redoButton; }
     bool loadChain (int band, const juce::File&);
 
 private:
@@ -114,6 +119,7 @@ private:
     std::array<TabButton*, 3> tabButtons { &bandsTab, &lfoTab, &matrixTab };
     PresetButton presetButton;
     triad::ui::IconButton gearButton { triad::ui::IconButton::Icon::gear, "Settings: effect list, window size, presets folder" };
+    triad::ui::IconButton undoButton { triad::ui::IconButton::Icon::undo, "Undo" }, redoButton { triad::ui::IconButton::Icon::redo, "Redo" };
     juce::Component bandsPage;
     CrossoverDisplay frequencyDisplay;
     juce::Component stripHolder;

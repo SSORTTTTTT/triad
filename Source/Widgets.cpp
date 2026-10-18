@@ -177,13 +177,13 @@ RouteRow::RouteRow (TriadProcessor& p, int b, int r, bool withSource, juce::Colo
     {
         juce::PopupMenu menu;
         menu.addSectionHeader ("DESTINATION");
-        const auto list = processor.getDestinations (band);
-        for (int i = 0; i < (int) list.size(); ++i) menu.addItem (i + 1, list[(size_t) i].second, true, list[(size_t) i].first == info.destination);
+        std::vector<TriadProcessor::Destination> list;
+        addDestinationItems (menu, processor, band, &info.destination, list);
         juce::Component::SafePointer<RouteRow> safe (this);
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&destination), [safe, list] (int choice)
         {
             if (safe == nullptr || choice < 1 || choice > (int) list.size()) return;
-            safe->processor.setRouteDestination (safe->band, safe->route, list[(size_t) choice - 1].first);
+            safe->processor.setRouteDestination (safe->band, safe->route, list[(size_t) choice - 1]);
         });
     };
     addAndMakeVisible (destination);
@@ -321,4 +321,42 @@ void TriadLook::drawPopupMenuSectionHeaderWithOptions (juce::Graphics& g, const 
     g.drawFittedText (text, area.getX() + 12, area.getY(), area.getWidth() - 16, (int) ((float) area.getHeight() * 0.8f),
                       juce::Justification::bottomLeft, 1);
 }
+}
+
+void triad::ui::addDestinationItems (juce::PopupMenu& menu, TriadProcessor& processor, int band, const TriadProcessor::Destination* current,
+                                     std::vector<TriadProcessor::Destination>& chosen)
+{
+    for (const auto& [destination, name] : processor.getDestinations (band))
+    {
+        chosen.push_back (destination);
+        menu.addItem ((int) chosen.size(), name, true, current != nullptr && destination == *current);
+    }
+    bool header = false;
+    for (int slot = 0; slot < processor.getSlotCount (band); ++slot)
+    {
+        const auto knobs = processor.getEffectParameters (band, slot);
+        if (knobs.empty()) continue;
+        if (! header) { menu.addSectionHeader ("KNOBS INSIDE EFFECTS"); header = true; }
+        juce::PopupMenu effectMenu;
+        constexpr int page = 40;
+        auto addRange = [&] (juce::PopupMenu& m, int from, int to)
+        {
+            for (int k = from; k < to; ++k)
+            {
+                chosen.push_back (knobs[(size_t) k].first);
+                m.addItem ((int) chosen.size(), knobs[(size_t) k].second, true, current != nullptr && knobs[(size_t) k].first == *current);
+            }
+        };
+        if ((int) knobs.size() <= page) addRange (effectMenu, 0, (int) knobs.size());
+        else
+            for (int from = 0; from < (int) knobs.size(); from += page)
+            {
+                juce::PopupMenu part;
+                const int to = juce::jmin ((int) knobs.size(), from + page);
+                addRange (part, from, to);
+                effectMenu.addSubMenu (knobs[(size_t) from].second + juce::String::fromUTF8 (" \xe2\x80\xa6 ") + knobs[(size_t) to - 1].second, part);
+            }
+        const auto info = processor.getSlotInfo (band, slot);
+        menu.addSubMenu (juce::String (slot + 1) + juce::String::fromUTF8 (" \xc2\xb7 ") + info.name + "  (" + juce::String ((int) knobs.size()) + ")", effectMenu);
+    }
 }
