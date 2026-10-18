@@ -896,7 +896,9 @@ void TriadProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBu
     const juce::ScopedTryLock lock (gate);
     if (! lock.isLocked() || ! prepared || restoring.load() || muted.load() || audio.getNumChannels() < 2)
     {
-        if (! lock.isLocked() && prepared) silencedBlocks.fetch_add (1, std::memory_order_relaxed);
+        // Counted: the bands were being changed (the lock was taken, or a band was added, removed or moved and its
+        // dividers and knobs not yet set). Not counted: before the DAW prepares Triad, and while a project loads.
+        if (prepared && (! lock.isLocked() || muted.load())) silencedBlocks.fetch_add (1, std::memory_order_relaxed);
         audio.clear();
         return;
     }
