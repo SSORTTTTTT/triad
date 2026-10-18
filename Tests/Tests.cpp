@@ -1252,6 +1252,17 @@ int main (int argc, char** argv)
             q.setSlotMix (0, 0, 10.0f);
             q.commitHistory();
             require (! q.canRedo(), "A new change after undo: the undone steps are gone");
+            {
+                // A knob the effect leaves out of its saved settings (the test effect's Tone) also goes back.
+                auto* tone = q.getHostedEffect (0, 0)->getParameters()[1];
+                const float toneBefore = tone->getValue();
+                tone->beginChangeGesture();
+                tone->setValueNotifyingHost (0.9f);
+                tone->endChangeGesture();
+                q.commitHistory();
+                require (q.undo() && std::abs (tone->getValue() - toneBefore) < 1.0e-3f, "Undo puts back a knob the effect does not save in its settings");
+                require (q.redo() && std::abs (tone->getValue() - 0.9f) < 1.0e-3f, "Redo sets that knob again");
+            }
             // An LFO's own undo list stays with it through the main undo.
             const int lfo = q.getSlotLfo (0, 0);
             q.setLfoShape (0, lfo, mod::preset (3), true);

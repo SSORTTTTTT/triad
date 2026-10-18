@@ -5,6 +5,8 @@ public:
     TestEffect() : AudioProcessor (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true).withOutput ("Out", juce::AudioChannelSet::stereo(), true))
     {
         addParameter (gain = new juce::AudioParameterFloat (juce::ParameterID { "gain", 1 }, "Gain", 0.0f, 1.0f, 0.25f));
+        // A knob the effect leaves out of its saved settings, as a few real effects do (undo must still restore it).
+        addParameter (new juce::AudioParameterFloat (juce::ParameterID { "tone", 1 }, "Tone", 0.0f, 1.0f, 0.5f));
         setLatencySamples (73);
     }
     const juce::String getName() const override { return "Triad Test Effect"; }

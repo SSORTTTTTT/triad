@@ -2079,6 +2079,25 @@ void TriadProcessor::writeBand (juce::XmlElement& node, const Band& band, bool f
         x->addChildElement (s.description.createXml().release());
         if (s.effect) s.effect->getStateInformation (s.savedState);
         x->createNewChildElement ("State")->addTextElement (s.savedState.toBase64Encoding());
+        if (forHistory && s.effect != nullptr)
+        {
+            // Undo also keeps where each knob is (in millionths; "x" for knobs an LFO moves, or that cannot be
+            // automated): a few effects do not give every knob back through their saved settings.
+            std::set<int> linked;
+            for (auto& r : band.routes)
+                if (r->destination.kind == Destination::effectParameter && r->destination.slotId == s.id) linked.insert (r->destination.parameter);
+            const auto& knobs = s.effect->getParameters();
+            juce::String values;
+            values.preallocateBytes ((size_t) knobs.size() * 8);
+            for (int k = 0; k < knobs.size(); ++k)
+            {
+                if (k > 0) values << ' ';
+                auto* knob = knobs[k];
+                if (linked.count (k) > 0 || ! knob->isAutomatable() || knob->isMetaParameter()) values << 'x';
+                else values << juce::roundToInt (juce::jlimit (0.0f, 1.0f, knob->getValue()) * 1.0e6f);
+            }
+            x->createNewChildElement ("Knobs")->addTextElement (values);
+        }
     }
     for (auto& l : band.lfos)
     {
@@ -2597,19 +2616,22 @@ void TriadProcessor::commitHistory()
     size_t size = snapshotSize (*snapshot);
     if (historyCursor >= 0)
     {
-        std::map<int, juce::String> before;
-        for (auto* band : history[(size_t) historyCursor]->getChildWithTagNameIterator ("Band"))
-            for (auto* slot : band->getChildWithTagNameIterator ("Slot"))
-                if (auto* state = slot->getChildByName ("State"); state != nullptr && state->getFirstChildElement() != nullptr)
-                    before[slot->getIntAttribute ("serial")] = state->getFirstChildElement()->getText();
-        for (auto* band : snapshot->getChildWithTagNameIterator ("Band"))
-            for (auto* slot : band->getChildWithTagNameIterator ("Slot"))
-                if (auto* state = slot->getChildByName ("State"); state != nullptr && state->getFirstChildElement() != nullptr)
-                    if (const auto it = before.find (slot->getIntAttribute ("serial")); it != before.end() && it->second == state->getFirstChildElement()->getText())
-                    {
-                        size -= juce::jmin (size, (size_t) it->second.length());
-                        state->getFirstChildElement()->setText (it->second);
-                    }
+        for (const auto* tag : { "State", "Knobs" })
+        {
+            std::map<int, juce::String> before;
+            for (auto* band : history[(size_t) historyCursor]->getChildWithTagNameIterator ("Band"))
+                for (auto* slot : band->getChildWithTagNameIterator ("Slot"))
+                    if (auto* text = slot->getChildByName (tag); text != nullptr && text->getFirstChildElement() != nullptr)
+                        before[slot->getIntAttribute ("serial")] = text->getFirstChildElement()->getText();
+            for (auto* band : snapshot->getChildWithTagNameIterator ("Band"))
+                for (auto* slot : band->getChildWithTagNameIterator ("Slot"))
+                    if (auto* text = slot->getChildByName (tag); text != nullptr && text->getFirstChildElement() != nullptr)
+                        if (const auto it = before.find (slot->getIntAttribute ("serial")); it != before.end() && it->second == text->getFirstChildElement()->getText())
+                        {
+                            if (juce::String (tag) == "State") size -= juce::jmin (size, (size_t) it->second.length());
+                            text->getFirstChildElement()->setText (it->second);
+                        }
+        }
     }
     history.resize ((size_t) (historyCursor + 1));   // a new change: the steps that were undone are gone
     historySizes.resize (history.size());
@@ -2678,6 +2700,7 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
     for (auto& f : fresh) if (f == nullptr) f = std::make_unique<Band>();
     struct Kept { int band, slot; juce::MemoryBlock state; };
     std::vector<Kept> kept;
+    const auto withEffects = loads;   // every slot with an effect, for its knobs below
     {
         const juce::ScopedLock lock (gate);
         // Effects still loaded are taken over by the slot with the same serial, when it holds the same effect.
@@ -2761,6 +2784,24 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
         for (int b = 0; b < count; ++b) bands[(size_t) b]->relink();
         alignLatency();
     }
+    // Knobs the settings did not bring back (some effects keep a few out of them) are set as they were.
+    for (int b = 0; b < count; ++b)
+        for (auto& load : withEffects[(size_t) b])
+            if (auto* s = slotAt (b, load.slot); s != nullptr && s->effect != nullptr && s->pendingRequest == 0)
+                if (auto* knobsXml = load.node->getChildByName ("Knobs"))
+                {
+                    std::set<int> linked;
+                    for (auto& r : bands[(size_t) b]->routes)
+                        if (r->destination.kind == Destination::effectParameter && r->destination.slotId == s->id) linked.insert (r->destination.parameter);
+                    const auto values = juce::StringArray::fromTokens (knobsXml->getAllSubText(), " ", "");
+                    const auto& knobs = s->effect->getParameters();
+                    for (int k = 0; k < juce::jmin (values.size(), knobs.size()); ++k)
+                    {
+                        if (values[k] == "x" || linked.count (k) > 0) continue;
+                        const float value = (float) values[k].getIntValue() * 1.0e-6f;
+                        if (std::abs (knobs[k]->getValue() - value) > 2.0e-4f) knobs[k]->setValueNotifyingHost (value);
+                    }
+                }
     ++structureVersion;
     refreshWindowTitles();
     historyDirty = false;
