@@ -99,11 +99,15 @@ public:
     {
         setLatencySamples (73);
         live().insert (this);
+        if (monoOnly) liveMono().insert (this);
         if (postOnLoad)
             juce::MessageManager::callAsync ([self = this] { ++(live().count (self) > 0 ? delivered : deliveredAfterDeletion); });
     }
-    ~SidechainEffect() override { live().erase (this); }
+    ~SidechainEffect() override { live().erase (this); liveMono().erase (this); }
     static std::set<const void*>& live() { static std::set<const void*> s; return s; }
+    static std::set<const void*>& liveMono() { static std::set<const void*> s; return s; }
+    // Live copies (and their editors) other than the refused mono-only one, which stays as that plug-in's idle copy.
+    static size_t liveStereo() { return live().size() - liveMono().size(); }
     static inline int delivered = 0, deliveredAfterDeletion = 0;
     // Its editor does the same when it opens.
     struct PostingEditor final : juce::GenericAudioProcessorEditor
@@ -570,6 +574,7 @@ int main (int argc, char** argv)
             // An effect Triad cannot host says what layout it offers.
             const auto refused = sidechain.loadInstance (0, 0, std::make_unique<SidechainEffect> (true));
             require (refused.contains ("Mono"), ("A mono-only effect is refused with its layout named (" + refused + ")").toRawUTF8());
+            require (SidechainEffect::liveMono().size() == 1, "A refused effect is not deleted on the spot either (it goes like a removed one)");
             std::cout << "Mono-only effect refused: " << refused << std::endl;
         }
         // ---- A removed effect is deleted only after its own pending messages have arrived -------
@@ -582,7 +587,7 @@ int main (int argc, char** argv)
             require (liveAfterRemoval >= 1, "The removed effect is not deleted on the spot");
             juce::MessageManager::getInstance()->runDispatchLoopUntil (3200);
             require (SidechainEffect::delivered == 1 && SidechainEffect::deliveredAfterDeletion == 0, "Its message arrives while it still exists");
-            require (SidechainEffect::live().size() == 1, "A moment later only one idle copy of the effect is left");
+            require (SidechainEffect::liveStereo() == 1, "A moment later only one idle copy of the effect is left");
             // The same when Triad itself is closed (a project closed, Triad removed from a track).
             {
                 TriadProcessor closing;
@@ -591,7 +596,7 @@ int main (int argc, char** argv)
             }
             require (! SidechainEffect::live().empty(), "Closing Triad does not delete its effects on the spot");
             juce::MessageManager::getInstance()->runDispatchLoopUntil (3200);
-            require (SidechainEffect::delivered == 2 && SidechainEffect::deliveredAfterDeletion == 0 && SidechainEffect::live().size() == 1,
+            require (SidechainEffect::delivered == 2 && SidechainEffect::deliveredAfterDeletion == 0 && SidechainEffect::liveStereo() == 1,
                      "After Triad closes, its effects get their messages and are then deleted (one idle copy is kept)");
             // An effect window closed (with its slot removed) right after it opened.
             if (juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr)
@@ -613,7 +618,7 @@ int main (int argc, char** argv)
                     require (many.loadInstance (0, i == 0 ? 0 : many.getSlotCount (0), std::make_unique<SidechainEffect>()).isEmpty(), "Load copies");
             }
             juce::MessageManager::getInstance()->runDispatchLoopUntil (3200);
-            require (SidechainEffect::live().size() == 1, "One idle copy of each effect is kept, the rest are deleted");
+            require (SidechainEffect::liveStereo() == 1, "One idle copy of each effect is kept, the rest are deleted");
             require (TriadProcessor::getIdleEffectCount() >= 1, "Idle copies are counted");
             std::cout << "Removed effects are deleted after their pending messages: passed" << std::endl;
         }
