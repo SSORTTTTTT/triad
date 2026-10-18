@@ -59,12 +59,17 @@ public:
     BandStrip* getStrip (int band) const
     {
         if (band == TriadProcessor::preBand) return preStrip.get();
+        if (band == TriadProcessor::postBand) return postStrip.get();
         return band >= 0 && band < (int) strips.size() ? strips[(size_t) band].get() : nullptr;
     }
-    // The PRE chain's strip, left of the bands: shown while PRE has effects, or after the PRE button opened it.
+    // The PRE chain's strip, left of the bands, and POST's, right of them: shown while they have effects, or after
+    // the PRE / POST button opened them.
     bool isPreShown() const noexcept { return preStrip != nullptr && preStrip->isVisible(); }
-    void togglePre();
-    void showPreMenu (juce::Component& target, bool atMouse);
+    bool isPostShown() const noexcept { return postStrip != nullptr && postStrip->isVisible(); }
+    void togglePre() { toggleChain (TriadProcessor::preBand); }
+    void togglePost() { toggleChain (TriadProcessor::postBand); }
+    void toggleChain (int band);
+    void showChainMenu (int band, juce::Component& target, bool atMouse);
     juce::String getStatusText() const { return status.getText(); }
     void refreshNow() { timerCallback(); animate (lastFrame + 0.05); }
     // Every frame of the screen (up to 60 a second): meters, CPU, the LFO dots on the knobs.
@@ -133,10 +138,10 @@ private:
     juce::Component stripHolder;
     juce::Viewport viewport;
     std::vector<std::unique_ptr<BandStrip>> strips;
-    std::unique_ptr<BandStrip> preStrip;
-    bool preOpened = false;
+    std::unique_ptr<BandStrip> preStrip, postStrip;
+    bool preOpened = false, postOpened = false;
     int stripOrigin() const;   // where the band strips start (after the PRE strip, when it is shown)
-    void updatePre();
+    void updateChains();
     LfoPage lfoPage;
     MatrixPage matrixPage;
     juce::Label status;

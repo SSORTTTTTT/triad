@@ -122,6 +122,7 @@ TriadEditor::TriadEditor (TriadProcessor& p)
     bandsPage.addAndMakeVisible (frequencyDisplay);
     frequencyDisplay.onEditBandLfo = [this] (int band) { showLfo (band, -1); };
     frequencyDisplay.onTogglePre = [this] { togglePre(); };
+    frequencyDisplay.onTogglePost = [this] { togglePost(); };
     lfoPage.askName = [this] (const juce::String& title, const juce::String& initial, std::function<void (const juce::String&)> done)
     {
         prompt.show (title, initial, std::move (done));
@@ -212,34 +213,40 @@ void TriadEditor::rebuildStrips()
     {
         preStrip = std::make_unique<BandStrip> (processor, *this, TriadProcessor::preBand);
         stripHolder.addChildComponent (*preStrip);
+        postStrip = std::make_unique<BandStrip> (processor, *this, TriadProcessor::postBand);
+        stripHolder.addChildComponent (*postStrip);
     }
-    updatePre();
+    updateChains();
     layoutStrips();
     frequencyDisplay.refresh();
 }
-void TriadEditor::togglePre()
+void TriadEditor::toggleChain (int band)
 {
-    if (isPreShown() && processor.hasPreEffects())
+    const bool pre = band == TriadProcessor::preBand;
+    if ((pre ? isPreShown() : isPostShown()) && processor.hasChainEffects (band))
     {
-        processor.setStatus ("PRE has effects, so it stays shown (remove them, or use the PRE strip's ... menu, to hide it)");
+        processor.setStatus (TriadProcessor::chainName (band) + " has effects, so it stays shown (remove them, or use its ... menu, to hide it)");
         return;
     }
-    preOpened = ! isPreShown();
-    updatePre();
+    (pre ? preOpened : postOpened) = ! (pre ? isPreShown() : isPostShown());
+    updateChains();
     layoutStrips();
 }
-void TriadEditor::updatePre()
+void TriadEditor::updateChains()
 {
-    int effects = 0;
-    for (int s = 0; s < processor.getSlotCount (TriadProcessor::preBand); ++s)
-        effects += processor.getSlotInfo (TriadProcessor::preBand, s).hasContent ? 1 : 0;
-    const bool show = preOpened || effects > 0;
-    frequencyDisplay.setPreState (show, effects);
-    if (preStrip != nullptr && preStrip->isVisible() != show)
+    bool changed = false;
+    for (int band : { TriadProcessor::preBand, TriadProcessor::postBand })
     {
-        preStrip->setVisible (show);
-        layoutStrips();
+        int effects = 0;
+        for (int s = 0; s < processor.getSlotCount (band); ++s) effects += processor.getSlotInfo (band, s).hasContent ? 1 : 0;
+        const bool pre = band == TriadProcessor::preBand;
+        const bool show = (pre ? preOpened : postOpened) || effects > 0;
+        if (pre) frequencyDisplay.setPreState (show, effects);
+        else frequencyDisplay.setPostState (show, effects);
+        auto* strip = pre ? preStrip.get() : postStrip.get();
+        if (strip != nullptr && strip->isVisible() != show) { strip->setVisible (show); changed = true; }
     }
+    if (changed) layoutStrips();
 }
 int TriadEditor::stripOrigin() const
 {
@@ -248,8 +255,8 @@ int TriadEditor::stripOrigin() const
 void TriadEditor::layoutStrips()
 {
     const int available = viewport.getWidth();
-    const bool pre = isPreShown();
-    const int n = juce::jmax (1, (int) strips.size() + (pre ? 1 : 0));
+    const bool pre = isPreShown(), post = isPostShown();
+    const int n = juce::jmax (1, (int) strips.size() + (pre ? 1 : 0) + (post ? 1 : 0));
     const int width = juce::jlimit (minStripWidth, maxStripWidth, (available - stripGap * (n - 1)) / n);
     const int total = n * width + stripGap * (n - 1);
     const int height = juce::jmax (100, viewport.getHeight() - 8);
@@ -267,6 +274,7 @@ void TriadEditor::layoutStrips()
     }
     if (drag.active && drag.band >= 0 && drag.band < (int) strips.size())
         strips[(size_t) drag.band]->setSize (width, height);
+    if (post) postStrip->setBounds (origin + (int) strips.size() * (width + stripGap), 0, width, height);   // POST last: it runs after them
 }
 void TriadEditor::timerCallback()
 {
@@ -278,29 +286,31 @@ void TriadEditor::timerCallback()
         const double sr = juce::jmax (1.0, processor.getSampleRateForDisplay());
         auto ms = [sr] (int samples) { return triad::ui::formatMs (1000.0 * samples / sr); };
         int all = 0;
-        for (int b = -1; b < builtCount; ++b)
+        for (int b = -1; b <= builtCount; ++b)
         {
-            const int index = b < 0 ? TriadProcessor::preBand : b;
+            const int index = b < 0 ? TriadProcessor::preBand : b == builtCount ? TriadProcessor::postBand : b;
             juce::StringArray effects;
             int chain = 0;
             for (int s = 0; s < processor.getSlotCount (index); ++s)
                 if (const auto info = processor.getSlotInfo (index, s); info.latency > 0) { effects.add (info.name + " " + ms (info.latency)); chain += info.latency; }
             all += chain;
             if (chain > 0)
-                lines.add ((b < 0 ? juce::String ("PRE (adds to every band)") : "Band " + juce::String (b + 1)) + ": " + ms (chain)
+                lines.add ((TriadProcessor::isExtraChain (index) ? TriadProcessor::chainName (index) + " (adds to every band)" : "Band " + juce::String (b + 1)) + ": " + ms (chain)
                            + " (" + effects.joinIntoString (" + ") + ")");
         }
         if (! lines.isEmpty())
             lines.add ("All effects added up: " + ms (all) + ". Bands play side by side, so the slowest band sets the delay you hear"
-                       + (processor.getPreLatencySamples() > 0 ? juce::String (", plus PRE before them.") : juce::String (".")));
+                       + (processor.getPreLatencySamples() + processor.getPostLatencySamples() > 0 ? juce::String (", plus PRE before them and POST after.")
+                                                                                                    : juce::String (".")));
         frequencyDisplay.setLatency (processor.getLatencySamples(), sr, lines.joinIntoString ("\n"));
     }
     if (tab == Tab::bands)
     {
         const auto cuts = processor.effectiveCrossovers();
         for (auto& strip : strips) strip->update (cuts, builtCount, processor.nyquistFrequency());
-        updatePre();
+        updateChains();
         if (isPreShown()) preStrip->update (cuts, builtCount, processor.nyquistFrequency());
+        if (isPostShown()) postStrip->update (cuts, builtCount, processor.nyquistFrequency());
         frequencyDisplay.refreshIfChanged();
     }
     else if (tab == Tab::lfo) lfoPage.refresh();
@@ -316,13 +326,14 @@ void TriadEditor::timerCallback()
                                            : juce::String ("Redo: nothing to redo"));
     }
     juce::String text;
-    for (int b = -1; b < builtCount && text.isEmpty(); ++b)
+    for (int b = -1; b <= builtCount && text.isEmpty(); ++b)
     {
-        const int index = b < 0 ? TriadProcessor::preBand : b;
+        const int index = b < 0 ? TriadProcessor::preBand : b == builtCount ? TriadProcessor::postBand : b;
         for (int s = 0; s < processor.getSlotCount (index); ++s)
             if (auto info = processor.getSlotInfo (index, s); info.status.isNotEmpty())
             {
-                text = (b < 0 ? juce::String ("PRE") : "Band " + juce::String (b + 1)) + " / Slot " + juce::String (s + 1) + ": " + info.status;
+                text = (TriadProcessor::isExtraChain (index) ? TriadProcessor::chainName (index) : "Band " + juce::String (b + 1)) + " / Slot "
+                     + juce::String (s + 1) + ": " + info.status;
                 break;
             }
     }
@@ -346,6 +357,7 @@ void TriadEditor::animate (double frameTime)
     {
         for (auto& strip : strips) strip->animate (meters.bands[(size_t) strip->getBand()], dt);
         if (isPreShown()) preStrip->animate (0.0f, dt);
+        if (isPostShown()) postStrip->animate (0.0f, dt);
     }
 }
 void TriadEditor::changeListenerCallback (juce::ChangeBroadcaster*) { timerCallback(); }
@@ -418,7 +430,7 @@ void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
     const bool newSlot = slot >= processor.getSlotCount (band);
     const bool alphabetical = settings->getSort() == TriadSettings::Sort::alphabetical;
     juce::PopupMenu menu;
-    menu.addSectionHeader ((band == TriadProcessor::preBand ? juce::String ("PRE") : "Band " + juce::String (band + 1)) + "  /  "
+    menu.addSectionHeader ((TriadProcessor::isExtraChain (band) ? TriadProcessor::chainName (band) : "Band " + juce::String (band + 1)) + "  /  "
                            + (newSlot ? juce::String ("New slot") : "Slot " + juce::String (slot + 1)));
     // Favourites first: one click away.
     const auto favourites = settings->getFavourites();
@@ -608,37 +620,37 @@ void TriadEditor::showPresetMenu()
         else if (choice >= firstPreset && choice - firstPreset < files.size()) self.loadPreset (files[choice - firstPreset]);
     });
 }
-void TriadEditor::showPreMenu (juce::Component& target, bool atMouse)
+void TriadEditor::showChainMenu (int band, juce::Component& target, bool atMouse)
 {
     enum { pastePluginId = 1, lfoId, clearId, hideId };
-    constexpr int pre = TriadProcessor::preBand;
+    const auto name = TriadProcessor::chainName (band);
     juce::PopupMenu menu;
-    menu.addSectionHeader ("PRE  (FULL RANGE, BEFORE THE BANDS)");
+    menu.addSectionHeader (name + (band == TriadProcessor::preBand ? "  (FULL RANGE, BEFORE THE BANDS)" : "  (FULL RANGE, AFTER THE BANDS)"));
     menu.addItem (pastePluginId, TriadProcessor::hasCopiedEffect() ? "Paste plugin (" + TriadProcessor::copiedEffectName() + ") into a new slot"
                                                                    : juce::String ("Paste plugin into a new slot"),
                   TriadProcessor::hasCopiedEffect());
-    menu.addItem (lfoId, "Edit LFOs for PRE...", processor.getLfoCount (pre) > 0);
+    menu.addItem (lfoId, "Edit LFOs for " + name + "...", processor.getLfoCount (band) > 0);
     menu.addSeparator();
-    menu.addItem (clearId, "Remove all PRE effects", processor.hasPreEffects());
-    menu.addItem (hideId, "Hide PRE", ! processor.hasPreEffects());
+    menu.addItem (clearId, "Remove all " + name + " effects", processor.hasChainEffects (band));
+    menu.addItem (hideId, "Hide " + name, ! processor.hasChainEffects (band));
     auto options = juce::PopupMenu::Options().withTargetComponent (&target);
     if (atMouse) options = options.withMousePosition();
     juce::Component::SafePointer<TriadEditor> safe (this);
-    menu.showMenuAsync (options, [safe] (int choice)
+    menu.showMenuAsync (options, [safe, band] (int choice)
     {
         if (safe == nullptr || choice == 0) return;
         auto& self = *safe;
-        if (choice == pastePluginId) self.processor.pasteEffectState (pre, self.processor.getSlotCount (pre));
-        else if (choice == lfoId) self.showLfo (pre, 0);
+        if (choice == pastePluginId) self.processor.pasteEffectState (band, self.processor.getSlotCount (band));
+        else if (choice == lfoId) self.showLfo (band, 0);
         else if (choice == clearId)
-            for (int s = self.processor.getSlotCount (pre); --s >= 0;) self.processor.removeSlot (pre, s);
-        else if (choice == hideId) { self.preOpened = false; self.updatePre(); }
+            for (int s = self.processor.getSlotCount (band); --s >= 0;) self.processor.removeSlot (band, s);
+        else if (choice == hideId) { (band == TriadProcessor::preBand ? self.preOpened : self.postOpened) = false; self.updateChains(); }
         self.timerCallback();
     });
 }
 void TriadEditor::showBandMenu (int band, juce::Component& target, bool atMouse)
 {
-    if (band == TriadProcessor::preBand) { showPreMenu (target, atMouse); return; }
+    if (TriadProcessor::isExtraChain (band)) { showChainMenu (band, target, atMouse); return; }
     enum { saveId = 1, lfoId, leftId, rightId, removeId, folderId, copyId, pasteId, pastePluginId, firstChain = 100 };
     const auto files = filesIn (TriadSettings::chainFolder(), "*.triadchain");
     const int count = processor.getBandCount();

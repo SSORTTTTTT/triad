@@ -29,20 +29,45 @@ New in 0.7.0:
   EQ. PRE button beside + BAND; its strip comes first, left of the bands; slots, mix knobs, LFOs, links to knobs,
   LEARN, copy / paste plugin state, dragging, undo; no band mix or volume. Its latency comes first and adds to every
   band's; LIVE passes its latency-adding effects by too. Saved with projects (older projects open with PRE empty).
+- **POST** (Thomas, 2026-10-18): the same, after the bands come back together (a limiter, a bus compressor, a final
+  EQ or reverb). POST button beside PRE; its strip comes last, right of the bands. Total latency = PRE + the slowest
+  band + POST.
+- **PRE and POST in the LFO and MATRIX tabs** (Thomas, 2026-10-18): the LFO tab has a PRE chip before band 1 and a
+  POST chip after the last band, with the same LFOs, shapes, lengths, + ROUTE TO... (every slot mix and every knob
+  inside their effects) and LEARN as any band; the MATRIX tab has a PRE panel first and a POST panel last.
 - **All dividers in one click:** "All dividers: hard wall (96 dB/oct)", "default (24)" and "soft (6)" in every slope
   list and in a band's right-click menu.
 - **Each slope in the list shows its timing** at that divider (how much later the sound there comes out), computed
-  from the filters and checked against a measurement in the tests.
+  from the filters and checked against a measurement in the tests. At Thomas's dividers: 250 Hz 11.6 ms at 96 dB/oct,
+  1.8 ms at 24; 2.5 kHz 1.2 ms and 0.2 ms.
 - **Faster when an effect changes its latency** (Auto-Tune's Low Latency switch): Triad lines up again within about
-  35 ms (was up to 200 ms), silent for that moment rather than out of line.
+  35-75 ms (was up to 200 ms), silent for that moment rather than out of line.
+- **Smoother while recording:** a new effect is prepared, and a removed one released, outside the moment the audio
+  waits for the bands to change, so loading or removing a big plug-in no longer makes Triad skip blocks. Removed
+  effects are deleted one at a time, 1.5 s after they leave (a crash seen in the v6 CI run: a plug-in's own message
+  queue still running while 50 effects were deleted at once after a project reload).
 - Latency readouts of 10 ms and more in whole milliseconds ("57 ms", was "57.4375 ms latency").
 - For tracking: Auto-Tune once, in PRE, in Low Latency mode; dividers in the voice's low notes at 24 dB/oct or softer.
 
+New tests in 0.7.0 (Thomas: "an extra strong stress test for the recording capabilities", with a free pitch corrector
+and the dividers at 250 Hz and 2.5 kHz):
+- **Live vocals with a pitch corrector** (integration tests, every build): a stand-in with Auto-Tune's latencies
+  (55.6 ms, 2.3 ms in Low Latency mode) on a plain track vs in Triad (one band, three copies, PRE, POST); Triad's
+  latency is exactly the effects', switching Low Latency mode is silent for under 0.15 s, and what each copy hears.
+- **Recording through Triad** (stress test, section 7): a sung vocal take through a vocal session (pitch corrector in
+  PRE, 3 bands at 250 Hz / 2.5 kHz, real effects, every LFO on, a knob link, the window open, a save every second) at
+  32 / 64 / 128 samples, 44.1 / 48 / 96 kHz, while knobs, LFOs, windows, tabs and undo steps change every 150 ms: no
+  block silenced by Triad, no not-a-number. Then layout changes every 400 ms (load / remove / drag effects, bypass,
+  LIVE, undo / redo, all dividers, add / remove a band, the corrector's latency switch), each reported with how long
+  it interrupted the sound.
+- **Pitch correction with a sung vocal** (stress test, section 8, Graillon 3 Free on the CI Mac): the same take on a
+  plain track, in Triad with one band, in PRE with 3 bands, and a copy in each band at 96 and at 24 dB/oct: latency
+  reported vs heard, how far from the note and how much wobble is left, and how different it sounds from the plain
+  track.
+
 Still to do from this list:
 - Measure Thomas's exact chain in FL Studio and Ableton on the Mac (plain track vs Triad, AU vs VST3) once he has
-  tried v6, and **free pitch correctors in the CI stress tests** (MAutoPitch, Graillon's free edition, if their
-  installers can be fetched), for latency reported vs heard with a real pitch corrector.
-- Maybe a **POST** chain (after the bands come back together, e.g. a limiter), and PRE in the MATRIX tab.
+  tried v6.
 - Maybe a **1-band / full-range** switch (no split at all) for chains that should not be split.
 
 ### 0.6.0 ("Triad v5")

@@ -680,8 +680,8 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             if (maxSeconds > 0.0 && elapsed > maxSeconds) { timeLimit = true; break; }
             const auto opStart = juce::Time::getMillisecondCounterHiRes();
             const int bands = p.getBandCount();
-            // One edit in eight is on the PRE chain (every slot, LFO and link function takes it as a band).
-            const int band = r.nextInt (8) == 0 ? TriadProcessor::preBand : r.nextInt (bands);
+            // One edit in eight is on the PRE or POST chain (every slot, LFO and link function takes them as bands).
+            const int band = r.nextInt (8) == 0 ? (r.nextBool() ? TriadProcessor::preBand : TriadProcessor::postBand) : r.nextInt (bands);
             const int slots = p.getSlotCount (band);
             const int slot = r.nextInt (slots);
             const int effects = loadedCount (p);
@@ -936,9 +936,9 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             }
             else if (choice >= 155)
             {
-                // PRE: an effect loaded into it, one removed, or its strip opened / closed in Triad's window.
-                begin ("PRE chain");
-                constexpr int pre = TriadProcessor::preBand;
+                // PRE or POST: an effect loaded into it, one removed, or its strip opened / closed in Triad's window.
+                begin ("PRE / POST chain");
+                const int pre = r.nextBool() ? TriadProcessor::preBand : TriadProcessor::postBand;
                 const int preSlots = p.getSlotCount (pre);
                 switch (r.nextInt (4))
                 {
@@ -955,7 +955,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                         if (auto* e = dynamic_cast<TriadEditor*> (editor.get()))
                         {
                             e->setTab (TriadEditor::Tab::bands);
-                            e->togglePre();
+                            if (pre == TriadProcessor::preBand) e->togglePre(); else e->togglePost();
                         }
                         break;
                 }
@@ -1735,6 +1735,8 @@ void pluginList (const juce::File& effect, const juce::File& crashFixture, const
 }
 }
 
+#include "RecordingTests.h"
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
@@ -1752,12 +1754,14 @@ int main (int argc, char** argv)
         const juce::File scanner (juce::String::fromUTF8 (argv[3]));
         // --real: use every effect installed on this computer instead of the test effect + Apple's AUs.
         bool real = false, liveOnly = false;   // --live: only the live-monitoring section
+        bool recordingOnly = false;            // --recording: only the recording and pitch-correction sections (7 and 8)
         juce::int64 seed = 20261015;
         for (int i = 4; i < argc; ++i)
         {
             const auto arg = juce::String::fromUTF8 (argv[i]);
             if (arg == "--real") real = true;
             else if (arg == "--live") liveOnly = true;
+            else if (arg == "--recording") recordingOnly = true;
             else if (arg.containsOnly ("0123456789")) seed = arg.getLargeIntValue();
             else reportFile = juce::File (arg);
         }
@@ -1767,6 +1771,14 @@ int main (int argc, char** argv)
              + juce::SystemStats::getOperatingSystemName() + ", " + juce::SystemStats::getCpuModel() + ", "
              + juce::String (juce::SystemStats::getNumCpus()) + " cores)");
         const auto pool = real ? buildRealPool (scanner) : buildPool (effect, scanner);
+        if (recordingOnly)
+        {
+            recordingStress (pool, real);
+            pitchCorrection (pool);
+            say ("\nPASS: recording and pitch-correction checks held");
+            watchdog = nullptr;
+            return 0;
+        }
         if (liveOnly)
         {
             liveMonitoring (pool, real);
@@ -1784,6 +1796,8 @@ int main (int argc, char** argv)
         manyInstances (pool);
         liveMonitoring (pool, real);
         parameterLinking (pool);
+        recordingStress (pool, real);
+        pitchCorrection (pool);
         pluginList (effect, crashFixture, scanner);
         step ({}, 0);
         if (! invalidEffects.empty())

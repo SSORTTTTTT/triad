@@ -928,7 +928,7 @@ void LfoPage::generate()
 juce::String LfoPage::signature() const
 {
     juce::String s;
-    s << processor.getBandCount() << ":" << processor.getStructureVersion() << ":" << (processor.hasPreEffects() ? "P" : "-") << ":";
+    s << processor.getBandCount() << ":" << processor.getStructureVersion() << ":";
     for (int i = 0; i < processor.getLfoCount (band); ++i)
     {
         const auto l = processor.getLfoInfo (band, i);
@@ -940,7 +940,7 @@ juce::String LfoPage::signature() const
 }
 void LfoPage::select (int b, int l)
 {
-    band = b == TriadProcessor::preBand ? b : juce::jlimit (0, juce::jmax (0, processor.getBandCount() - 1), b);
+    band = TriadProcessor::isExtraChain (b) ? b : juce::jlimit (0, juce::jmax (0, processor.getBandCount() - 1), b);
     lfo = juce::jlimit (0, juce::jmax (0, processor.getLfoCount (band) - 1), l);
     editor.setTarget (band, lfo);
     builtSignature.clear();
@@ -950,7 +950,8 @@ void LfoPage::startLearn()
 {
     if (! processor.beginParameterLearn (band, lfo))
     {
-        processor.setStatus (band == TriadProcessor::preBand ? "LEARN: PRE has no effect loaded" : "LEARN: this band has no effect loaded");
+        processor.setStatus (TriadProcessor::isExtraChain (band) ? "LEARN: " + TriadProcessor::chainName (band) + " has no effect loaded"
+                                                                 : juce::String ("LEARN: this band has no effect loaded"));
         return;
     }
     // With a single effect in the band, open its window to move a knob in.
@@ -982,12 +983,13 @@ void LfoPage::rebuild()
     builtSignature = signature();
     editor.setTarget (band, lfo);
     bandButtons.clear();
-    // PRE first (when it has effects, or is the one shown), then the bands.
-    const bool withPre = processor.hasPreEffects() || band == TriadProcessor::preBand;
-    for (int b = withPre ? -1 : 0; b < processor.getBandCount(); ++b)
+    // PRE first, then the bands, then POST: each has its own LFOs, like a band.
+    const int count = processor.getBandCount();
+    for (int b = -1; b <= count; ++b)
     {
-        const int index = b < 0 ? TriadProcessor::preBand : b;
-        auto button = std::make_unique<juce::TextButton> (b < 0 ? juce::String ("PRE") : "BAND " + juce::String (b + 1));
+        const int index = b < 0 ? TriadProcessor::preBand : b == count ? TriadProcessor::postBand : b;
+        auto button = std::make_unique<juce::TextButton> (TriadProcessor::isExtraChain (index) ? TriadProcessor::chainName (index)
+                                                                                              : count > 8 ? "B" + juce::String (b + 1) : "BAND " + juce::String (b + 1));
         button->setColour (juce::TextButton::buttonColourId, index == band ? bandColour (index).withAlpha (0.85f) : slotRow);
         button->setColour (juce::TextButton::textColourOffId, index == band ? juce::Colour (0xff111312) : bandColour (index));
         button->onClick = [this, index] { select (index, juce::jmax (0, processor.getBandLfo (index))); };
@@ -1087,7 +1089,7 @@ void LfoPage::resized()
 {
     auto r = getLocalBounds();
     auto bandRow = r.removeFromTop (26);
-    for (auto& b : bandButtons) { b->setBounds (bandRow.removeFromLeft (76).withTrimmedRight (4)); }
+    for (auto& b : bandButtons) { b->setBounds (bandRow.removeFromLeft (chipWidth()).withTrimmedRight (4)); }
     r.removeFromTop (6);
     auto tabRow = r.removeFromTop (44);
     addLfoButton.setBounds (tabRow.removeFromRight (30).withSizeKeepingCentre (28, 28));
@@ -1174,7 +1176,7 @@ void LfoPage::paint (juce::Graphics& g)
     g.drawText ("ROUTING", header.removeFromTop (16), juce::Justification::centredLeft);
     g.setColour (textColour);
     g.setFont (juce::FontOptions (12.0f));
-    g.drawText ((band == TriadProcessor::preBand ? juce::String ("PRE") : "Band " + juce::String (band + 1)) + u8 (" \xc2\xb7 ") + info.name + u8 (" \xe2\x86\x92"), header.removeFromTop (18),
+    g.drawText ((TriadProcessor::isExtraChain (band) ? TriadProcessor::chainName (band) : "Band " + juce::String (band + 1)) + u8 (" \xc2\xb7 ") + info.name + u8 (" \xe2\x86\x92"), header.removeFromTop (18),
                 juce::Justification::centredLeft);
     g.setColour (dimTextColour);
     g.setFont (juce::FontOptions (11.0f));
@@ -1208,6 +1210,6 @@ void LfoPage::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (10.5f));
     g.drawText (u8 ("Double-click: add point  \xc2\xb7  Drag: move  \xc2\xb7  Double-click a point: delete  \xc2\xb7  Drag the small dot: curve"
                     "  \xc2\xb7  Right-click: more"),
-                juce::Rectangle<int> ((int) bandButtons.size() * 76 + 8, 0, getWidth() - (int) bandButtons.size() * 76 - 8, 26),
+                juce::Rectangle<int> ((int) bandButtons.size() * chipWidth() + 8, 0, getWidth() - (int) bandButtons.size() * chipWidth() - 8, 26),
                 juce::Justification::centredRight);
 }

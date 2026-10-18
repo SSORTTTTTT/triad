@@ -10,6 +10,7 @@ public:
     void resized() override;
     void paint (juce::Graphics&) override;
     int getNumRows() const noexcept { return (int) rows.size(); }
+    int getBand() const noexcept { return band; }
     std::function<void (int band, int lfo)> onEditLfo;
 private:
     void rebuild();
@@ -23,7 +24,7 @@ private:
     juce::String built;
 };
 
-// The MATRIX tab: a matrix per band, side by side like the band strips (scroll sideways).
+// The MATRIX tab: a matrix for PRE, each band and POST, side by side like the strips (scroll sideways).
 class MatrixPage final : public juce::Component
 {
 public:
@@ -31,7 +32,11 @@ public:
     void refresh();
     void resized() override;
     int getNumPanels() const noexcept { return (int) panels.size(); }
-    BandMatrix* getPanel (int band) const { return band >= 0 && band < (int) panels.size() ? panels[(size_t) band].get() : nullptr; }
+    BandMatrix* getPanel (int band) const
+    {
+        for (auto& p : panels) if (p->getBand() == band) return p.get();
+        return nullptr;
+    }
     std::function<void (int band, int lfo)> onEditLfo;
 private:
     TriadProcessor& processor;

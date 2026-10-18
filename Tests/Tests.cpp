@@ -580,7 +580,7 @@ int main (int argc, char** argv)
             q.removeSlot (0, 0);   // straight away, before its message has arrived
             const auto liveAfterRemoval = SidechainEffect::live().size();
             require (liveAfterRemoval >= 1, "The removed effect is not deleted on the spot");
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (2600);
             require (SidechainEffect::delivered == 1 && SidechainEffect::deliveredAfterDeletion == 0, "Its message arrives while it still exists");
             require (SidechainEffect::live().size() == 1, "A moment later only one idle copy of the effect is left");
             // The same when Triad itself is closed (a project closed, Triad removed from a track).
@@ -590,7 +590,7 @@ int main (int argc, char** argv)
                 require (closing.loadInstance (0, 0, std::make_unique<SidechainEffect> (false, true)).isEmpty(), "Load it into a Triad that is closed next");
             }
             require (! SidechainEffect::live().empty(), "Closing Triad does not delete its effects on the spot");
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (2600);
             require (SidechainEffect::delivered == 2 && SidechainEffect::deliveredAfterDeletion == 0 && SidechainEffect::live().size() == 1,
                      "After Triad closes, its effects get their messages and are then deleted (one idle copy is kept)");
             // An effect window closed (with its slot removed) right after it opened.
@@ -601,7 +601,7 @@ int main (int argc, char** argv)
                 require (w.loadInstance (0, 0, std::make_unique<SidechainEffect> (false, true)).isEmpty(), "Load an effect whose editor posts a message");
                 w.showEffect (0, 0);
                 w.removeSlot (0, 0);
-                juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (2600);
                 require (SidechainEffect::editorDelivered == 1 && SidechainEffect::editorDeliveredAfterDeletion == 0,
                          "A window closed right after opening gets its editor's message before it is deleted");
             }
@@ -612,7 +612,7 @@ int main (int argc, char** argv)
                 for (int i = 0; i < 4; ++i)
                     require (many.loadInstance (0, i == 0 ? 0 : many.getSlotCount (0), std::make_unique<SidechainEffect>()).isEmpty(), "Load copies");
             }
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (1600);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (2600);
             require (SidechainEffect::live().size() == 1, "One idle copy of each effect is kept, the rest are deleted");
             require (TriadProcessor::getIdleEffectCount() >= 1, "Idle copies are counted");
             std::cout << "Removed effects are deleted after their pending messages: passed" << std::endl;
@@ -1446,8 +1446,8 @@ int main (int argc, char** argv)
         }
 
         // ---- Live vocals with a pitch corrector: latency, Low Latency mode, PRE chain, hard wall --------------
-        // Thomas's chain (Ableton, v4): Auto-Tune Pro + a compressor in each of three bands, dividers at 170 Hz and
-        // 9.41 kHz at 96 dB/oct. Measured here with stand-ins that delay exactly what they report.
+        // Thomas's chain (Ableton, v4): Auto-Tune Pro + a compressor in each of three bands at 96 dB/oct, his usual
+        // dividers at 250 Hz and 2.5 kHz. Measured with stand-ins that delay exactly what they report.
         {
             constexpr double rate = 48000.0;
             constexpr int block = 64;
@@ -1510,9 +1510,9 @@ int main (int argc, char** argv)
                 }
                 require (first == 2670, "Stand-in check: normal mode is 2,670 samples late on a plain track");
             }
-            // (b) Thomas's layout: pitch corrector + compressor in all three bands, 96 dB/oct at 170 Hz / 9.41 kHz.
+            // (b) Thomas's layout: pitch corrector + compressor in all three bands, 96 dB/oct at 250 Hz / 2.5 kHz.
             TriadProcessor dry, wet;
-            for (auto* t : { &dry, &wet }) { t->prepareToPlay (rate, block); setCrossovers (*t, 170.0f, 9410.0f, 16); }
+            for (auto* t : { &dry, &wet }) { t->prepareToPlay (rate, block); setCrossovers (*t, 250.0f, 2500.0f, 16); }
             std::vector<DelayStandIn*> correctors;
             for (int b = 0; b < 3; ++b)
             {
@@ -1551,16 +1551,16 @@ int main (int argc, char** argv)
             const auto wetLow = render (wet, voice);
             delayOf (dryOut, wetLow, 196, error);
             require (error < 1.0e-4f, "In Low Latency mode the sound comes out exactly 196 samples later");
-            // (d) What each copy hears: the band above 9.41 kHz gets almost nothing of a voice (no note to track).
-            std::cout << "What each pitch corrector heard of the voice: band 1 (below 170 Hz) " << juce::String (100.0 * heardLow / (heardLow + correctors[1]->heard + heardTop), 1)
+            // (d) What each copy hears: the band above 2.5 kHz gets almost nothing of a sung note (no note to track).
+            std::cout << "What each pitch corrector heard of the voice: band 1 (below 250 Hz) " << juce::String (100.0 * heardLow / (heardLow + correctors[1]->heard + heardTop), 1)
                       << "%, band 2 " << juce::String (100.0 * correctors[1]->heard / (heardLow + correctors[1]->heard + heardTop), 1)
-                      << "%, band 3 (above 9.41 kHz) " << juce::String (100.0 * heardTop / (heardLow + correctors[1]->heard + heardTop), 2) << "%" << std::endl;
+                      << "%, band 3 (above 2.5 kHz) " << juce::String (100.0 * heardTop / (heardLow + correctors[1]->heard + heardTop), 2) << "%" << std::endl;
             require (heardTop < 0.02 * (heardLow + correctors[1]->heard), "The top band's copy hears almost none of the voice");
             // (e) Only one band with the pitch corrector: the other bands wait for it, all lined up.
             {
                 TriadProcessor one;
                 one.prepareToPlay (rate, block);
-                setCrossovers (one, 170.0f, 9410.0f, 16);
+                setCrossovers (one, 250.0f, 2500.0f, 16);
                 require (one.loadInstance (1, 0, DelayStandIn::pitchCorrector()).isEmpty(), "Pitch corrector in band 2 only");
                 require (one.getLatencySamples() == 2670, "One band's latency sets the total");
                 delayOf (dryOut, render (one, voice), 2670, error);
@@ -1570,7 +1570,7 @@ int main (int argc, char** argv)
             {
                 TriadProcessor pre;
                 pre.prepareToPlay (rate, block);
-                setCrossovers (pre, 170.0f, 9410.0f, 16);
+                setCrossovers (pre, 250.0f, 2500.0f, 16);
                 auto pc = DelayStandIn::pitchCorrector();
                 auto* corrector = pc.get();
                 require (! pre.hasPreEffects() && pre.getSlotCount (TriadProcessor::preBand) == 1, "PRE starts empty, with one slot");
@@ -1595,6 +1595,43 @@ int main (int argc, char** argv)
                 pre.setLiveMode (true);
                 require (pre.getLatencySamples() == 0, "LIVE passes latency-adding PRE effects by too");
                 pre.setLiveMode (false);
+                // POST: after the bands come back together; its latency adds last.
+                {
+                    TriadProcessor post;
+                    post.prepareToPlay (rate, block);
+                    setCrossovers (post, 250.0f, 2500.0f, 16);
+                    require (! post.hasPostEffects() && post.getSlotCount (TriadProcessor::postBand) == 1, "POST starts empty, with one slot");
+                    require (post.loadInstance (TriadProcessor::preBand, 0, DelayStandIn::pitchCorrector()).isEmpty()
+                             && post.loadInstance (1, 0, DelayStandIn::compressor()).isEmpty()
+                             && post.loadInstance (TriadProcessor::postBand, 0, DelayStandIn::compressor()).isEmpty()
+                             && post.loadInstance (TriadProcessor::postBand, 1, DelayStandIn::compressor()).isEmpty(), "PRE, a band and two POST effects");
+                    require (post.getLatencySamples() == 2670 + 86 + 172 && post.getPostLatencySamples() == 172, "PRE + slowest band + POST latency");
+                    delayOf (dryOut, render (post, voice), 2670 + 86 + 172, error);
+                    require (error < 1.0e-4f, "With PRE and POST the sound is exactly their latency + the band's later, all lined up");
+                    const auto knobsPost = post.getEffectParameters (TriadProcessor::postBand, 0);
+                    require (! knobsPost.empty() && post.addRoute (TriadProcessor::postBand, post.getSlotLfo (TriadProcessor::postBand, 0), knobsPost.front().first) >= 0,
+                             "Link an LFO to a knob of a POST effect");
+                    juce::MemoryBlock postState;
+                    post.getStateInformation (postState);
+                    TriadProcessor postRestored;
+                    postRestored.prepareToPlay (rate, block);
+                    postRestored.setStateInformation (postState.getData(), (int) postState.getSize());
+                    require (postRestored.getSlotCount (TriadProcessor::postBand) == 2 && postRestored.getSlotInfo (TriadProcessor::postBand, 1).hasContent,
+                             "POST comes back with the project");
+                    std::unique_ptr<TriadEditor> postEditor (dynamic_cast<TriadEditor*> (post.createEditor()));
+                    postEditor->setVisible (true);
+                    postEditor->refreshNow();
+                    require (postEditor->isPreShown() && postEditor->isPostShown()
+                             && postEditor->getStrip (TriadProcessor::postBand)->getX() > postEditor->getStrip (2)->getX(), "The POST strip comes last, right of the bands");
+                    require (postEditor->getMatrixPage().getPanel (TriadProcessor::preBand) != nullptr && postEditor->getMatrixPage().getPanel (TriadProcessor::postBand) != nullptr,
+                             "The MATRIX tab has PRE and POST matrices");
+                    postEditor->showLfo (TriadProcessor::postBand, 0);
+                    postEditor->getLfoPage().refresh();
+                    postEditor->setTab (TriadEditor::Tab::matrix);
+                    postEditor->getMatrixPage().refresh();
+                    require (postEditor->getMatrixPage().getPanel (TriadProcessor::postBand)->getNumRows() == post.getRouteCount (TriadProcessor::postBand),
+                             "The POST matrix lists its routes");
+                }
                 // Saved with the project; undo knows PRE.
                 juce::MemoryBlock state;
                 pre.getStateInformation (state);
@@ -1673,10 +1710,10 @@ int main (int argc, char** argv)
                               << juce::String (measured, 2) << " ms later (the slope list shows " << juce::String (shown, 2) << " ms)" << std::endl;
                     require (std::abs (measured - shown) < 0.05 * shown + 0.05, "The slope list's timing matches the measurement");
                 }
-                std::cout << "At Thomas's dividers: 170 Hz " << juce::String (triad::crossoverGroupDelayMs (16, 170.0f, rate), 1) << " ms at 96 dB/oct, "
-                          << juce::String (triad::crossoverGroupDelayMs (4, 170.0f, rate), 1) << " ms at 24; 242 Hz "
-                          << juce::String (triad::crossoverGroupDelayMs (16, 242.0f, rate), 1) << " ms at 96 dB/oct, "
-                          << juce::String (triad::crossoverGroupDelayMs (4, 242.0f, rate), 1) << " ms at 24" << std::endl;
+                std::cout << "At Thomas's dividers: 250 Hz " << juce::String (triad::crossoverGroupDelayMs (16, 250.0f, rate), 1) << " ms at 96 dB/oct, "
+                          << juce::String (triad::crossoverGroupDelayMs (4, 250.0f, rate), 1) << " ms at 24; 2.5 kHz "
+                          << juce::String (triad::crossoverGroupDelayMs (16, 2500.0f, rate), 1) << " ms at 96 dB/oct, "
+                          << juce::String (triad::crossoverGroupDelayMs (4, 2500.0f, rate), 1) << " ms at 24" << std::endl;
             }
             std::cout << "PASS: live vocals with a pitch corrector (latency exactly the effects', Low Latency switching, three copies, PRE chain, hard wall for all dividers)" << std::endl;
         }
@@ -2068,7 +2105,7 @@ int main (int argc, char** argv)
                                                                editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
                 editor->setTab (TriadEditor::Tab::matrix);
                 editor->refreshNow();
-                require (editor->getMatrixPage().getNumPanels() == preview.getBandCount(), "A matrix per band");
+                require (editor->getMatrixPage().getNumPanels() == preview.getBandCount() + 2, "A matrix for PRE, each band and POST");
                 require (editor->getMatrixPage().getPanel (0)->getNumRows() == preview.getRouteCount (0), "A row per route");
                 if (screenshotFile != juce::File())
                     std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-matrix.png"),

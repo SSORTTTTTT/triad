@@ -16,6 +16,12 @@ CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p)
     preButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
     preButton.onClick = [this] { if (onTogglePre) onTogglePre(); };
     addAndMakeVisible (preButton);
+    postButton.setTooltip ("POST: effects on the whole sound after the bands come back together (a limiter, glue compression, a final EQ...). "
+                           "Click to show or hide its strip.");
+    postButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffc3cde0));
+    postButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
+    postButton.onClick = [this] { if (onTogglePost) onTogglePost(); };
+    addAndMakeVisible (postButton);
     liveButton.setClickingTogglesState (true);
     liveButton.setTooltip ("LIVE, for recording through Triad: effects that add latency are passed by, so Triad adds none. "
                            "Switch it off again for mixing.");
@@ -188,11 +194,11 @@ void CrossoverDisplay::addAllDividerItems (juce::PopupMenu& menu, int idBase)
     menu.addItem (idBase + triad::CrossoverFilter::defaultOrder, "All dividers: default (" + TriadProcessor::slopeText (triad::CrossoverFilter::defaultOrder) + ")");
     menu.addItem (idBase + triad::CrossoverFilter::minOrder, "All dividers: soft (" + TriadProcessor::slopeText (triad::CrossoverFilter::minOrder) + ")");
 }
-void CrossoverDisplay::setPreState (bool shown, int effects)
+void CrossoverDisplay::setChainState (juce::TextButton& button, const juce::String& name, bool shown, int effects)
 {
-    const auto text = effects > 0 ? "PRE " + juce::String (effects) : juce::String ("PRE");
-    if (preButton.getButtonText() != text) preButton.setButtonText (text);
-    preButton.setToggleState (shown, juce::dontSendNotification);
+    const auto text = effects > 0 ? name + " " + juce::String (effects) : name;
+    if (button.getButtonText() != text) button.setButtonText (text);
+    button.setToggleState (shown, juce::dontSendNotification);
 }
 // Each slope readout sits beside its dot: to the right, else to the left, else a compact one ("24") on
 // either side, whichever does not cover another readout or a frequency pill.
@@ -548,7 +554,8 @@ float CrossoverDisplay::pillTop (int index) const
 void CrossoverDisplay::resized()
 {
     addButton.setBounds (getWidth() - 96 - (int) meterWidth, 7, 78, 24);
-    preButton.setBounds (addButton.getX() - 66, 7, 60, 24);
+    postButton.setBounds (addButton.getX() - 70, 7, 64, 24);
+    preButton.setBounds (postButton.getX() - 64, 7, 58, 24);
     {
         const int x0 = getWidth() - 18 - (int) meterWidth + 12;
         liveButton.setBounds (x0 + 50, 6, 52, 20);
@@ -649,8 +656,9 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
     g.setColour (juce::Colour (0xffb8bcba)); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
     g.drawText ("BAND CROSSOVERS", 18, 8, 175, 23, juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (11.0f)); g.setColour (juce::Colour (0xff898f8b));
-    g.drawText ("Drag a divider  /  Its upper dot: slope  /  Double-click: add a band  /  Right-click: menu", getWidth() - 776, 8, 480, 23,
-                juce::Justification::centredRight);
+    g.drawFittedText ("Drag a divider  /  Upper dot: slope  /  Double-click: add a band  /  Right-click: menu",
+                      juce::Rectangle<int> (200, 8, juce::jmax (40, getWidth() - 96 - (int) meterWidth - 134 - 8 - 200), 23),
+                      juce::Justification::centredRight, 1, 0.8f);
     paintBandCurves (g);
     for (int i = 0; i < count && i + 1 < (int) xs.size(); ++i)
     {

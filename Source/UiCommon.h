@@ -11,7 +11,8 @@ inline juce::Colour bandColour (int band)
                                           juce::Colour (0xffe8b15c), juce::Colour (0xffe87f8a), juce::Colour (0xff5ca8e8),
                                           juce::Colour (0xffd88ce0), juce::Colour (0xffc9d65c), juce::Colour (0xff5cdca2),
                                           juce::Colour (0xffe8955c) };
-    if (band >= 10) return juce::Colour (0xffd9dcd6);   // the PRE chain (TriadProcessor::preBand)
+    if (band == 10) return juce::Colour (0xffd9dcd6);   // the PRE chain (TriadProcessor::preBand)
+    if (band >= 11) return juce::Colour (0xffc3cde0);   // the POST chain (TriadProcessor::postBand)
     return colours[juce::jlimit (0, 9, band)];
 }
 const juce::Colour background (0xff252729), panel (0xff1b1e1c), textColour (0xffe7eae5), dimTextColour (0xffa6afa5),

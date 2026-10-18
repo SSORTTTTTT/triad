@@ -25,6 +25,10 @@ plugins=(
   "tiagolr/reevr|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
   "wolf-plugins/wolf-shaper|(mac|osx|darwin|apple).*\.(dmg|pkg|zip)$"
 )
+# Free plug-ins downloaded straight from their makers' sites (not on GitHub): name | URL.
+direct=(
+  "Graillon 3 Free (Auburn Sounds), a pitch corrector|https://www.auburnsounds.com/downloads/Graillon-FREE-3.2.zip"
+)
 
 asset_url()   # repository regex
 {
@@ -67,23 +71,21 @@ install_from_dir()   # folder
   if [ "$found" = 0 ]; then
     echo "    contents: $(cd "$1" && find . -maxdepth 4 | head -n 25 | tr '\n' ' ')"
     while IFS= read -r -d '' bundle; do
+      # Only macOS bundles (a download for several systems also holds Windows and Linux ones).
+      if [ ! -d "$bundle/Contents/MacOS" ]; then echo "    skipping $(basename "$bundle") (not a macOS bundle)"; continue; fi
       echo "    copying $(basename "$bundle")"
       sudo cp -R "$bundle" /Library/Audio/Plug-Ins/VST3/
-    done < <(find "$1" -maxdepth 5 -name "*.vst3" -prune -print0)
+    done < <(find "$1" -maxdepth 6 -name "*.vst3" -prune -print0)
     while IFS= read -r -d '' bundle; do
       echo "    copying $(basename "$bundle")"
       sudo cp -R "$bundle" /Library/Audio/Plug-Ins/Components/
-    done < <(find "$1" -maxdepth 5 -name "*.component" -prune -print0)
+    done < <(find "$1" -maxdepth 6 -name "*.component" -prune -print0)
   fi
 }
 
-for entry in "${plugins[@]}"; do
-  repo="${entry%%|*}"; pattern="${entry#*|}"
-  echo "== $repo"
-  url=$(asset_url "$repo" "$pattern")
-  if [ -z "$url" ]; then echo "  no macOS download found, skipped"; continue; fi
-  file="$work/$(basename "$url")"
-  if ! curl -fsSL -o "$file" "$url"; then echo "  download failed, skipped"; continue; fi
+install_file()   # downloaded file
+{
+  local file="$1"
   echo "  $(basename "$file") ($(du -h "$file" | cut -f1))"
   case "$file" in
     *.pkg) sudo installer -pkg "$file" -target / >/dev/null && echo "    installed" ;;
@@ -98,6 +100,24 @@ for entry in "${plugins[@]}"; do
       folder="$work/unzip-$(basename "$file")"; mkdir -p "$folder"
       unzip -q "$file" -d "$folder" && install_from_dir "$folder" ;;
   esac
+}
+
+for entry in "${plugins[@]}"; do
+  repo="${entry%%|*}"; pattern="${entry#*|}"
+  echo "== $repo"
+  url=$(asset_url "$repo" "$pattern")
+  if [ -z "$url" ]; then echo "  no macOS download found, skipped"; continue; fi
+  file="$work/$(basename "$url")"
+  if ! curl -fsSL -o "$file" "$url"; then echo "  download failed, skipped"; continue; fi
+  install_file "$file"
+done
+
+for entry in "${direct[@]}"; do
+  name="${entry%%|*}"; url="${entry#*|}"
+  echo "== $name"
+  file="$work/$(basename "$url")"
+  if ! curl -fsSL -A "Mozilla/5.0 (Macintosh)" -o "$file" "$url"; then echo "  download failed, skipped"; continue; fi
+  install_file "$file"
 done
 
 sudo xattr -dr com.apple.quarantine /Library/Audio/Plug-Ins 2>/dev/null || true

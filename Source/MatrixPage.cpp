@@ -9,7 +9,7 @@ constexpr int panelWidth = 468, panelGap = 10, rowHeight = 34;
 
 BandMatrix::BandMatrix (TriadProcessor& p, int b) : processor (p), band (b), colour (bandColour (b))
 {
-    setTitle ("Band " + juce::String (band + 1) + " matrix");
+    setTitle ((TriadProcessor::isExtraChain (band) ? TriadProcessor::chainName (band) : "Band " + juce::String (band + 1)) + " matrix");
     view.setViewedComponent (&holder, false);
     view.setScrollBarsShown (true, false);
     view.setScrollBarThickness (6);
@@ -18,7 +18,13 @@ BandMatrix::BandMatrix (TriadProcessor& p, int b) : processor (p), band (b), col
     addButton.onClick = [this]
     {
         const int lfo = juce::jmax (0, processor.getBandLfo (band));
-        processor.addRoute (band, lfo, TriadProcessor::Destination { TriadProcessor::Destination::bandVolume, 0 });
+        if (TriadProcessor::isExtraChain (band))
+        {
+            // PRE and POST have no band volume: the new route starts on the first slot's mix.
+            const auto destinations = processor.getDestinations (band);
+            if (! destinations.empty()) processor.addRoute (band, lfo, destinations.front().first);
+        }
+        else processor.addRoute (band, lfo, TriadProcessor::Destination { TriadProcessor::Destination::bandVolume, 0 });
         refresh();
         view.setViewPosition (0, juce::jmax (0, holder.getHeight() - view.getHeight()));
     };
@@ -61,13 +67,20 @@ void BandMatrix::paint (juce::Graphics& g)
     g.fillRoundedRectangle (12.0f, 11.0f, 4.0f, 17.0f, 2.0f);
     g.setColour (colour);
     g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-    g.drawText ("BAND " + juce::String (band + 1) + "  MATRIX", 23, 8, 200, 24, juce::Justification::centredLeft);
-    const auto cuts = processor.effectiveCrossovers();
-    const float lo = band == 0 ? 0.0f : cuts[(size_t) band - 1];
-    const float hi = band < (int) cuts.size() ? cuts[(size_t) band] : processor.nyquistFrequency();
+    const bool extra = TriadProcessor::isExtraChain (band);
+    g.drawText ((extra ? TriadProcessor::chainName (band) : "BAND " + juce::String (band + 1)) + "  MATRIX", 23, 8, 200, 24, juce::Justification::centredLeft);
     g.setColour (dimTextColour);
     g.setFont (juce::FontOptions (11.5f));
-    g.drawText (formatHz (lo) + u8 ("  \xe2\x86\x92  ") + formatHz (hi), getWidth() - 190, 8, 176, 24, juce::Justification::centredRight);
+    if (extra)
+        g.drawText (band == TriadProcessor::preBand ? "full range, before the bands" : "full range, after the bands", getWidth() - 220, 8, 206, 24,
+                    juce::Justification::centredRight);
+    else
+    {
+        const auto cuts = processor.effectiveCrossovers();
+        const float lo = band == 0 ? 0.0f : cuts[(size_t) band - 1];
+        const float hi = band < (int) cuts.size() ? cuts[(size_t) band] : processor.nyquistFrequency();
+        g.drawText (formatHz (lo) + u8 ("  \xe2\x86\x92  ") + formatHz (hi), getWidth() - 190, 8, 176, 24, juce::Justification::centredRight);
+    }
     // Column titles, as in Serum's and Omnisphere's matrix.
     g.setColour (juce::Colour (0xff2b2f2d));
     g.fillRect (8, 40, getWidth() - 16, 22);
@@ -98,9 +111,10 @@ void MatrixPage::refresh()
     {
         builtCount = processor.getBandCount();
         panels.clear();
-        for (int b = 0; b < builtCount; ++b)
+        // PRE first, then the bands, then POST.
+        for (int b = -1; b <= builtCount; ++b)
         {
-            panels.push_back (std::make_unique<BandMatrix> (processor, b));
+            panels.push_back (std::make_unique<BandMatrix> (processor, b < 0 ? TriadProcessor::preBand : b == builtCount ? TriadProcessor::postBand : b));
             panels.back()->onEditLfo = [this] (int band, int lfo) { if (onEditLfo) onEditLfo (band, lfo); };
             holder.addAndMakeVisible (*panels.back());
         }

@@ -50,12 +50,18 @@ public:
 
     // ---- Bands (positional, low to high) -------------------------------------------------
     int getBandCount() const noexcept { return bandCount.load(); }
-    // The PRE chain: slots that process the full-range sound before it is split into bands (pitch correction,
-    // a de-esser, a gate...). Every slot, LFO and link function takes it as band `preBand`.
-    static constexpr int preBand = triad::maxBands;
-    bool isValidBand (int band) const noexcept { return (band >= 0 && band < getBandCount()) || band == preBand; }
-    bool hasPreEffects() const;                               // any PRE slot holds an effect
+    // The PRE and POST chains: slots that process the full-range sound before it is split into bands (pitch
+    // correction, a de-esser, a gate...) and after the bands come back together (a limiter, glue compression...).
+    // Every slot, LFO and link function takes them as bands `preBand` and `postBand`.
+    static constexpr int preBand = triad::maxBands, postBand = triad::maxBands + 1;
+    static constexpr bool isExtraChain (int band) noexcept { return band == preBand || band == postBand; }
+    bool isValidBand (int band) const noexcept { return (band >= 0 && band < getBandCount()) || isExtraChain (band); }
+    bool hasChainEffects (int band) const;                    // any slot of that band (PRE, POST) holds an effect
+    bool hasPreEffects() const { return hasChainEffects (preBand); }
+    bool hasPostEffects() const { return hasChainEffects (postBand); }
     int getPreLatencySamples() const noexcept { return preLatency.load(); }
+    int getPostLatencySamples() const noexcept { return postLatency.load(); }
+    static juce::String chainName (int band);                 // "PRE", "POST", "band 3"
     int getStructureVersion() const noexcept { return structureVersion.load(); }
     std::vector<float> effectiveCrossovers() const;          // numBands - 1 values, ascending
     std::pair<float, float> effectiveCutoffs() const;        // first two crossovers (0.1 API)
@@ -320,8 +326,8 @@ private:
     };
     struct Band
     {
-        explicit Band (bool withSlot = true, bool isPre = false);
-        bool pre = false;                // the PRE chain: no band LFO, mix or volume
+        explicit Band (bool withSlot = true, bool isExtra = false);
+        bool extra = false;              // the PRE or POST chain: no band LFO, mix or volume
         int serial = 0;                  // unique in this process (undo keeps LFO undo lists with their band)
         std::vector<std::unique_ptr<Slot>> slots;
         std::vector<std::unique_ptr<Lfo>> lfos;
@@ -345,7 +351,8 @@ private:
     struct PendingLoad { int slot; const juce::XmlElement* node; };
 
     juce::AudioPluginFormatManager formats;
-    std::array<std::unique_ptr<Band>, triad::maxBands + 1> bands;   // the bands, then the PRE chain at [preBand]
+    std::array<std::unique_ptr<Band>, triad::maxBands + 2> bands;   // the bands, then PRE at [preBand] and POST at [postBand]
+    int chainAt (int k) const noexcept { return k == 0 ? preBand : k <= numBands ? k - 1 : postBand; }   // k < numBands + 2: PRE, bands, POST
     // Removed effects and closed effect windows (also those of a closed Triad) are deleted a moment
     // later; see EffectGraveyard.
     static void retire (std::unique_ptr<juce::AudioPluginInstance>);
@@ -359,7 +366,7 @@ private:
     // gate: band/slot structure, shared with the audio thread (which only ever try-locks it).
     // infoLock: the editor's snapshot and status text; never taken by the audio thread.
     mutable juce::CriticalSection gate, stateGate, infoLock;
-    std::array<std::vector<SlotInfo>, triad::maxBands + 1> info;
+    std::array<std::vector<SlotInfo>, triad::maxBands + 2> info;
     std::unique_ptr<juce::XmlElement> pendingState;
     std::atomic<bool> restoring { false }, muted { false };
     std::atomic<int> silencedBlocks { 0 };
@@ -376,7 +383,7 @@ private:
     std::atomic<int> pendingCreations { 0 }, bandCount { 3 }, structureVersion { 0 };
     std::atomic<double> tail { 0.0 };
     std::atomic<double> rate { 44100.0 };
-    std::atomic<int> totalLatency { 0 }, preLatency { 0 };
+    std::atomic<int> totalLatency { 0 }, preLatency { 0 }, postLatency { 0 };
     int bandsLatency = 0;            // the slowest band's chain (guarded by gate); total = PRE + this
     std::atomic<float> inputPeak { 0.0f }, outputPeak { 0.0f };
     std::array<std::atomic<float>, triad::maxBands> bandPeaks {};
@@ -439,7 +446,7 @@ private:
     void restoreFrom (const juce::XmlElement&);
     void writeBand (juce::XmlElement&, const Band&, bool forHistory = false) const;
     std::unique_ptr<Band> readBand (const juce::XmlElement* node, int version, const std::function<float (int)>& legacyMix,
-                                    std::vector<PendingLoad>& loads, bool pre = false) const;
+                                    std::vector<PendingLoad>& loads, bool extra = false) const;
     bool runChain (Band&, juce::AudioBuffer<float>&, int n);   // audio thread: a band's (or PRE's) slots in order
     juce::String destinationName (const Band&, const Destination&) const;
     void stateChanged (bool undoable = true);

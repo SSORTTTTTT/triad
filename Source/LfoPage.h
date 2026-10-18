@@ -116,6 +116,8 @@ public:
     int getNumPaletteButtons() const noexcept { return (int) presetButtons.size(); }
     juce::Button* getPaletteButton (int i) const { return i >= 0 && i < (int) presetButtons.size() ? presetButtons[(size_t) i].get() : nullptr; }
     void resized() override;
+    // The band / PRE / POST buttons above the grid: narrower when there are many.
+    int chipWidth() const noexcept { return juce::jlimit (48, 76, (getWidth() - 220) / juce::jmax (1, (int) bandButtons.size())); }
     void paint (juce::Graphics&) override;
     static triad::mod::Shape clipboard;
 

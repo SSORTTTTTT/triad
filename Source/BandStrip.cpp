@@ -245,13 +245,13 @@ void AddSlotButton::mouseUp (const juce::MouseEvent& e)
 BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
     : processor (p), host (h), band (b), colour (bandColour (b)), addButton (h, b, bandColour (b))
 {
-    setTitle (isPre() ? juce::String ("PRE") : "Band " + juce::String (band + 1));
+    setTitle (isPre() ? juce::String ("PRE") : isPost() ? juce::String ("POST") : "Band " + juce::String (band + 1));
     removeButton.setButtonText (juce::String::fromUTF8 ("\xc3\x97"));
     removeButton.setTooltip ("Remove this band (its range joins the neighbouring band)");
     // The editor rebuilds strips from its timer, so this strip is not deleted inside its own callback.
     removeButton.onClick = [this] { processor.removeBand (band); };
-    if (! isPre()) addAndMakeVisible (removeButton);
-    menuButton.setTooltip (isPre() ? "PRE: paste a plug-in, remove its effects, hide it"
+    if (! isExtra()) addAndMakeVisible (removeButton);
+    menuButton.setTooltip (isExtra() ? (isPre() ? "PRE" : "POST") + juce::String (": paste a plug-in, remove its effects, hide it")
                                    : "Copy / paste band state, chain presets, LFOs, move or remove this band (or right-click the band)");
     menuButton.onClick = [this] { host.showBandMenu (band, menuButton); };
     addAndMakeVisible (menuButton);
@@ -262,7 +262,7 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
         label->setColour (juce::Label::textWhenEditingColourId, textColour);
         label->setColour (juce::Label::backgroundWhenEditingColourId, juce::Colour (0xff0d0f0e));
         label->setColour (juce::Label::outlineWhenEditingColourId, colour);
-        if (! isPre()) addAndMakeVisible (*label);
+        if (! isExtra()) addAndMakeVisible (*label);
     }
     startLabel.setJustificationType (juce::Justification::centredLeft);
     endLabel.setJustificationType (juce::Justification::centredRight);
@@ -275,7 +275,7 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
     slotHolder.addAndMakeVisible (addButton);
     slotHolder.addMouseListener (this, false);   // right-click the empty space under the slots: the band menu
     rebuildRows (processor.getSlotCount (band));
-    if (isPre()) return;   // the PRE chain has no band mix or volume: each slot has its own mix
+    if (isExtra()) return;   // PRE and POST have no band mix or volume: each slot has its own mix
     mix.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     mix.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     mix.setDoubleClickReturnValue (true, 100.0);
@@ -370,7 +370,7 @@ bool BandStrip::slotDrag (int slot, const juce::MouseEvent& e, int phase)
 }
 void BandStrip::update (const std::vector<float>& crossovers, int bandCount, float nyquist)
 {
-    if (! isPre())
+    if (! isExtra())
     {
         startHz = band == 0 ? 0.0f : crossovers[(size_t) band - 1];
         endHz = band < (int) crossovers.size() ? crossovers[(size_t) band] : nyquist;
@@ -382,7 +382,7 @@ void BandStrip::update (const std::vector<float>& crossovers, int bandCount, flo
     if (! endLabel.isBeingEdited()) endLabel.setText (formatHz (endHz), juce::dontSendNotification);
     startLabel.setTooltip (band > 0 ? "Click to type the band's lower edge (e.g. 250 or 2.5k)" : "The lowest band starts at 0 Hz");
     endLabel.setTooltip (band < bandCount - 1 ? "Click to type the band's upper edge" : "The highest band ends at Nyquist (half the sample rate)");
-    removeButton.setVisible (bandCount > 1 && ! isPre());
+    removeButton.setVisible (bandCount > 1 && ! isExtra());
     if (slotDragState.active) return;   // the rows stay as they are until the dragged slot is dropped
     const int count = processor.getSlotCount (band);
     if (count != (int) rows.size())
@@ -406,7 +406,7 @@ void BandStrip::update (const std::vector<float>& crossovers, int bandCount, flo
 void BandStrip::animate (float newLevel, double dt)
 {
     // Fast attack, gentle fall (about -30 dB a second), peak hold for 0.75 s, timed by the frame clock.
-    if (isPre()) { for (auto& row : rows) row->animate(); return; }   // no band meter
+    if (isExtra()) { for (auto& row : rows) row->animate(); return; }   // no band meter
     const float before = level, holdBefore = peakHold;
     level = juce::jmax (newLevel, level * (float) std::pow (0.7, dt * 20.0));
     if (newLevel >= peakHold) { peakHold = newLevel; holdTime = 0.75; }
@@ -448,12 +448,13 @@ void BandStrip::paint (juce::Graphics& g)
     g.setColour (panel); g.fillRoundedRectangle (bounds, 7.0f);
     g.setColour (colour.withAlpha (0.75f)); g.fillRoundedRectangle (12.0f, 11.0f, 4.0f, 17.0f, 2.0f);
     g.setColour (colour); g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-    g.drawText (isPre() ? juce::String ("PRE") : "BAND " + juce::String (band + 1), 23, 8, getWidth() - 90, 24, juce::Justification::centredLeft);
+    g.drawText (isPre() ? juce::String ("PRE") : isPost() ? juce::String ("POST") : "BAND " + juce::String (band + 1), 23, 8, getWidth() - 90, 24,
+                juce::Justification::centredLeft);
     g.setColour (juce::Colour (0xff778275)); g.setFont (juce::FontOptions (12.0f));
-    if (isPre())
+    if (isExtra())
     {
         g.setColour (juce::Colour (0xffbac4b8)); g.setFont (juce::FontOptions (12.0f));
-        g.drawText ("Full range, before the bands", 10, 31, getWidth() - 20, 22, juce::Justification::centredLeft);
+        g.drawText (isPre() ? "Full range, before the bands" : "Full range, after the bands", 10, 31, getWidth() - 20, 22, juce::Justification::centredLeft);
     }
     else g.drawText (juce::String::fromUTF8 ("\xe2\x86\x92"), getWidth() / 2 - 10, 31, 20, 22, juce::Justification::centred);
     g.setColour (colour.withAlpha (0.45f));
@@ -461,12 +462,13 @@ void BandStrip::paint (juce::Graphics& g)
     const int footerTop = getHeight() - footerHeight;
     g.drawHorizontalLine (footerTop + 2, 10.0f, (float) getWidth() - 10.0f);
     const int left = 12, right = getWidth() - 88;
-    if (isPre())
+    if (isExtra())
     {
-        // PRE: what it is for, how many slots, and its latency (it adds to every band's).
+        // PRE / POST: what it is for, how many slots, and its latency (it adds to every band's).
         g.setColour (dimTextColour); g.setFont (juce::FontOptions (11.0f));
-        g.drawFittedText ("Runs on the whole sound first: pitch correction, a de-esser, a gate...", left, footerTop + 8, getWidth() - 2 * left, 32,
-                          juce::Justification::topLeft, 2);
+        g.drawFittedText (isPre() ? "Runs on the whole sound first: pitch correction, a de-esser, a gate..."
+                                  : "Runs on the whole sound last: a limiter, glue compression, a final EQ...",
+                          left, footerTop + 8, getWidth() - 2 * left, 32, juce::Justification::topLeft, 2);
         const int n = (int) rows.size();
         g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), left, footerTop + 62, 80, 16, juce::Justification::centredLeft);
         if (chainLatency > 0)
@@ -533,13 +535,13 @@ void BandStrip::setLifted (bool on)
 void BandStrip::mouseDown (const juce::MouseEvent& e)
 {
     if (e.mods.isPopupMenu()) { host.showBandMenu (band, *this, true); return; }
-    if (! isPre() && e.eventComponent == this && e.y < headerHeight && e.mods.isLeftButtonDown()) host.bandDrag (band, e, 0);
+    if (! isExtra() && e.eventComponent == this && e.y < headerHeight && e.mods.isLeftButtonDown()) host.bandDrag (band, e, 0);
 }
 void BandStrip::mouseDrag (const juce::MouseEvent& e)
 {
-    if (! isPre() && e.eventComponent == this && e.mouseDownPosition.y < headerHeight && ! e.mods.isPopupMenu()) host.bandDrag (band, e, 1);
+    if (! isExtra() && e.eventComponent == this && e.mouseDownPosition.y < headerHeight && ! e.mods.isPopupMenu()) host.bandDrag (band, e, 1);
 }
 void BandStrip::mouseUp (const juce::MouseEvent& e)
 {
-    if (! isPre() && e.eventComponent == this && e.mouseDownPosition.y < headerHeight && ! e.mods.isPopupMenu()) host.bandDrag (band, e, 2);
+    if (! isExtra() && e.eventComponent == this && e.mouseDownPosition.y < headerHeight && ! e.mods.isPopupMenu()) host.bandDrag (band, e, 2);
 }

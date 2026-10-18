@@ -55,9 +55,11 @@ public:
     static void addAllDividerItems (juce::PopupMenu& menu, int idBase);
     static constexpr int allDividersBase = 1000;
     // PRE: shows or hides the PRE chain's strip (the editor decides; it keeps the button up to date).
-    std::function<void()> onTogglePre;
-    void setPreState (bool shown, int effects);
+    std::function<void()> onTogglePre, onTogglePost;
+    void setPreState (bool shown, int effects) { setChainState (preButton, "PRE", shown, effects); }
+    void setPostState (bool shown, int effects) { setChainState (postButton, "POST", shown, effects); }
     juce::Button& getPreButton() noexcept { return preButton; }
+    juce::Button& getPostButton() noexcept { return postButton; }
     juce::Rectangle<float> slopeReadoutBounds (int index) const;
     int getActiveSlope() const noexcept { return activeSlope; }
     void updateSpectrum (double dt = 1.0 / 30.0);
@@ -102,7 +104,8 @@ private:
 
     TriadProcessor& processor;
     std::vector<std::unique_ptr<Handle>> handles;
-    juce::TextButton addButton { "+ BAND" }, preButton { "PRE" };
+    juce::TextButton addButton { "+ BAND" }, preButton { "PRE" }, postButton { "POST" };
+    static void setChainState (juce::TextButton&, const juce::String& name, bool shown, int effects);
     int activeHandle = -1, activeSlope = -1;
     std::vector<float> cuts;
     std::vector<int> pillRows;
