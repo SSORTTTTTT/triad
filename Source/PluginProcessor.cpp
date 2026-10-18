@@ -61,11 +61,12 @@ public:
         entries.push_back ({ std::move (effect), std::move (window), juce::Time::getMillisecondCounter() });
         if (! isTimerRunning()) startTimer (tickMs);
     }
-    // Effects are deleted at least `delayMs` after they were retired, and at most one copy of each plug-in per tick
-    // (the message loop runs in between): when a project reloads, dozens of effects go at once, and ChowMatrix
-    // crashed once when many of its copies were deleted in the same moment. Different plug-ins go together, within
-    // a time budget per tick, so a long session never piles up effects waiting to be deleted (they hold memory).
-    static constexpr int tickMs = 40, delayMs = 1500;
+    // Effects are deleted at least `delayMs` after they were retired, a few copies of each plug-in per tick (the message
+    // loop runs in between): when a project reloads, dozens of effects go at once, and ChowMatrix crashed once when
+    // many of its copies were deleted in the same moment. Within a time budget per tick; a backlog of more than 64
+    // (a long session of fast edits) is cleared without limits, so removed effects never pile up holding memory.
+    static constexpr int tickMs = 40, delayMs = 1500, copiesPerTick = 4, backlog = 64;
+    static constexpr double budgetMs = 25.0;
     static int waitingCount() { return current != nullptr ? (int) current->entries.size() : 0; }
 private:
     EffectGraveyard() = default;
@@ -91,15 +92,16 @@ private:
     {
         const auto now = juce::Time::getMillisecondCounter();
         const auto start = juce::Time::getMillisecondCounterHiRes();
-        // A big backlog (a long session of reloads) is cleared without the time budget.
-        const double budgetMs = entries.size() > 64 ? 1.0e9 : 12.0;
-        juce::StringArray deletedNow;
+        const bool catchUp = (int) entries.size() > backlog;
+        std::map<juce::String, int> deletedNow;
+        int deleted = 0;
         for (auto it = entries.begin(); it != entries.end() && now - it->since >= (juce::uint32) delayMs;)
         {
-            if (! deletedNow.isEmpty() && juce::Time::getMillisecondCounterHiRes() - start > budgetMs) break;
+            if (! catchUp && deleted > 0 && juce::Time::getMillisecondCounterHiRes() - start > budgetMs) break;
             const auto key = pluginKey (*it);
-            if (key.isNotEmpty() && deletedNow.contains (key)) { ++it; continue; }   // its next copy: next tick
-            deletedNow.add (key);
+            if (! catchUp && key.isNotEmpty() && deletedNow[key] >= copiesPerTick) { ++it; continue; }   // its next copies: next tick
+            ++deletedNow[key];
+            ++deleted;
             auto e = std::move (*it);
             it = entries.erase (it);
             e.window.reset();
