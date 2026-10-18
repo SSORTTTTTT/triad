@@ -9,7 +9,7 @@
 // Each divider also has a slope dot higher up: drag it up for a soft slope (bands blend into each
 // other), down for a hard cut; its readout shows the slope in dB/octave (click it for a list).
 // Each band is drawn as its own coloured response curve, so the overlap between bands is visible.
-class CrossoverDisplay final : public juce::Component, private juce::Timer
+class CrossoverDisplay final : public juce::Component
 {
 public:
     explicit CrossoverDisplay (TriadProcessor&);
@@ -19,7 +19,13 @@ public:
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void refresh();
-    void setMeters (float input, float output);   // peak levels since the last call (linear)
+    void refreshIfChanged();   // refresh() only when the bands, crossovers or slopes changed
+    // Peak levels since the last call (linear) and Triad's CPU share, once a frame (dt: seconds since the last).
+    void setMeters (float input, float output, float cpu = 0.0f, double dt = 0.05);
+    // Latency meter: what Triad reports to the DAW, and which effects add it (for its tooltip).
+    void setLatency (int samples, double sampleRate, const juce::String& breakdown);
+    juce::Button& getLiveButton() noexcept { return liveButton; }
+    juce::String getLatencyText() const;
     void showBandMenu (int band, float hz);
     void showCrossoverMenu (int index);
     int bandAt (float x) const;
@@ -46,7 +52,8 @@ public:
     static void addSlopeItems (juce::PopupMenu& menu, int current, int idBase);
     juce::Rectangle<float> slopeReadoutBounds (int index) const;
     int getActiveSlope() const noexcept { return activeSlope; }
-    void updateSpectrum();
+    void updateSpectrum (double dt = 1.0 / 30.0);
+    int getStaticLayerRenders() const noexcept { return staticRenders; }
     bool isSpectrumVisible() const noexcept { return spectrumVisible; }
 
 private:
@@ -74,8 +81,11 @@ private:
         int slopeGrabOrder = 4;
         bool draggingSlope = false;
     };
-    void timerCallback() override;
+    void frame (double time);   // every frame of the screen (up to 60 a second): the spectrum
     float constrainValue (int, float) const;
+    void paintStaticLayer (juce::Graphics&);
+    juce::Rectangle<float> readoutBoundsFor (int index, const std::vector<juce::Rectangle<float>>& taken) const;
+    std::vector<juce::Rectangle<float>> pillRects() const;
     void paintMeters (juce::Graphics&);
     void paintBandCurves (juce::Graphics&);
     void paintSlopeReadouts (juce::Graphics&);
@@ -88,9 +98,20 @@ private:
     int activeHandle = -1, activeSlope = -1;
     std::vector<float> cuts;
     std::vector<int> pillRows;
-    static constexpr float pillWidth = 78.0f, meterWidth = 64.0f;
-    struct Meter { float level = 0.0f, hold = 0.0f; int holdFrames = 0; void push (float v); };
+    static constexpr float pillWidth = 78.0f, meterWidth = 120.0f;
+    struct Meter { float level = 0.0f, hold = 0.0f; double holdTime = 0.0; void push (float v, double dt); };
     Meter inputMeter, outputMeter;
+    int latencySamples = 0;
+    double latencyRate = 48000.0;
+    float cpuShown = 0.0f;
+    juce::TextButton liveButton { "LIVE" };
+    // What does not move (background, band curves, grid, labels) is drawn once into an image.
+    juce::Image staticLayer;
+    std::vector<float> staticKey, refreshKey;
+    int staticRenders = 0;
+    double lastFrame = 0.0;
+    juce::VBlankAttachment frames { this, [this] (double t) { frame (t); } };
+    struct Tip final : juce::Component, juce::SettableTooltipClient {} meterTip;
 
     static constexpr int fftSize = 4096;
     std::vector<float> samples, window, levels;

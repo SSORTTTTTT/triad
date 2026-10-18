@@ -74,7 +74,9 @@ public:
     {
         juce::String name, status, format, maker;
         bool loaded = false, hasContent = false, enabled = true, pending = false, modulated = false;
-        int latency = 0;
+        int latency = 0;                         // compensated now (0 when bypassed, or switched off by LIVE)
+        int reportedLatency = 0;                 // what the effect reports, whether it plays or not
+        bool liveBypassed = false;               // switched off by LIVE because it adds latency
         int channels = 2;                        // channels the effect processes (more than 2: an extra bus fed silence)
         int invalidAudio = 0;                    // blocks of NaN/Inf output Triad silenced
         float mix = 100.0f, liveMix = 100.0f;   // knob, and the value playing now (with LFOs)
@@ -82,6 +84,11 @@ public:
     int getSlotCount (int band) const;
     SlotInfo getSlotInfo (int band, int slot) const;
     SlotInfo getSlotInfo (int band) const { return getSlotInfo (band, 0); }   // 0.1 API: first slot
+    // The effect hosted in a slot (message thread; valid until the slot changes). For the parameter-linking
+    // feasibility test: LFOs on the knobs inside third-party effects.
+    juce::AudioPluginInstance* getHostedEffect (int band, int slot) const;
+    // Message thread, every frame: where an LFO has a slot's mix right now (cheap; no strings copied).
+    float getSlotLiveMix (int band, int slot, bool& modulated) const;
     int addSlot (int band);                     // appends an empty slot; returns its index
     void removeSlot (int band, int slot);       // removes the effect and its row (a band keeps one slot)
     // Loads synchronously when the format allows it, otherwise asynchronously (AUv3).
@@ -169,8 +176,13 @@ public:
     std::vector<std::pair<Destination, juce::String>> getDestinations (int band) const;
 
     // ---- Meters ------------------------------------------------------------------------------------
-    struct Meters { float input = 0.0f, output = 0.0f; std::array<float, triad::maxBands> bands {}; };
-    Meters takeMeters();   // peak levels (linear) since the last call
+    // Peak levels (linear) since the last call, and the share of the audio's time Triad spent processing it
+    // (1 = all of it: dropouts) since the last call.
+    struct Meters { float input = 0.0f, output = 0.0f, cpu = 0.0f; std::array<float, triad::maxBands> bands {}; };
+    Meters takeMeters();
+    // LIVE (for recording through Triad): every effect that adds latency is passed by, so Triad adds none.
+    void setLiveMode (bool);
+    bool isLiveMode() const noexcept { return liveMode.load(); }
 
     // ---- Presets -----------------------------------------------------------------------------------
     std::unique_ptr<juce::XmlElement> createChainXml (int band);     // one band's chain, LFOs, mix, volume
@@ -185,6 +197,13 @@ public:
     static void clearCopiedBand();
     std::unique_ptr<juce::XmlElement> createPresetXml();             // the whole Triad
     void loadPresetXml (const juce::XmlElement&);
+    // Init: an empty Triad (3 bands, empty slots, 24 dB/oct, mixes 100%, volumes 0 dB, LFOs off).
+    static std::unique_ptr<juce::XmlElement> createInitXml();
+    void initialize();
+    // A new Triad opens with the startup preset chosen in the settings, unless the DAW restores a project
+    // into it first (checked a moment after it is created, on the message thread).
+    bool applyStartupPreset();
+    static constexpr double startupDelayMs = 250.0;
     juce::String getPresetName() const;
     void setPresetName (const juce::String&);
 
@@ -225,6 +244,8 @@ private:
         juce::String error;
         bool enabled = true;
         int latency = 0;            // latency compensated for this slot (0 when inactive)
+        int reportedLatency = 0;    // what the effect reports
+        bool liveBypassed = false;  // LIVE is on and this effect adds latency: it is passed by
         int channels = 2;           // channels the effect processes: stereo, plus any always-on extra bus (fed silence)
         // Blocks of invalid audio (NaN/Inf) the effect produced; Triad silences them, then resets or bypasses it.
         std::atomic<int> invalidBlocks { 0 };
@@ -235,7 +256,7 @@ private:
         std::vector<Route*> modulators;   // resolved under gate
         triad::StereoDelay dryDelay;
         juce::SmoothedValue<float> mix;
-        bool isActive() const { return effect != nullptr && enabled && error.isEmpty(); }
+        bool isActive() const { return effect != nullptr && enabled && error.isEmpty() && ! liveBypassed; }
         bool hasContent() const { return effect != nullptr || description.name.isNotEmpty(); }
     };
     struct Band
@@ -280,6 +301,11 @@ private:
     std::unique_ptr<juce::XmlElement> pendingState;
     std::atomic<bool> restoring { false }, muted { false };
     std::atomic<int> silencedBlocks { 0 };
+    std::atomic<bool> liveMode { false };
+    std::atomic<juce::int64> busyTicks { 0 }, audioSamples { 0 };
+    std::atomic<bool> stateReceived { false };   // setStateInformation was called (a project, a preset)
+    bool startupDecided = false;
+    double createdAt = 0.0;
     std::atomic<int> pendingCreations { 0 }, bandCount { 3 }, structureVersion { 0 };
     std::atomic<double> tail { 0.0 };
     std::atomic<double> rate { 44100.0 };

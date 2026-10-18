@@ -1,6 +1,7 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginCatalog.h"
 #include "../Source/PluginEditor.h"
+#include "../Source/Settings.h"
 #include <juce_dsp/juce_dsp.h>
 #include <csignal>
 #include <cstdlib>
@@ -230,6 +231,11 @@ bool copyBundle (const juce::File& source, const juce::File& dest)
             so.moveFileTo (arch.getChildFile (dest.getFileNameWithoutExtension() + ".so"));
    #endif
     return true;
+}
+void fillTestNoise (juce::AudioBuffer<float>& b, juce::Random& r)
+{
+    for (int c = 0; c < b.getNumChannels(); ++c)
+        for (int i = 0; i < b.getNumSamples(); ++i) b.setSample (c, i, (r.nextFloat() * 2.0f - 1.0f) * 0.3f);
 }
 juce::String writeImage (const juce::File& file, const juce::Image& image)
 {
@@ -958,6 +964,121 @@ int main (int argc, char** argv)
             std::cout << "PASS: LFO project recall" << std::endl;
         }
 
+        // ---- Startup preset, "Use the current settings", Initialize --------------------------------------
+        {
+            juce::SharedResourcePointer<TriadSettings> settings;
+            const auto previousChoice = settings->getStartupPreset();
+            const auto startupFile = TriadSettings::startupSettingsFile();
+            const bool hadStartupFile = startupFile.existsAsFile();
+            const auto previousStartupText = hadStartupFile ? startupFile.loadFileAsString() : juce::String();
+            TriadSettings::presetFolder().createDirectory();
+            const auto presetFile = TriadSettings::presetFolder().getChildFile ("Triad test startup.triadpreset");
+            auto waitForStartup = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil ((int) TriadProcessor::startupDelayMs + 400); };
+            {
+                TriadProcessor source;
+                source.prepareToPlay (48000, 512);
+                source.addBand(); source.addBand();
+                source.setCrossoverSlope (0, 12);
+                require (source.loadFile (1, 0, effect).isEmpty(), "Load an effect for the startup preset");
+                source.setPresetName ("Triad test startup");
+                require (source.createPresetXml()->writeTo (presetFile), "Save a preset to start with");
+            }
+            settings->setStartupPreset ("Triad test startup");
+            {
+                TriadProcessor fresh;
+                fresh.prepareToPlay (48000, 512);
+                waitForStartup();
+                require (fresh.getBandCount() == 5 && fresh.getCrossoverSlope (0) == 12 && fresh.getSlotInfo (1, 0).loaded
+                         && fresh.getPresetName() == "Triad test startup", "A new Triad opens with the startup preset");
+                fresh.initialize();
+                require (fresh.getBandCount() == 3 && ! fresh.getSlotInfo (1, 0).hasContent && fresh.getCrossoverSlope (0) == 4
+                         && fresh.getPresetName() == "Init" && fresh.getLatencySamples() == 0, "Initialize: an empty Triad");
+                // "Use the current settings as the startup preset", from the gear menu.
+                fresh.addBand();
+                std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (fresh.createEditor()));
+                require (editor->useCurrentSettingsAtStartup() && settings->getStartupPreset() == TriadSettings::currentSettings,
+                         "Use the current settings as the startup preset");
+            }
+            {
+                TriadProcessor fresh;
+                fresh.prepareToPlay (48000, 512);
+                waitForStartup();
+                require (fresh.getBandCount() == 4, "A new Triad opens with the saved current settings");
+            }
+            {
+                // A project the DAW restores right after creating Triad keeps its own settings.
+                juce::MemoryBlock project;
+                {
+                    TriadProcessor saved;
+                    saved.prepareToPlay (48000, 512);
+                    saved.addBand(); saved.addBand(); saved.addBand(); saved.addBand();
+                    saved.getStateInformation (project);
+                }
+                TriadProcessor restored;
+                restored.setStateInformation (project.getData(), (int) project.getSize());
+                restored.prepareToPlay (48000, 512);
+                waitForStartup();
+                require (restored.getBandCount() == 7, "A project's own settings win over the startup preset");
+            }
+            settings->setStartupPreset ({});
+            {
+                TriadProcessor fresh;
+                fresh.prepareToPlay (48000, 512);
+                waitForStartup();
+                require (fresh.getBandCount() == 3 && ! fresh.getSlotInfo (0, 0).hasContent, "Startup preset Init: an empty Triad");
+            }
+            settings->setStartupPreset (previousChoice);
+            presetFile.deleteFile();
+            if (hadStartupFile) startupFile.replaceWithText (previousStartupText); else startupFile.deleteFile();
+            std::cout << "PASS: startup preset (Init, a saved preset, the current settings), Initialize, projects keep their own settings" << std::endl;
+        }
+
+        // ---- Latency meter, CPU meter, LIVE ------------------------------------------------------------
+        {
+            TriadProcessor q;
+            q.prepareToPlay (48000, 256);
+            require (q.loadFile (1, 0, effect).isEmpty(), "Load an effect with latency");
+            require (q.getLatencySamples() == 73 && q.getSlotInfo (1, 0).latency == 73 && q.getSlotInfo (1, 0).reportedLatency == 73,
+                     "The effect's latency is reported per slot and in total");
+            {
+                std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (q.createEditor()));
+                editor->refreshNow();
+                require (editor->getDisplay().getLatencyText() == "1.5 ms", "The latency meter shows Triad's latency (73 samples at 48 kHz)");
+                editor->getDisplay().getLiveButton().triggerClick();
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+                require (q.isLiveMode(), "The LIVE button switches LIVE on");
+                editor->refreshNow();
+                require (editor->getDisplay().getLatencyText() == "0 ms", "With LIVE on the meter shows 0 ms");
+            }
+            require (q.getLatencySamples() == 0 && q.getSlotInfo (1, 0).liveBypassed && q.getSlotInfo (1, 0).latency == 0
+                     && q.getSlotInfo (1, 0).reportedLatency == 73 && q.getSlotInfo (1, 0).enabled,
+                     "LIVE: the effect with latency is passed by (still enabled), Triad adds no latency");
+            {
+                // With LIVE on, the sound comes straight through (the bands add back to the input).
+                auto signal = input (4096);
+                const auto expected = reference (signal, 48000, { 1, 1, 1 }, 0);
+                juce::MidiBuffer midi;
+                for (int offset = 0; offset < signal.getNumSamples(); offset += 256)
+                {
+                    juce::AudioBuffer<float> block (signal.getArrayOfWritePointers(), 2, offset, juce::jmin (256, signal.getNumSamples() - offset));
+                    q.processBlock (block, midi);
+                }
+                require (maxError (signal, expected, 0, signal.getNumSamples()) < 1.0e-4f, "LIVE: no delay, the effect is passed by");
+                require (q.takeMeters().cpu > 0.0f, "The CPU meter measures Triad's processing");
+            }
+            juce::MemoryBlock state;
+            q.getStateInformation (state);
+            {
+                TriadProcessor restored;
+                restored.setStateInformation (state.getData(), (int) state.getSize());
+                restored.prepareToPlay (48000, 256);
+                require (restored.isLiveMode() && restored.getLatencySamples() == 0, "LIVE is saved with the project");
+            }
+            q.setLiveMode (false);
+            require (! q.isLiveMode() && q.getLatencySamples() == 73 && ! q.getSlotInfo (1, 0).liveBypassed, "LIVE off: the effect plays again");
+            std::cout << "PASS: latency meter (total, per slot), CPU meter, LIVE switch" << std::endl;
+        }
+
         // ---- Effects-only plug-in list, without ever loading a plug-in inside Triad ----------------
         {
             auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadCatalogTest");
@@ -1346,19 +1467,20 @@ int main (int argc, char** argv)
                 // screen), and close-ups of the knobs, sliders and dots, to judge how smooth the interface can be.
                 if (screenshotFile != juce::File())
                 {
-                    auto timePaint = [] (juce::Component& c, float scale)
+                    auto timeArea = [] (juce::Component& c, juce::Rectangle<int> area, float scale)
                     {
                         double total = 0.0, worst = 0.0;
-                        c.createComponentSnapshot (c.getLocalBounds(), true, scale);   // warm-up (fonts, caches)
+                        c.createComponentSnapshot (area, true, scale);   // warm-up (fonts, cached pictures)
                         for (int i = 0; i < 12; ++i)
                         {
                             const auto t0 = juce::Time::getMillisecondCounterHiRes();
-                            c.createComponentSnapshot (c.getLocalBounds(), true, scale);
+                            c.createComponentSnapshot (area, true, scale);
                             const auto dt = juce::Time::getMillisecondCounterHiRes() - t0;
                             total += dt; worst = juce::jmax (worst, dt);
                         }
                         return juce::String (total / 12.0, 1) + " ms (worst " + juce::String (worst, 1) + ")";
                     };
+                    auto timePaint = [&timeArea] (juce::Component& c, float scale) { return timeArea (c, c.getLocalBounds(), scale); };
                     std::cout << "UI drawing times, whole window at 1x / 2x (a frame at 60 fps has 16.7 ms):" << std::endl;
                     for (auto tab : { TriadEditor::Tab::bands, TriadEditor::Tab::lfo, TriadEditor::Tab::matrix })
                     {
@@ -1369,16 +1491,37 @@ int main (int argc, char** argv)
                     }
                     editor->setTab (TriadEditor::Tab::bands);
                     editor->refreshNow();
-                    std::cout << "  Crossover display (redrawn 30x a second): " << timePaint (editor->getDisplay(), 1.0f) << " / "
-                              << timePaint (editor->getDisplay(), 2.0f) << std::endl;
-                    std::cout << "  One band strip (its meter redraws 20x a second): " << timePaint (*editor->getStrip (0), 1.0f) << " / "
-                              << timePaint (*editor->getStrip (0), 2.0f) << std::endl;
-                    std::cout << "  One slot row (knob): " << timePaint (editor->getStrip (0)->getRow (0), 1.0f) << " / "
-                              << timePaint (editor->getStrip (0)->getRow (0), 2.0f) << std::endl;
+                    std::cout << "What moves every frame (up to 60 a second), at 1x / 2x:" << std::endl;
+                    auto& display = editor->getDisplay();
+                    display.createComponentSnapshot (display.getLocalBounds(), true, 2.0f);
+                    const int displayRenders = display.getStaticLayerRenders();
+                    std::cout << "  Crossover display (spectrum and meters over its cached picture): " << timePaint (display, 1.0f) << " / "
+                              << timePaint (display, 2.0f) << std::endl;
+                    juce::ignoreUnused (displayRenders);
+                    {
+                        const int before = display.getStaticLayerRenders();
+                        for (int i = 0; i < 5; ++i) { display.updateSpectrum(); display.createComponentSnapshot (display.getLocalBounds(), true, 2.0f); }
+                        require (display.getStaticLayerRenders() == before, "The display's still parts are drawn once, not every frame");
+                    }
+                    auto& strip0 = *editor->getStrip (0);
+                    std::cout << "  A band's level meter: " << timeArea (strip0, strip0.meterArea().expanded (4).getUnion (strip0.peakTextArea()), 1.0f) << " / "
+                              << timeArea (strip0, strip0.meterArea().expanded (4).getUnion (strip0.peakTextArea()), 2.0f) << std::endl;
+                    std::cout << "  A slot knob's LFO dot: " << timeArea (strip0.getRow (0), strip0.getRow (0).knob.getBounds().expanded (6), 1.0f) << " / "
+                              << timeArea (strip0.getRow (0), strip0.getRow (0).knob.getBounds().expanded (6), 2.0f) << std::endl;
                     editor->showLfo (0, 1);
                     editor->refreshNow();
-                    std::cout << "  LFO grid (redrawn 30x a second while playing): " << timePaint (editor->getLfoPage().getEditor(), 1.0f) << " / "
-                              << timePaint (editor->getLfoPage().getEditor(), 2.0f) << std::endl;
+                    auto& grid = editor->getLfoPage().getEditor();
+                    grid.createComponentSnapshot (grid.getLocalBounds(), true, 2.0f);
+                    const int gridRenders = grid.getLayerRenders();
+                    const auto playhead = juce::Rectangle<int> (grid.getWidth() / 2 - 6, 0, 12, grid.getHeight());
+                    std::cout << "  LFO grid, the playing position (a 12-pixel strip over the cached grid): " << timeArea (grid, playhead, 1.0f) << " / "
+                              << timeArea (grid, playhead, 2.0f) << "; the whole grid: " << timePaint (grid, 2.0f) << " at 2x" << std::endl;
+                    juce::ignoreUnused (gridRenders);
+                    {
+                        const int before = grid.getLayerRenders();
+                        for (int i = 0; i < 5; ++i) grid.createComponentSnapshot (playhead.translated (i * 20, 0), true, 2.0f);
+                        require (grid.getLayerRenders() == before, "The LFO grid is drawn once; following the playhead only redraws a strip");
+                    }
                     // Close-ups at 4x: a strip's footer (volume slider, meter, band mix knob), slot rows, the
                     // crossover dots and readouts, the LFO toolbar and palette.
                     editor->setTab (TriadEditor::Tab::bands);
@@ -1391,7 +1534,6 @@ int main (int argc, char** argv)
                     auto& strip = *editor->getStrip (0);
                     closeUp (strip, strip.getLocalBounds().removeFromBottom (96), "strip-footer");
                     closeUp (strip, strip.getLocalBounds().withTrimmedTop (BandStrip::headerHeight).withHeight (110), "slots");
-                    auto& display = editor->getDisplay();
                     closeUp (display, display.getLocalBounds().withTrimmedLeft (display.getWidth() / 3).withWidth (display.getWidth() / 3), "crossovers");
                     editor->showLfo (0, 1);
                     editor->refreshNow();
@@ -1399,6 +1541,54 @@ int main (int argc, char** argv)
                     closeUp (page, page.getLocalBounds().removeFromBottom (78).withWidth (page.getEditor().getRight()), "lfo-toolbar");
                     editor->setTab (TriadEditor::Tab::bands);
                     editor->refreshNow();
+                    // GUI stress: 400 random interface actions (tabs, window sizes, bands, slopes, LIVE, LFO folders
+                    // and pages, the dice), drawing the whole window every few actions, while frames keep running.
+                    {
+                        juce::Random r (99);
+                        int snapshots = 0;
+                        double drawing = 0.0;
+                        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                        double frameTime = 1000.0;
+                        for (int i = 0; i < 400; ++i)
+                        {
+                            switch (r.nextInt (10))
+                            {
+                                case 0: editor->setTab ((TriadEditor::Tab) r.nextInt (3)); break;
+                                case 1: { const double scales[] { 0.75, 0.9, 1.0, 1.25, 1.5 }; editor->setScale (scales[r.nextInt (5)]); break; }
+                                case 2: if (preview.getBandCount() < triad::maxBands) preview.addBand (40.0f * std::pow (400.0f, r.nextFloat())); break;
+                                case 3: if (preview.getBandCount() > 3) preview.removeBand (r.nextInt (preview.getBandCount())); break;
+                                case 4: preview.setCrossoverSlope (r.nextInt (preview.getBandCount() - 1), 1 + r.nextInt (triad::CrossoverFilter::maxOrder)); break;
+                                case 5: preview.setLiveMode (! preview.isLiveMode()); break;
+                                case 6:
+                                {
+                                    editor->showLfo (r.nextInt (preview.getBandCount()), -1);
+                                    auto& lfoPage = editor->getLfoPage();
+                                    lfoPage.setPaletteCategory (r.nextInt (mod::numPresetCategories()));
+                                    lfoPage.setPalettePage (r.nextInt (lfoPage.getNumPalettePages()));
+                                    if (lfoPage.getNumPaletteButtons() > 0) lfoPage.getPaletteButton (r.nextInt (lfoPage.getNumPaletteButtons()))->onClick();
+                                    break;
+                                }
+                                case 7: editor->getLfoPage().generate(); break;
+                                case 8: editor->getDisplay().setSlope (r.nextInt (preview.getBandCount() - 1), 1 + r.nextInt (triad::CrossoverFilter::maxOrder)); break;
+                                default: { juce::MidiBuffer m; juce::AudioBuffer<float> audio (2, 512); fillTestNoise (audio, r); preview.processBlock (audio, m); break; }
+                            }
+                            editor->refreshNow();
+                            editor->animate (frameTime += 1.0 / 60.0);
+                            if (i % 20 == 19)
+                            {
+                                const auto d0 = juce::Time::getMillisecondCounterHiRes();
+                                editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+                                drawing += juce::Time::getMillisecondCounterHiRes() - d0;
+                                ++snapshots;
+                            }
+                            require (editor->getNumStrips() == preview.getBandCount(), "GUI stress: a strip per band");
+                        }
+                        preview.setLiveMode (false);
+                        editor->setScale (1.0);
+                        std::cout << "GUI stress: 400 random interface actions in " << juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, 1)
+                                  << " s; the whole window drawn " << snapshots << " times, " << juce::String (drawing / juce::jmax (1, snapshots), 1)
+                                  << " ms each: passed" << std::endl;
+                    }
                 }
                 editor->setTab (TriadEditor::Tab::bands);
                 editor->refreshNow();

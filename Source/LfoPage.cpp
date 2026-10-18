@@ -63,15 +63,25 @@ public:
         g.setColour (down ? juce::Colour (0xff3d4a36) : over ? slotRowHover : juce::Colour (0xff1a1d1c));
         g.fillRoundedRectangle (r, 4.0f);
         const auto area = r.reduced (6.0f, 5.0f);
+        // Drawn from the shape's own points (steps exactly, curves finely), so dense shapes stay crisp.
         juce::Path p;
-        for (int i = 0; i <= 48; ++i)
+        auto at = [&area] (float x, float y) { return juce::Point<float> (area.getX() + area.getWidth() * x, area.getBottom() - area.getHeight() * y); };
+        for (size_t i = 0; i < shape.size(); ++i)
         {
-            const float x = (float) i / 48.0f;
-            const auto point = juce::Point<float> (area.getX() + area.getWidth() * x, area.getBottom() - area.getHeight() * mod::evaluate (shape, x));
-            if (i == 0) p.startNewSubPath (point); else p.lineTo (point);
+            const auto& b = shape[i];
+            if (i == 0) { p.startNewSubPath (at (b.x, b.y)); continue; }
+            const auto& a = shape[i - 1];
+            const float width = (b.x - a.x) * area.getWidth();
+            if (std::abs (a.curve) > 1.0e-3f && width > 1.0f)
+                for (int k = 1; k < juce::jmax (2, (int) (width / 1.5f)); ++k)
+                {
+                    const float t = (float) k / (float) juce::jmax (2, (int) (width / 1.5f));
+                    p.lineTo (at (a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * mod::curveFraction (t, a.curve)));
+                }
+            p.lineTo (at (b.x, b.y));
         }
         g.setColour (over ? colour : textColour.withAlpha (0.85f));
-        g.strokePath (p, juce::PathStrokeType (1.6f));
+        g.strokePath (p, juce::PathStrokeType (shape.size() > 40 ? 1.1f : 1.6f, juce::PathStrokeType::beveled, juce::PathStrokeType::butt));
     }
 private:
     mod::Shape shape;
@@ -113,7 +123,6 @@ ShapeEditor::ShapeEditor (TriadProcessor& p) : processor (p)
 {
     setWantsKeyboardFocus (true);
     setTitle ("LFO shape");
-    startTimerHz (30);
 }
 void ShapeEditor::setTarget (int b, int l)
 {
@@ -206,12 +215,61 @@ int ShapeEditor::hitCurve (juce::Point<float> pos) const
     return -1;
 }
 
-void ShapeEditor::timerCallback()
+void ShapeEditor::frame (double time)
 {
+    const double dt = lastFrame > 0.0 ? time - lastFrame : 1.0;
+    if (lastFrame > 0.0 && dt < 1.0 / 65.0) return;   // at most 60 frames a second
+    lastFrame = time;
     const auto next = processor.getLfoPhase (band, lfo);
-    if (std::abs (next - phase) > 1.0e-4f) { phase = next; repaint(); }
+    if (std::abs (next - phase) <= 1.0e-4f) return;
+    // Repaint only the strips under the old and the new playing position.
+    const auto strip = [this] (float p)
+    {
+        if (p < 0.0f) return juce::Rectangle<int>();
+        const int x = juce::roundToInt (toScreen ({ p, 0.0f, 0.0f }).x);
+        return juce::Rectangle<int> (x - 6, 0, 12, getHeight());
+    };
+    repaint (strip (phase));
+    phase = next;
+    repaint (strip (phase));
 }
 void ShapeEditor::paint (juce::Graphics& g)
+{
+    const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    auto key = (juce::uint64) (juce::String (getWidth()) + "x" + juce::String (getHeight()) + "@" + juce::String (scale) + "/" + juce::String (band)
+                               + "/" + juce::String (columns()) + "/" + juce::String (hoverPoint) + "/" + juce::String (hoverCurve)).hashCode64();
+    auto mix = [&key] (int v) { key = key * 1099511628211ull + (juce::uint64) (juce::uint32) v; };
+    for (const auto& p : shape) { mix (juce::roundToInt (p.x * 1.0e6f)); mix (juce::roundToInt (p.y * 1.0e6f)); mix (juce::roundToInt (p.curve * 1.0e4f)); }
+    for (bool b : selected) mix (b ? 7 : 3);
+    if ((juce::int64) key != layerKey || ! layer.isValid())
+    {
+        layerKey = (juce::int64) key;
+        ++layerRenders;
+        layer = juce::Image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) getWidth() * scale)),
+                             juce::jmax (1, juce::roundToInt ((float) getHeight() * scale)), true);
+        juce::Graphics lg (layer);
+        lg.addTransform (juce::AffineTransform::scale (scale));
+        paintLayer (lg);
+    }
+    g.drawImageTransformed (layer, juce::AffineTransform::scale (1.0f / scale));
+    const auto colour = bandColour (band);
+    if (drag == Drag::select)
+    {
+        g.setColour (colour.withAlpha (0.12f)); g.fillRect (selection);
+        g.setColour (colour.withAlpha (0.7f)); g.drawRect (selection, 1.0f);
+    }
+    // Playing position.
+    if (phase >= 0.0f)
+    {
+        const auto r = plot();
+        const auto p = toScreen ({ phase, mod::evaluate (shape, phase), 0.0f });
+        g.setColour (juce::Colours::white.withAlpha (0.35f));
+        g.drawVerticalLine (juce::roundToInt (p.x), r.getY(), r.getBottom());
+        g.setColour (juce::Colours::white);
+        g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre (p));
+    }
+}
+void ShapeEditor::paintLayer (juce::Graphics& g)
 {
     const auto r = plot();
     const auto colour = bandColour (band);
@@ -271,15 +329,6 @@ void ShapeEditor::paint (juce::Graphics& g)
     }
     g.setColour (colour);
     g.strokePath (line, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    // Playing position.
-    if (phase >= 0.0f)
-    {
-        const auto p = toScreen ({ phase, mod::evaluate (shape, phase), 0.0f });
-        g.setColour (juce::Colours::white.withAlpha (0.35f));
-        g.drawVerticalLine (juce::roundToInt (p.x), r.getY(), r.getBottom());
-        g.setColour (juce::Colours::white);
-        g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre (p));
-    }
     // Curve handles and points.
     for (size_t i = 0; i + 1 < shape.size(); ++i)
     {
@@ -298,11 +347,6 @@ void ShapeEditor::paint (juce::Graphics& g)
         g.setColour (sel ? colour : juce::Colour (0xfff2f5ef));
         g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (p));
         if (sel) { g.setColour (juce::Colours::white); g.drawEllipse (juce::Rectangle<float> (radius * 2.0f + 3.0f, radius * 2.0f + 3.0f).withCentre (p), 1.2f); }
-    }
-    if (drag == Drag::select)
-    {
-        g.setColour (colour.withAlpha (0.12f)); g.fillRect (selection);
-        g.setColour (colour.withAlpha (0.7f)); g.drawRect (selection, 1.0f);
     }
 }
 

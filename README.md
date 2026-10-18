@@ -1,8 +1,8 @@
 # Triad — multiband effects host
 
-Version 0.4.3 ("Triad v4") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
+Version 0.5.0 ("Triad v4") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
 
-**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v4-0.4.3-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
+**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v4-0.5.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
 
 ## What it does
 
@@ -11,7 +11,9 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
 ### BANDS
 
 - **Bands you can add while working.** Triad opens with 3 bands (crossovers at 250 Hz and 2.5 kHz). Press **+ BAND** or double-click the frequency display to split a band right there, up to 10 bands. Remove a band with the **×** on its strip, or right-click its area (or a divider) on the display.
-- **Live spectrum** behind the bands, with **IN** and **OUT** level meters beside it.
+- **Live spectrum** behind the bands, with **IN** and **OUT** level meters beside it, drawn at up to 60 frames a second.
+- **Latency and CPU meters** (new in 0.5.0), beside IN and OUT. **LAT** shows the delay Triad reports to your DAW: green at 0 ms (safe to sing or play through), amber when an effect adds latency, red above 10 ms; hover it to see which effects add it. **CPU** shows how much of each audio buffer's time Triad needs. Each band strip shows its own latency, and each effect that adds latency gets a small badge on its slot (e.g. "1.5ms").
+- **LIVE** (new in 0.5.0, above the meters): for recording through Triad. Every effect that adds latency is passed by (its slot shows "LIVE OFF") so Triad adds none; switch it off again for mixing. Saved with the project.
 - **Draggable crossovers.** Drag any divider; double-click one to reset it; arrow keys adjust a focused divider. Click a strip's start/end frequency to type one (`250`, `2.5k`).
 - **Slope dot on every divider** (new in v4): drag it **up for a soft slope**, where the effect blends into the neighbouring bands, or **down for a hard cut** right at the crossover. Its readout shows the slope, from **6 dB/oct** (softest) to **96 dB/oct** (hardest), 24 by default. 54 to 96 dB/oct (new in 0.4.1) are near-brickwall cuts: at 96 dB/oct a band is already about 96 dB down one octave past its edge, so it barely touches the next band (steeper cuts ring a little more around the crossover, as any steep filter does). Click the readout to pick from a list (6–48, then the harder cuts), double-click the dot to reset, or use the up/down arrow keys. Each band is drawn as its own coloured curve, so you can see how far each band reaches into the next. With no effects loaded the bands still add back to your original sound at every slope. Slopes are DAW-automatable and saved with projects and presets.
 - **Copy band state / Paste band state** (new in 0.4.1): in a band's **...** menu, or right-click anywhere on the band (its strip, or its area on the display). Copy takes the band's whole chain — effects with their settings, slot mixes, LFOs and routes, Band Mix and Volume; Paste puts it on another band (replacing that band's chain), also in another Triad in the same project. The band's frequency range stays as it is.
@@ -44,6 +46,7 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
 
 ### Everything else
 
+- **Startup preset** (new in 0.5.0): gear menu → **Change startup preset** chooses what every new Triad opens with: Init (an empty Triad), any saved preset, or your own settings saved with **Use the current settings as the startup preset**. Projects that already have Triad keep their own settings. The PRESET menu's **Initialize** turns the current Triad back into an empty one.
 - **Presets:** the **PRESET** menu saves and loads the whole Triad (`~/Music/Triad/Presets`). Each band's **...** menu saves or loads a **chain preset** (that band's effects with their settings, LFOs, mix and volume; `~/Music/Triad/Chains`).
 - **Settings (gear):** sort the effect list by company or A-Z, look for new plug-ins each time Triad opens (or only when you press Rescan), add your own plug-in folders, window size (75-150%).
 - Hosts **VST3 and Audio Unit** effects. Triad installs as AU and VST3, named **Triad v4**; projects made with Triad, Triad v2 and Triad v4 open in it.
@@ -65,7 +68,7 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
    - **CMake 3.22+**: uses one from Homebrew or `/Applications/CMake.app` if present; otherwise it downloads the official CMake 3.31.9 into `deps/` (checksum-verified) for this build only.
    - **JUCE 8.0.12**: downloaded into `deps/JUCE` at the pinned commit on the first run.
    - An internet connection is needed for the first run. A full log is written to `build-mac.log`.
-4. When it finishes, Finder shows `Installer/Triad-v4-0.4.3-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
+4. When it finishes, Finder shows `Installer/Triad-v4-0.5.0-macOS-AppleSilicon.pkg`. Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
    - `/Library/Audio/Plug-Ins/Components/Triad v4.component` (AU)
    - `/Library/Audio/Plug-Ins/VST3/Triad v4.vst3` (VST3)
 

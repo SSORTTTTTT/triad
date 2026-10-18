@@ -136,7 +136,7 @@ TriadEditor::TriadEditor (TriadProcessor& p)
     setTab (Tab::bands);
     setScale (settings->getScale());
     timerCallback();
-    startTimerHz (20);
+    startTimerHz (15);   // labels, status, structure; the meters and dots move with the screen (animate)
 }
 TriadEditor::~TriadEditor()
 {
@@ -227,18 +227,25 @@ void TriadEditor::layoutStrips()
 void TriadEditor::timerCallback()
 {
     if (processor.getBandCount() != builtCount) rebuildStrips();
-    const auto meters = processor.takeMeters();
-    frequencyDisplay.setMeters (meters.input, meters.output);
+    {
+        // The latency meter's tooltip names the effects that add latency.
+        juce::StringArray from;
+        const double sr = processor.getSampleRateForDisplay();
+        for (int b = 0; b < builtCount; ++b)
+            for (int s = 0; s < processor.getSlotCount (b); ++s)
+                if (const auto info = processor.getSlotInfo (b, s); info.latency > 0)
+                    from.add (info.name + " (band " + juce::String (b + 1) + ", " + juce::String (1000.0 * info.latency / juce::jmax (1.0, sr), 1) + " ms)");
+        frequencyDisplay.setLatency (processor.getLatencySamples(), sr, from.joinIntoString (", "));
+    }
     if (tab == Tab::bands)
     {
         const auto cuts = processor.effectiveCrossovers();
-        for (auto& strip : strips) strip->update (cuts, builtCount, processor.nyquistFrequency(), meters.bands[(size_t) strip->getBand()]);
-        frequencyDisplay.refresh();
+        for (auto& strip : strips) strip->update (cuts, builtCount, processor.nyquistFrequency());
+        frequencyDisplay.refreshIfChanged();
     }
     else if (tab == Tab::lfo) lfoPage.refresh();
     else matrixPage.refresh();
-    presetButton.presetName = processor.getPresetName();
-    presetButton.repaint();
+    if (const auto name = processor.getPresetName(); name != presetButton.presetName) { presetButton.presetName = name; presetButton.repaint(); }
     juce::String text;
     for (int b = 0; b < builtCount && text.isEmpty(); ++b)
         for (int s = 0; s < processor.getSlotCount (b); ++s)
@@ -251,6 +258,17 @@ void TriadEditor::timerCallback()
              : tab == Tab::matrix ? "Each row: an LFO (source), how much it moves its destination (amount), and the knob it moves."
              : "Click a slot to load an effect, + to add a slot, ~ for its LFO. Drag a band's header to move its effects to another band.";
     status.setText (text, juce::dontSendNotification);
+}
+void TriadEditor::animate (double frameTime)
+{
+    // At most 60 frames a second (a 120 Hz screen gets every other one); the meters' ballistics follow the clock.
+    const double dt = lastFrame > 0.0 ? juce::jlimit (0.0, 0.1, frameTime - lastFrame) : 1.0 / 60.0;
+    if (lastFrame > 0.0 && dt < 1.0 / 65.0) return;
+    lastFrame = frameTime;
+    const auto meters = processor.takeMeters();
+    frequencyDisplay.setMeters (meters.input, meters.output, meters.cpu, dt);
+    if (tab == Tab::bands)
+        for (auto& strip : strips) strip->animate (meters.bands[(size_t) strip->getBand()], dt);
 }
 void TriadEditor::changeListenerCallback (juce::ChangeBroadcaster*) { timerCallback(); }
 void TriadEditor::setCrossoverFrequency (int index, float hz) { frequencyDisplay.setCrossoverValue (index, hz); }
@@ -427,6 +445,23 @@ bool TriadEditor::savePreset (const juce::String& name)
     processor.setStatus (ok ? "Saved preset " + name : "Could not save the preset in " + folder.getFullPathName());
     return ok;
 }
+void TriadEditor::setStartupPreset (const juce::String& choice)
+{
+    settings->setStartupPreset (choice);
+    processor.setStatus ("New Triads will open with "
+                         + (choice.isEmpty() ? juce::String ("Init (an empty Triad)")
+                            : choice == TriadSettings::currentSettings ? juce::String ("your startup settings") : "the preset \"" + choice + "\""));
+}
+bool TriadEditor::useCurrentSettingsAtStartup()
+{
+    const auto file = TriadSettings::startupSettingsFile();
+    file.getParentDirectory().createDirectory();
+    auto xml = processor.createPresetXml();
+    xml->setAttribute ("preset", "Startup settings");
+    if (! xml->writeTo (file)) { processor.setStatus ("Could not save the startup settings in " + file.getFullPathName()); return false; }
+    setStartupPreset (TriadSettings::currentSettings);
+    return true;
+}
 bool TriadEditor::loadPreset (const juce::File& file)
 {
     auto xml = juce::XmlDocument::parse (file);
@@ -456,13 +491,14 @@ bool TriadEditor::loadChain (int band, const juce::File& file)
 }
 void TriadEditor::showPresetMenu()
 {
-    enum { saveId = 1, saveAsId, folderId, firstPreset = 100 };
+    enum { saveId = 1, saveAsId, folderId, initId, firstPreset = 100 };
     const auto files = filesIn (TriadSettings::presetFolder(), "*.triadpreset");
     const auto current = processor.getPresetName();
     juce::PopupMenu menu;
     menu.addSectionHeader ("TRIAD PRESETS");
-    if (current.isNotEmpty()) menu.addItem (saveId, "Save \"" + current + "\"");
+    if (current.isNotEmpty() && current != "Init") menu.addItem (saveId, "Save \"" + current + "\"");
     menu.addItem (saveAsId, "Save as new preset...");
+    menu.addItem (initId, "Initialize (an empty Triad)");
     menu.addSeparator();
     for (int i = 0; i < files.size(); ++i) menu.addItem (firstPreset + i, files[i].getFileNameWithoutExtension(), true, files[i].getFileNameWithoutExtension() == current);
     if (files.isEmpty()) menu.addItem (-1, "No presets saved yet", false);
@@ -478,6 +514,7 @@ void TriadEditor::showPresetMenu()
             self.prompt.show ("Save Triad preset", current.isNotEmpty() ? current : "My preset",
                               [safe] (const juce::String& name) { if (safe != nullptr) safe->savePreset (name); });
         else if (choice == folderId) { TriadSettings::presetFolder().createDirectory(); TriadSettings::presetFolder().revealToUser(); }
+        else if (choice == initId) { self.processor.initialize(); self.rebuildStrips(); }
         else if (choice >= firstPreset && choice - firstPreset < files.size()) self.loadPreset (files[choice - firstPreset]);
     });
 }
@@ -549,7 +586,7 @@ void TriadEditor::addPluginFolder()
 void TriadEditor::showGearMenu()
 {
     enum { sortCompany = 1, sortAZ, autoCheck, refreshList, rescanAll, addFolder, presetsFolder, chainsFolder,
-           scaleBase = 100, removeFolderBase = 200 };
+           startupUseCurrent, startupInit, startupCurrentSettings, scaleBase = 100, removeFolderBase = 200, startupBase = 1000 };
     const auto folders = settings->getFolders();
     juce::PopupMenu menu, removeMenu;
     menu.addSectionHeader ("EFFECT LIST");
@@ -566,14 +603,36 @@ void TriadEditor::showGearMenu()
     for (int percent : { 75, 90, 100, 125, 150 })
         menu.addItem (scaleBase + percent, juce::String (percent) + "%", true, juce::roundToInt (scale * 100.0) == percent);
     menu.addSectionHeader ("PRESETS");
+    const auto presetFiles = filesIn (TriadSettings::presetFolder(), "*.triadpreset");
+    const auto startup = settings->getStartupPreset();
+    {
+        juce::PopupMenu startupMenu;
+        startupMenu.addItem (startupInit, "Init (an empty Triad)", true, startup.isEmpty());
+        if (TriadSettings::startupSettingsFile().existsAsFile())
+            startupMenu.addItem (startupCurrentSettings, "My startup settings (saved with \"Use the current settings\")", true,
+                                 startup == TriadSettings::currentSettings);
+        if (! presetFiles.isEmpty()) startupMenu.addSectionHeader ("SAVED PRESETS");
+        for (int i = 0; i < presetFiles.size(); ++i)
+            startupMenu.addItem (startupBase + i, presetFiles[i].getFileNameWithoutExtension(), true, presetFiles[i].getFileNameWithoutExtension() == startup);
+        const auto label = startup.isEmpty() ? juce::String ("Init") : startup == TriadSettings::currentSettings ? juce::String ("my startup settings") : startup;
+        menu.addSubMenu ("Change startup preset (now: " + label + ")", startupMenu);
+    }
+    menu.addItem (startupUseCurrent, "Use the current settings as the startup preset");
     menu.addItem (presetsFolder, "Show presets folder");
     menu.addItem (chainsFolder, "Show chain presets folder");
     juce::Component::SafePointer<TriadEditor> safe (this);
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&gearButton), [safe, folders] (int choice)
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&gearButton), [safe, folders, presetFiles] (int choice)
     {
         if (safe == nullptr || choice == 0) return;
         auto& self = *safe;
         auto& s = *self.settings;
+        if (choice == startupInit || choice == startupCurrentSettings || (choice >= startupBase && choice - startupBase < presetFiles.size()))
+        {
+            self.setStartupPreset (choice == startupInit ? juce::String() : choice == startupCurrentSettings ? juce::String (TriadSettings::currentSettings)
+                                                                         : presetFiles[choice - startupBase].getFileNameWithoutExtension());
+            return;
+        }
+        if (choice == startupUseCurrent) { self.useCurrentSettingsAtStartup(); return; }
         if (choice == sortCompany) s.setSort (TriadSettings::Sort::company);
         else if (choice == sortAZ) s.setSort (TriadSettings::Sort::alphabetical);
         else if (choice == autoCheck)

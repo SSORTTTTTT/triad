@@ -656,7 +656,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             const int slots = p.getSlotCount (band);
             const int slot = r.nextInt (slots);
             const int effects = loadedCount (p);
-            int choice = r.nextInt (134);
+            int choice = r.nextInt (136);
             if (effects >= maxEffects && choice < 30) choice = 30 + r.nextInt (70);   // full: edit or remove instead
             juce::String name;
             auto begin = [&] (const char* what, const juce::String& extra = {})
@@ -831,6 +831,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                     if (effects < maxEffects - 20) p.pasteBandState (r.nextInt (bands));
                 }
             }
+            else if (choice >= 134) { begin ("LIVE on/off"); p.setLiveMode (! p.isLiveMode()); }
             else if (choice < 130)
             {
                 begin ("band volume");
@@ -1358,10 +1359,110 @@ void liveMonitoring (const Pool& pool, bool real)
     }
 }
 
-// ---- 5. Plug-in list with crashing plug-ins -------------------------------------------------------
+// ---- 5. Parameters inside the effects: can Triad's LFOs move them? -----------------------------------
+// For "LFOs on the knobs inside third-party effects": for every effect, how many parameters it lets a host
+// automate, and whether moving one from the audio thread every block (as an LFO would) works: the value
+// arrives, the sound changes, nothing crashes and the output stays finite.
+void parameterLinking (const Pool& pool)
+{
+    say ("\n== 5. Parameters inside the effects: can Triad's LFOs move them? ==");
+    constexpr double rate = 48000.0;
+    constexpr int block = 128;
+    int withParameters = 0, followed = 0, changedSound = 0, tested = 0;
+    std::vector<int> counts;
+    juce::StringArray notes;
+    for (size_t e = 0; e < pool.effects.size(); ++e)
+    {
+        step ("parameters: " + pool.names[(int) e], 120);
+        TriadProcessor p;
+        p.prepareToPlay (rate, block);
+        if (p.loadEffect (0, 0, pool.effects[e], false).isNotEmpty()) continue;
+        settle (p);
+        auto* effect = p.getHostedEffect (0, 0);
+        if (effect == nullptr) continue;
+        ++tested;
+        std::vector<juce::AudioProcessorParameter*> automatable;
+        for (auto* parameter : effect->getParameters())
+            if (parameter->isAutomatable() && ! parameter->isMetaParameter() && parameter->getName (64).isNotEmpty()
+                && ! parameter->getName (64).containsIgnoreCase ("bypass"))
+                automatable.push_back (parameter);
+        counts.push_back ((int) automatable.size());
+        if (automatable.empty()) { notes.add (pool.names[(int) e] + ": no automatable parameters"); continue; }
+        ++withParameters;
+        // Move the first few parameters with a 1/8-note-like square + ramp, every block, for 2 seconds of audio;
+        // compare the output with the same audio unmodulated.
+        juce::Random r (11);
+        auto run = [&] (bool modulate)
+        {
+            TriadProcessor q;
+            q.prepareToPlay (rate, block);
+            q.loadEffect (0, 0, pool.effects[e], false);
+            settle (q);
+            auto* fx = q.getHostedEffect (0, 0);
+            std::vector<juce::AudioProcessorParameter*> list;
+            if (fx != nullptr)
+                for (auto* parameter : fx->getParameters())
+                    if (parameter->isAutomatable() && ! parameter->isMetaParameter() && parameter->getName (64).isNotEmpty()
+                        && ! parameter->getName (64).containsIgnoreCase ("bypass") && list.size() < 4)
+                        list.push_back (parameter);
+            juce::AudioBuffer<float> audio (2, block);
+            juce::MidiBuffer midi;
+            juce::Random noise (5);
+            double energy = 0.0;
+            bool finite = true, arrived = true;
+            std::vector<float> trace;
+            for (int i = 0; i < (int) (2.0 * rate / block); ++i)
+            {
+                for (int c = 0; c < 2; ++c)
+                    for (int k = 0; k < block; ++k) audio.setSample (c, k, (noise.nextFloat() * 2.0f - 1.0f) * 0.25f);
+                if (modulate)
+                    for (size_t j = 0; j < list.size(); ++j)
+                    {
+                        const float phase = std::fmod ((float) i * block / (float) rate * 4.0f + (float) j * 0.25f, 1.0f);
+                        const float value = phase < 0.5f ? phase * 2.0f : 1.0f;   // ramp up, then hold
+                        list[j]->setValue (value);
+                        if (i % 50 == 0 && std::abs (list[j]->getValue() - value) > 0.02f) arrived = false;
+                    }
+                q.processBlock (audio, midi);
+                for (int c = 0; c < 2; ++c)
+                    for (int k = 0; k < block; ++k)
+                    {
+                        const float v = audio.getSample (c, k);
+                        if (! std::isfinite (v)) finite = false; else energy += (double) v * v;
+                        if (c == 0 && k % 16 == 0) trace.push_back (v);
+                    }
+            }
+            return std::make_tuple (energy, finite, arrived, trace);
+        };
+        const auto [plainEnergy, plainFinite, plainArrived, plainTrace] = run (false);
+        const auto [movedEnergy, movedFinite, movedArrived, movedTrace] = run (true);
+        juce::ignoreUnused (plainFinite, plainArrived, plainEnergy, movedEnergy);
+        double difference = 0.0;
+        for (size_t k = 0; k < juce::jmin (plainTrace.size(), movedTrace.size()); ++k) difference += std::abs (plainTrace[k] - movedTrace[k]);
+        const bool changed = difference > 1.0e-3;
+        followed += movedArrived ? 1 : 0;
+        changedSound += changed ? 1 : 0;
+        require (movedFinite, pool.names[(int) e] + ": moving its parameters every block keeps the output finite");
+        if (! movedArrived) notes.add (pool.names[(int) e] + ": parameter values read back differently (the effect quantises or ignores some)");
+        if (! changed) notes.add (pool.names[(int) e] + ": its first parameters did not change the sound of the test noise");
+        if (verbose)
+            say ("  " + pool.names[(int) e] + ": " + juce::String ((int) automatable.size()) + " automatable parameters (e.g. "
+                 + automatable.front()->getName (40) + "); moved every block: " + (movedArrived ? "values arrive" : "values differ")
+                 + (changed ? ", the sound follows" : ", no audible change on noise"));
+    }
+    std::sort (counts.begin(), counts.end());
+    const int median = counts.empty() ? 0 : counts[counts.size() / 2];
+    say (juce::String (withParameters) + " of " + juce::String (tested) + " effects let a host automate their parameters (median "
+         + juce::String (median) + " each, up to " + juce::String (counts.empty() ? 0 : counts.back()) + "); moved from the audio thread every "
+         + juce::String (block) + " samples: values arrived in " + juce::String (followed) + ", the sound followed in " + juce::String (changedSound)
+         + ", no crashes, no NaN/Inf");
+    for (const auto& n : notes) say ("  note: " + n);
+}
+
+// ---- 6. Plug-in list with crashing plug-ins -------------------------------------------------------
 void pluginList (const juce::File& effect, const juce::File& crashFixture, const juce::File& scanner)
 {
-    say ("\n== 5. Plug-in list: 60 plug-ins, 20 of which crash when loaded ==");
+    say ("\n== 6. Plug-in list: 60 plug-ins, 20 of which crash when loaded ==");
     step ("plug-in list with crashing plug-ins", 900);
     auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadStressList");
     temp.deleteRecursively();
@@ -1452,6 +1553,7 @@ int main (int argc, char** argv)
         if (liveOnly)
         {
             liveMonitoring (pool, real);
+            parameterLinking (pool);
             say ("\nPASS: live monitoring checks held");
             watchdog = nullptr;
             return 0;
@@ -1464,6 +1566,7 @@ int main (int argc, char** argv)
             editsWhilePlaying (pool, seed, 3000, 0.0);
         manyInstances (pool);
         liveMonitoring (pool, real);
+        parameterLinking (pool);
         pluginList (effect, crashFixture, scanner);
         step ({}, 0);
         if (! invalidEffects.empty())

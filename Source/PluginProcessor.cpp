@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "PlatformWindows.h"
+#include "Settings.h"
 #include <cstring>
 #include <map>
 #include <numeric>
@@ -359,6 +360,7 @@ TriadProcessor::TriadProcessor()
         const juce::ScopedLock lock (gate);
         publishInfo();
     }
+    createdAt = juce::Time::getMillisecondCounterHiRes();
     startTimerHz (10);
     ++liveTriads;
 }
@@ -531,6 +533,8 @@ void TriadProcessor::alignLatency()
                         s.error = "Latency exceeds supported limit; effect bypassed";
                     else if (s.error.startsWith ("Latency exceeds")) s.error.clear();
                 }
+                s.reportedLatency = reported;
+                s.liveBypassed = liveMode.load() && reported > 0 && s.enabled && s.error.isEmpty();
                 if (s.isActive()) latency = reported;
                 longestTail = juce::jmax (longestTail, s.effect->getTailLengthSeconds());
             }
@@ -559,6 +563,11 @@ void TriadProcessor::timerCallback()
     // Effects can change their latency at any time; check without the lock (the bands only change on this
     // thread) and take it only when something changed, so the audio thread is not kept waiting ten times a
     // second for nothing (it outputs silence rather than wait, which is a dropout while recording).
+    if (! startupDecided && juce::Time::getMillisecondCounterHiRes() - createdAt > startupDelayMs)
+    {
+        startupDecided = true;
+        if (! stateReceived.load()) applyStartupPreset();
+    }
     if (latencySignature() != alignedSignature.load())
     {
         const juce::ScopedTryLock lock (gate);
@@ -573,6 +582,7 @@ juce::int64 TriadProcessor::latencySignature() const
     auto addDouble = [&add] (double v) { juce::uint64 bits = 0; std::memcpy (&bits, &v, sizeof bits); add (bits); };
     add ((juce::uint64) numBands);
     add ((juce::uint64) prepared);
+    add ((juce::uint64) liveMode.load());
     addDouble (rate.load());
     for (int b = 0; b < numBands; ++b)
     {
@@ -701,6 +711,16 @@ void TriadProcessor::advanceLfos (Band& band, int offset, int frames)
 }
 void TriadProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer& midi)
 {
+    // CPU meter: the time this block took, against the time the audio lasts.
+    struct Timed
+    {
+        TriadProcessor& p; int samples; juce::int64 start = juce::Time::getHighResolutionTicks();
+        ~Timed()
+        {
+            p.busyTicks.fetch_add (juce::Time::getHighResolutionTicks() - start, std::memory_order_relaxed);
+            p.audioSamples.fetch_add (samples, std::memory_order_relaxed);
+        }
+    } timed { *this, audio.getNumSamples() };
     juce::ScopedNoDenormals denormals;
     midi.clear();
     spectrum.push (audio, audio.getNumSamples());
@@ -858,6 +878,9 @@ TriadProcessor::Meters TriadProcessor::takeMeters()
     Meters m;
     m.input = inputPeak.exchange (0.0f);
     m.output = outputPeak.exchange (0.0f);
+    const auto samples = audioSamples.exchange (0);
+    const double busy = juce::Time::highResolutionTicksToSeconds (busyTicks.exchange (0));
+    m.cpu = samples > 0 ? (float) (busy / ((double) samples / juce::jmax (1.0, rate.load()))) : 0.0f;
     for (size_t b = 0; b < m.bands.size(); ++b) m.bands[b] = bandPeaks[b].exchange (0.0f);
     return m;
 }
@@ -1052,6 +1075,8 @@ void TriadProcessor::publishInfo()
             n.enabled = s.enabled;
             n.pending = s.pendingRequest != 0;
             n.latency = s.latency;
+            n.reportedLatency = s.effect != nullptr ? s.reportedLatency : 0;
+            n.liveBypassed = s.liveBypassed;
             n.channels = s.effect != nullptr ? s.channels : 2;
             n.invalidAudio = s.effect != nullptr ? s.invalidBlocks.load (std::memory_order_relaxed) : 0;
             n.mix = s.mixPercent.load();
@@ -1081,6 +1106,19 @@ TriadProcessor::SlotInfo TriadProcessor::getSlotInfo (int band, int slot) const
             result.liveMix = result.modulated && s->isActive() ? s->liveMix.load() : result.mix;
         }
     return result;
+}
+juce::AudioPluginInstance* TriadProcessor::getHostedEffect (int band, int slot) const
+{
+    auto* s = slotAt (band, slot);
+    return s != nullptr ? s->effect.get() : nullptr;
+}
+float TriadProcessor::getSlotLiveMix (int band, int slot, bool& modulated) const
+{
+    modulated = false;
+    auto* s = slotAt (band, slot);
+    if (s == nullptr) return 100.0f;
+    modulated = std::any_of (s->modulators.begin(), s->modulators.end(), [] (Route* r) { return ! r->muted.load(); });
+    return modulated && s->isActive() ? s->liveMix.load() : s->mixPercent.load();
 }
 juce::String TriadProcessor::getStatus() const
 {
@@ -1331,6 +1369,18 @@ void TriadProcessor::removeEffect (int band, int slot)
     }
     retire (std::move (window));
     retire (std::move (old));
+    stateChanged();
+}
+void TriadProcessor::setLiveMode (bool on)
+{
+    if (liveMode.load() == on) return;
+    {
+        const juce::ScopedLock lock (gate);
+        liveMode.store (on);
+        alignLatency();
+    }
+    setStatus (on ? "LIVE: effects that add latency are passed by; Triad adds " + juce::String (getLatencySamples()) + " samples"
+                  : "LIVE off: every effect plays again");
     stateChanged();
 }
 void TriadProcessor::setSlotEnabled (int band, int slot, bool enabled)
@@ -1810,6 +1860,7 @@ std::unique_ptr<juce::XmlElement> TriadProcessor::createPresetXml()
     root->setAttribute ("version", 4);
     root->setAttribute ("bands", numBands);
     root->setAttribute ("preset", getPresetName());
+    if (liveMode.load()) root->setAttribute ("live", true);
     root->addChildElement (parameters.copyState().createXml().release());
     for (int b = 0; b < numBands; ++b)
     {
@@ -1836,6 +1887,7 @@ void TriadProcessor::setStateInformation (const void* data, int size)
     if (! xml || ! xml->hasTagName ("TriadState")) return;
     const auto version = xml->getIntAttribute ("version");
     if (version < 1 || version > 4) return;
+    stateReceived.store (true);
     {
         const juce::ScopedLock lock (stateGate);
         pendingState = std::move (xml); restoring.store (true);
@@ -1850,6 +1902,35 @@ void TriadProcessor::loadPresetXml (const juce::XmlElement& xml)
     juce::MemoryBlock data;
     copyXmlToBinary (xml, data);
     setStateInformation (data.getData(), (int) data.getSize());
+}
+std::unique_ptr<juce::XmlElement> TriadProcessor::createInitXml()
+{
+    TriadProcessor fresh;
+    fresh.startupDecided = true;   // a template: never opens a startup preset itself
+    fresh.setPresetName ("Init");
+    return fresh.createPresetXml();
+}
+void TriadProcessor::initialize()
+{
+    loadPresetXml (*createInitXml());
+    setStatus ("Initialized: an empty Triad");
+}
+bool TriadProcessor::applyStartupPreset()
+{
+    juce::SharedResourcePointer<TriadSettings> settings;
+    const auto choice = settings->getStartupPreset();
+    const auto file = TriadSettings::startupPresetFile (choice);
+    if (file == juce::File()) return false;   // Init: as constructed
+    auto xml = juce::XmlDocument::parse (file);
+    if (xml == nullptr || ! xml->hasTagName ("TriadState"))
+    {
+        setStatus ("The startup preset \"" + (choice == TriadSettings::currentSettings ? juce::String ("current settings") : choice)
+                   + "\" could not be opened; Triad started empty");
+        return false;
+    }
+    if (choice != TriadSettings::currentSettings) xml->setAttribute ("preset", choice);
+    loadPresetXml (*xml);
+    return true;
 }
 juce::String TriadProcessor::getPresetName() const
 {
@@ -1944,6 +2025,7 @@ void TriadProcessor::restoreFrom (const juce::XmlElement& xml)
     }
     for (auto& f : fresh) if (f == nullptr) f = std::make_unique<Band>();
     setPresetName (xml.getStringAttribute ("preset"));
+    liveMode.store (xml.getBoolAttribute ("live", false));
     {
         const juce::ScopedLock lock (gate);
         numBands = count;

@@ -33,6 +33,9 @@ public:
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
     void mouseExit (const juce::MouseEvent&) override { hover = false; repaint(); }
     void showMenu();
+    double latencyMs (int samples) const;
+    void animate();   // every frame: the LFO dot riding round the knob
+    juce::String latencyText (int samples) const;
     juce::Slider knob;
     juce::Rectangle<int> ledArea() const { return { getWidth() - 20, 0, 18, getHeight() }; }
     juce::Rectangle<int> arrowArea() const { return { 0, 0, 20, getHeight() }; }
@@ -67,7 +70,10 @@ class BandStrip final : public juce::Component
 {
 public:
     BandStrip (TriadProcessor&, StripHost&, int band);
-    void update (const std::vector<float>& crossovers, int bandCount, float nyquist, float level);
+    void update (const std::vector<float>& crossovers, int bandCount, float nyquist);   // a few times a second
+    void animate (float level, double dt);                                             // every frame
+    juce::Rectangle<int> meterArea() const;
+    juce::Rectangle<int> peakTextArea() const;
     void paint (juce::Graphics&) override;
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;
@@ -99,6 +105,7 @@ private:
     juce::Slider mix, volume;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment, volumeAttachment;
     float startHz = 0.0f, endHz = 0.0f, level = 0.0f, peakHold = 0.0f;
-    int holdFrames = 0;
+    int chainLatency = 0;
+    double holdTime = 0.0;
     bool lifted = false;
 };

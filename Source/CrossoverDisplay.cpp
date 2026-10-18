@@ -9,6 +9,14 @@ CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p)
     addButton.setTooltip ("Add a band (up to 10). Tip: double-click the display to split a band right there.");
     addButton.onClick = [this] { processor.addBand(); refresh(); };
     addAndMakeVisible (addButton);
+    liveButton.setClickingTogglesState (true);
+    liveButton.setTooltip ("LIVE, for recording through Triad: effects that add latency are passed by, so Triad adds none. "
+                           "Switch it off again for mixing.");
+    liveButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffc0392b));
+    liveButton.onClick = [this] { processor.setLiveMode (liveButton.getToggleState()); };
+    addAndMakeVisible (liveButton);
+    meterTip.setInterceptsMouseClicks (true, false);
+    addAndMakeVisible (meterTip);
     samples.resize ((size_t) fftSize);
     window.resize ((size_t) fftSize);
     bins.resize ((size_t) fftSize);
@@ -21,11 +29,9 @@ CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p)
     }
     processor.spectrum.active.store (true);
     refresh();
-    startTimerHz (30);
 }
 CrossoverDisplay::~CrossoverDisplay()
 {
-    stopTimer();
     processor.spectrum.active.store (false);
     endCrossoverGesture();
     endSlopeGesture();
@@ -159,29 +165,62 @@ void CrossoverDisplay::addSlopeItems (juce::PopupMenu& menu, int current, int id
                       true, order == current);
     }
 }
+// Each slope readout sits beside its dot: to the right, else to the left, else a compact one ("24") on
+// either side, whichever does not cover another readout or a frequency pill.
+juce::Rectangle<float> CrossoverDisplay::readoutBoundsFor (int index, const std::vector<juce::Rectangle<float>>& taken) const
+{
+    const auto plot = plotBounds();
+    constexpr float full = 70.0f, compact = 38.0f, height = 18.0f;
+    const float line = xForFrequency (cuts[(size_t) index]);
+    const float y = slopeY (processor.getCrossoverSlope (index)) - height * 0.5f;
+    // Besides the pills and earlier readouts, keep clear of the other dividers' lines and slope dots.
+    auto obstacles = taken;
+    for (int j = 0; j < (int) cuts.size(); ++j)
+        if (j != index)
+        {
+            const float x = xForFrequency (cuts[(size_t) j]);
+            obstacles.push_back ({ x - 1.5f, plot.getY(), 3.0f, plot.getHeight() });
+            obstacles.push_back (juce::Rectangle<float> (20.0f, 20.0f).withCentre ({ x, slopeY (processor.getCrossoverSlope (j)) }));
+        }
+    auto fits = [&] (juce::Rectangle<float> r)
+    {
+        if (r.getX() < plot.getX() || r.getRight() > plot.getRight()) return false;
+        for (const auto& t : obstacles) if (t.intersects (r.expanded (2.0f, 0.0f))) return false;
+        return true;
+    };
+    for (float width : { full, compact })
+        for (const auto& r : { juce::Rectangle<float> (line + 11.0f, y, width, height), juce::Rectangle<float> (line - 11.0f - width, y, width, height) })
+            if (fits (r)) return r;
+    const float x = juce::jlimit (plot.getX(), juce::jmax (plot.getX(), plot.getRight() - compact), line + 11.0f);
+    return { x, y, compact, height };
+}
 juce::Rectangle<float> CrossoverDisplay::slopeReadoutBounds (int index) const
 {
     if (index < 0 || index >= (int) cuts.size()) return {};
-    const auto plot = plotBounds();
-    constexpr float width = 70.0f, height = 18.0f;
-    const float line = xForFrequency (cuts[(size_t) index]);
-    const float next = index + 1 < (int) cuts.size() ? xForFrequency (cuts[(size_t) index + 1]) : plot.getRight();
-    float x = line + 11.0f;
-    if (x + width > next - 6.0f) x = line - 11.0f - width;   // no room before the next divider: left of the dot
-    x = juce::jlimit (plot.getX(), juce::jmax (plot.getX(), plot.getRight() - width), x);
-    return { x, slopeY (processor.getCrossoverSlope (index)) - height * 0.5f, width, height };
+    auto taken = pillRects();
+    juce::Rectangle<float> r;
+    for (int i = 0; i <= index; ++i)
+    {
+        r = readoutBoundsFor (i, taken);
+        taken.push_back (r);
+    }
+    return r;
 }
 void CrossoverDisplay::paintSlopeReadouts (juce::Graphics& g)
 {
+    auto taken = pillRects();
     for (int i = 0; i < (int) cuts.size(); ++i)
     {
-        const auto r = slopeReadoutBounds (i);
+        const auto r = readoutBoundsFor (i, taken);
+        taken.push_back (r);
         const bool active = activeSlope == i || (i < (int) handles.size() && handles[(size_t) i]->isMouseOverOrDragging());
         g.setColour (juce::Colour (0xe8090b09)); g.fillRoundedRectangle (r, 4.0f);
         if (active) { g.setColour (bandColour (i).withAlpha (0.8f)); g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f); }
         g.setColour (active ? bandColour (i) : juce::Colour (0xffd5dad3));
         g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-        g.drawText (TriadProcessor::slopeText (processor.getCrossoverSlope (i)), r.withTrimmedRight (12.0f), juce::Justification::centred);
+        const int order = processor.getCrossoverSlope (i);
+        g.drawText (r.getWidth() < 60.0f ? juce::String (triad::CrossoverFilter::dbPerOctave (order)) : TriadProcessor::slopeText (order),
+                    r.withTrimmedRight (12.0f), juce::Justification::centred);
         // A small chevron: click for the list of slopes.
         juce::Path chevron;
         const float cx = r.getRight() - 9.0f, cy = r.getCentreY();
@@ -318,16 +357,35 @@ void CrossoverDisplay::showCrossoverMenu (int index)
         safe->refresh();
     });
 }
-void CrossoverDisplay::Meter::push (float v)
+void CrossoverDisplay::Meter::push (float v, double dt)
 {
-    level = juce::jmax (v, level * 0.82f);
-    if (v >= hold) { hold = v; holdFrames = 45; }
-    else if (--holdFrames < 0) hold *= 0.9f;
+    // Timed by the frame clock: about -50 dB a second fall, peak held for 1.5 s.
+    level = juce::jmax (v, level * (float) std::pow (0.82, dt * 30.0));
+    if (v >= hold) { hold = v; holdTime = 1.5; }
+    else if ((holdTime -= dt) < 0.0) hold *= (float) std::pow (0.9, dt * 30.0);
 }
-void CrossoverDisplay::setMeters (float input, float output)
+void CrossoverDisplay::setMeters (float input, float output, float cpu, double dt)
 {
-    inputMeter.push (input);
-    outputMeter.push (output);
+    inputMeter.push (input, dt);
+    outputMeter.push (output, dt);
+    // The CPU reading glides (rises within about 0.1 s, falls over about half a second).
+    const float k = (float) (1.0 - std::exp (-dt / (cpu > cpuShown ? 0.08 : 0.4)));
+    cpuShown += k * (cpu - cpuShown);
+    liveButton.setToggleState (processor.isLiveMode(), juce::dontSendNotification);
+}
+void CrossoverDisplay::setLatency (int samples, double sampleRate, const juce::String& breakdown)
+{
+    if (samples != latencySamples || ! juce::exactlyEqual (sampleRate, latencyRate)) repaint (getWidth() - (int) meterWidth - 24, 0, (int) meterWidth + 24, getHeight());
+    latencySamples = samples;
+    latencyRate = sampleRate > 0.0 ? sampleRate : 48000.0;
+    meterTip.setTooltip ("Latency: " + getLatencyText() + (samples == 0 ? juce::String (" - Triad adds none, safe to sing or play through.")
+                                                                         : " (" + juce::String (samples) + " samples), from: " + breakdown + ".")
+                         + "\nCPU: the share of each audio buffer's time Triad needs (" + juce::String (juce::roundToInt (cpuShown * 100.0f)) + "% now).");
+}
+juce::String CrossoverDisplay::getLatencyText() const
+{
+    const double ms = 1000.0 * latencySamples / latencyRate;
+    return latencySamples == 0 ? juce::String ("0 ms") : juce::String (ms, ms < 10.0 ? 1 : 0) + " ms";
 }
 void CrossoverDisplay::paintMeters (juce::Graphics& g)
 {
@@ -339,6 +397,43 @@ void CrossoverDisplay::paintMeters (juce::Graphics& g)
         const float db = juce::jlimit (-60.0f, 6.0f, juce::Decibels::gainToDecibels (gain, -60.0f));
         return bottom - (bottom - top) * (db + 60.0f) / 66.0f;
     };
+    // Latency (LAT) and CPU, beside IN and OUT. Latency: green at zero (safe to record through), amber,
+    // red above 10 ms (too late to sing through); the bar grows on a square-root scale up to 20 ms.
+    {
+        const double ms = 1000.0 * latencySamples / latencyRate;
+        const auto lat = juce::Rectangle<float> (x0 + 56.0f, top, 12.0f, bottom - top);
+        const auto green = juce::Colour (0xff9bd85c), amber = juce::Colour (0xffe8b35c), red = juce::Colour (0xffe8705c);
+        const auto latColour = latencySamples == 0 ? green : ms > 10.0 ? red : amber;
+        g.setColour (juce::Colour (0xff1c1f1e)); g.fillRoundedRectangle (lat, 2.0f);
+        if (latencySamples == 0)
+        {
+            g.setColour (green.withAlpha (0.35f)); g.drawRoundedRectangle (lat.reduced (0.5f), 2.0f, 1.0f);
+            g.setColour (green); g.fillEllipse (juce::Rectangle<float> (6.0f, 6.0f).withCentre ({ lat.getCentreX(), bottom - 6.0f }));
+        }
+        else
+        {
+            const float f = std::sqrt ((float) juce::jmin (1.0, ms / 20.0));
+            g.setColour (latColour); g.fillRoundedRectangle (lat.withTop (bottom - (bottom - top) * juce::jmax (0.04f, f)), 2.0f);
+        }
+        const auto cpuBar = juce::Rectangle<float> (x0 + 84.0f, top, 12.0f, bottom - top);
+        const float load = juce::jlimit (0.0f, 1.0f, cpuShown);
+        g.setColour (juce::Colour (0xff1c1f1e)); g.fillRoundedRectangle (cpuBar, 2.0f);
+        if (load > 0.002f)
+        {
+            g.setColour (load < 0.5f ? green.withAlpha (0.8f) : load < 0.8f ? amber : red);
+            g.fillRoundedRectangle (cpuBar.withTop (bottom - (bottom - top) * juce::jmax (0.02f, load)), 2.0f);
+        }
+        g.setColour (juce::Colour (0xffb8bcba)); g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
+        g.drawText ("LAT", juce::Rectangle<float> (lat.getX() - 8.0f, top - 18.0f, 28.0f, 14.0f), juce::Justification::centred);
+        g.drawText ("CPU", juce::Rectangle<float> (cpuBar.getX() - 8.0f, top - 18.0f, 28.0f, 14.0f), juce::Justification::centred);
+        g.setFont (juce::FontOptions (9.0f));
+        g.setColour (latColour);
+        g.drawText (latencySamples == 0 ? juce::String ("0ms") : juce::String (ms, ms < 10.0 ? 1 : 0) + "ms",
+                    juce::Rectangle<float> (lat.getX() - 11.0f, bottom + 10.0f, 34.0f, 14.0f), juce::Justification::centred);
+        g.setColour (dimTextColour);
+        g.drawText (juce::String (juce::roundToInt (cpuShown * 100.0f)) + "%", juce::Rectangle<float> (cpuBar.getX() - 11.0f, bottom + 10.0f, 34.0f, 14.0f),
+                    juce::Justification::centred);
+    }
     const char* labels[] { "IN", "OUT" };
     const Meter* meters[] { &inputMeter, &outputMeter };
     for (int i = 0; i < 2; ++i)
@@ -365,6 +460,15 @@ void CrossoverDisplay::paintMeters (juce::Graphics& g)
     }
     g.setColour (juce::Colour (0xff3a3f3c));
     g.drawVerticalLine (juce::roundToInt (x0 - 10.0f), top - 18.0f, bottom + 22.0f);
+}
+void CrossoverDisplay::refreshIfChanged()
+{
+    std::vector<float> key { (float) processor.getBandCount(), processor.nyquistFrequency() };
+    for (auto c : processor.effectiveCrossovers()) key.push_back (c);
+    for (int j = 0; j + 1 < processor.getBandCount(); ++j) key.push_back ((float) processor.getCrossoverSlope (j));
+    if (key == refreshKey) return;
+    refreshKey = key;
+    refresh();
 }
 void CrossoverDisplay::refresh()
 {
@@ -407,6 +511,12 @@ float CrossoverDisplay::pillTop (int index) const
 void CrossoverDisplay::resized()
 {
     addButton.setBounds (getWidth() - 96 - (int) meterWidth, 7, 78, 24);
+    {
+        const int x0 = getWidth() - 18 - (int) meterWidth + 12;
+        liveButton.setBounds (x0 + 50, 6, 52, 20);
+        const auto plot = plotBounds();
+        meterTip.setBounds (x0 + 46, (int) plot.getY() - 12, 56, (int) plot.getHeight() + 40);
+    }
     cuts = processor.effectiveCrossovers();
     layoutPills();
     const auto plot = plotBounds();
@@ -423,15 +533,18 @@ void CrossoverDisplay::resized()
 }
 
 // ---- Live spectrum --------------------------------------------------------------------------
-void CrossoverDisplay::timerCallback()
+void CrossoverDisplay::frame (double time)
 {
-    updateSpectrum();
+    const double dt = lastFrame > 0.0 ? juce::jlimit (0.0, 0.1, time - lastFrame) : 1.0 / 60.0;
+    if (lastFrame > 0.0 && dt < 1.0 / 65.0) return;   // at most 60 frames a second
+    lastFrame = time;
+    updateSpectrum (dt);
     repaint (plotBounds().toNearestInt().expanded (2));
     repaint (getWidth() - (int) meterWidth - 24, 0, (int) meterWidth + 24, getHeight());
 }
-void CrossoverDisplay::updateSpectrum()
+void CrossoverDisplay::updateSpectrum (double dt)
 {
-    constexpr float decayPerFrame = 1.2f;   // dB per 1/30 s
+    const float decayPerFrame = (float) (36.0 * dt);   // dB: -36 dB a second
     const auto writeIndex = processor.spectrum.getWriteIndex();
     const bool fresh = writeIndex != lastWriteIndex;
     lastWriteIndex = writeIndex;
@@ -485,7 +598,9 @@ void CrossoverDisplay::updateSpectrum()
     spectrumFill.closeSubPath();
 }
 
-void CrossoverDisplay::paint (juce::Graphics& g)
+// The parts that only change when the bands do (background, band curves, band labels, grid) are drawn
+// once into an image at the screen's pixel scale; each frame then only draws the spectrum, labels and meters.
+void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
 {
     const auto plot = plotBounds();
     const int count = processor.getBandCount();
@@ -496,7 +611,7 @@ void CrossoverDisplay::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xffb8bcba)); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
     g.drawText ("BAND CROSSOVERS", 18, 8, 175, 23, juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (11.0f)); g.setColour (juce::Colour (0xff898f8b));
-    g.drawText ("Drag a divider  /  Drag its upper dot: slope  /  Double-click: add a band  /  Right-click: band menu", getWidth() - 640 - (int) meterWidth, 8, 530, 23,
+    g.drawText ("Drag a divider  /  Drag its upper dot: slope  /  Double-click: add a band  /  Right-click: band menu", getWidth() - 756, 8, 530, 23,
                 juce::Justification::centredRight);
     paintBandCurves (g);
     for (int i = 0; i < count && i + 1 < (int) xs.size(); ++i)
@@ -517,6 +632,32 @@ void CrossoverDisplay::paint (juce::Graphics& g)
         if (f < processor.nyquistFrequency()) g.drawVerticalLine (juce::roundToInt (xForFrequency (f)), plot.getY() + 29.0f, plot.getBottom());
     for (int row = 1; row <= 3; ++row)
         g.drawHorizontalLine (juce::roundToInt (plot.getY() + plot.getHeight() * (float) row / 4.0f), plot.getX(), plot.getRight());
+    g.setFont (juce::FontOptions (10.0f)); g.setColour (juce::Colour (0xff969e98));
+    for (float f : { 100.0f, 1000.0f, 10000.0f })
+        if (f < processor.nyquistFrequency() * 0.8f)
+            g.drawText (formatHz (f), juce::Rectangle<float> (xForFrequency (f) - 35, plot.getBottom() + 12, 70, 16), juce::Justification::centred);
+    g.drawText ("20 Hz", juce::Rectangle<float> (plot.getX(), plot.getBottom() + 12, 65, 16), juce::Justification::centredLeft);
+    g.drawText (formatHz (processor.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 12, 90, 16), juce::Justification::centredRight);
+}
+void CrossoverDisplay::paint (juce::Graphics& g)
+{
+    const auto plot = plotBounds();
+    const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
+    std::vector<float> key { (float) getWidth(), (float) getHeight(), scale, (float) processor.getBandCount(), (float) activeSlope,
+                             processor.nyquistFrequency(), (float) processor.getSampleRateForDisplay() };
+    key.insert (key.end(), cuts.begin(), cuts.end());
+    for (int j = 0; j + 1 < processor.getBandCount(); ++j) key.push_back ((float) processor.getCrossoverSlope (j));
+    if (key != staticKey || ! staticLayer.isValid())
+    {
+        staticKey = key;
+        ++staticRenders;
+        staticLayer = juce::Image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) getWidth() * scale)),
+                                   juce::jmax (1, juce::roundToInt ((float) getHeight() * scale)), true);
+        juce::Graphics layer (staticLayer);
+        layer.addTransform (juce::AffineTransform::scale (scale));
+        paintStaticLayer (layer);
+    }
+    g.drawImageTransformed (staticLayer, juce::AffineTransform::scale (1.0f / scale));
     if (spectrumVisible)
     {
         g.setGradientFill (juce::ColourGradient (juce::Colour (0x30e8ece6), 0.0f, plot.getY() + 26.0f,
@@ -525,23 +666,27 @@ void CrossoverDisplay::paint (juce::Graphics& g)
         g.setColour (juce::Colour (0xb8e2e6e0));
         g.strokePath (spectrumLine, juce::PathStrokeType (1.3f));
     }
-    g.setFont (juce::FontOptions (10.0f)); g.setColour (juce::Colour (0xff969e98));
-    for (float f : { 100.0f, 1000.0f, 10000.0f })
-        if (f < processor.nyquistFrequency() * 0.8f)
-            g.drawText (formatHz (f), juce::Rectangle<float> (xForFrequency (f) - 35, plot.getBottom() + 12, 70, 16), juce::Justification::centred);
-    g.drawText ("20 Hz", juce::Rectangle<float> (plot.getX(), plot.getBottom() + 12, 65, 16), juce::Justification::centredLeft);
-    g.drawText (formatHz (processor.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 12, 90, 16), juce::Justification::centredRight);
-    for (size_t i = 0; i < cuts.size(); ++i)
+    const auto pills = pillRects();
+    for (size_t i = 0; i < cuts.size() && i < pills.size(); ++i)
     {
-        const auto x = juce::jlimit (plot.getX(), juce::jmax (plot.getX(), plot.getRight() - pillWidth), xs[i + 1] - pillWidth * 0.5f);
-        const auto y = pillTop ((int) i);
-        g.setColour (juce::Colour (0xf0090b09)); g.fillRoundedRectangle (x, y, pillWidth, 24.0f, 4.0f);
+        g.setColour (juce::Colour (0xf0090b09)); g.fillRoundedRectangle (pills[i], 4.0f);
         g.setColour (activeHandle == (int) i ? bandColour ((int) i) : juce::Colour (0xffe1e6e0));
         g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-        g.drawText (formatHz (cuts[i]), juce::Rectangle<float> (x, y, pillWidth, 24.0f), juce::Justification::centred);
+        g.drawText (formatHz (cuts[i]), pills[i], juce::Justification::centred);
     }
     paintSlopeReadouts (g);
     paintMeters (g);
+}
+std::vector<juce::Rectangle<float>> CrossoverDisplay::pillRects() const
+{
+    const auto plot = plotBounds();
+    std::vector<juce::Rectangle<float>> rects;
+    for (size_t i = 0; i < cuts.size(); ++i)
+    {
+        const auto x = juce::jlimit (plot.getX(), juce::jmax (plot.getX(), plot.getRight() - pillWidth), xForFrequency (cuts[i]) - pillWidth * 0.5f);
+        rects.push_back ({ x, pillTop ((int) i), pillWidth, 24.0f });
+    }
+    return rects;
 }
 
 // ---- Handles --------------------------------------------------------------------------------
@@ -558,9 +703,28 @@ void CrossoverDisplay::Handle::paint (juce::Graphics& g)
     const float dash[] { 4.0f, 5.0f };
     const auto colour = bandColour (index);
     g.setColour (highlighted ? colour : juce::Colour (0xffb6bcb5));
-    const auto pill = owner.pillTop (index) - (float) getY();
-    g.drawDashedLine (juce::Line<float> (centre, 0.0f, centre, pill - 3.0f), dash, 2, highlighted ? 2.0f : 1.5f);
-    g.drawDashedLine (juce::Line<float> (centre, pill + 27.0f, centre, bottom - 7.0f), dash, 2, highlighted ? 2.0f : 1.5f);
+    // The dashed line stops at every frequency pill and slope readout it would run through (its own and
+    // those of nearby dividers), so their text stays clean.
+    {
+        std::vector<juce::Range<float>> gaps;
+        const float x = (float) getX() + centre;
+        auto covers = [&] (juce::Rectangle<float> r)
+        {
+            if (x >= r.getX() - 1.0f && x <= r.getRight() + 1.0f) gaps.push_back ({ r.getY() - 3.0f - (float) getY(), r.getBottom() + 3.0f - (float) getY() });
+        };
+        for (const auto& r : owner.pillRects()) covers (r);
+        for (int i = 0; i < (int) owner.cuts.size(); ++i) if (i != index) covers (owner.slopeReadoutBounds (i));
+        std::sort (gaps.begin(), gaps.end(), [] (auto a, auto b) { return a.getStart() < b.getStart(); });
+        float from = 0.0f;
+        const float to = bottom - 7.0f;
+        for (const auto& gap : gaps)
+        {
+            if (gap.getStart() > from) g.drawDashedLine (juce::Line<float> (centre, from, centre, juce::jmin (to, gap.getStart())), dash, 2, highlighted ? 2.0f : 1.5f);
+            from = juce::jmax (from, gap.getEnd());
+            if (from >= to) break;
+        }
+        if (from < to) g.drawDashedLine (juce::Line<float> (centre, from, centre, to), dash, 2, highlighted ? 2.0f : 1.5f);
+    }
     g.setColour (juce::Colour (0xff111413)); g.fillEllipse (centre - 8, bottom - 8, 16, 16);
     g.setColour (highlighted ? colour : juce::Colour (0xffe3e8df));
     g.fillEllipse (centre - 5.5f, bottom - 5.5f, 11, 11);

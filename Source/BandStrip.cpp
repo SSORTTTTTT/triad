@@ -25,13 +25,20 @@ SlotRow::SlotRow (TriadProcessor& p, StripHost& h, int b, int s, juce::Colour c)
     addAndMakeVisible (knob);
     setTitle ("Band " + juce::String (band + 1) + " slot " + juce::String (slot + 1));
 }
+double SlotRow::latencyMs (int samples) const { return 1000.0 * samples / juce::jmax (1.0, processor.getSampleRateForDisplay()); }
+juce::String SlotRow::latencyText (int samples) const
+{
+    const double ms = latencyMs (samples);
+    return juce::String (ms, ms < 10.0 ? 1 : 0) + " ms";
+}
 void SlotRow::update (const TriadProcessor::SlotInfo& next, int slotCount)
 {
     if (! knob.isMouseButtonDown() && std::abs (knob.getValue() - next.mix) > 0.001)
         knob.setValue (next.mix, juce::dontSendNotification);
     const bool liveChanged = std::abs (next.liveMix - info.liveMix) > 0.2f || next.modulated != info.modulated;
     if (! first && slotCount == count && next.name == info.name && next.status == info.status && next.loaded == info.loaded
-        && next.enabled == info.enabled && next.pending == info.pending && next.hasContent == info.hasContent && next.format == info.format)
+        && next.enabled == info.enabled && next.pending == info.pending && next.hasContent == info.hasContent && next.format == info.format
+        && next.reportedLatency == info.reportedLatency && next.liveBypassed == info.liveBypassed && next.latency == info.latency)
     {
         if (liveChanged) { info.liveMix = next.liveMix; info.modulated = next.modulated; repaint(); }
         return;
@@ -40,7 +47,10 @@ void SlotRow::update (const TriadProcessor::SlotInfo& next, int slotCount)
     count = slotCount;
     info = next;
     const auto label = info.name.isNotEmpty() ? info.name : "Slot " + juce::String (slot + 1);
-    setTooltip (info.loaded ? label + " (" + info.format + ")  -  click to open, arrow for options"
+    const auto latencyNote = info.reportedLatency <= 0 ? juce::String()
+                           : info.liveBypassed ? "\nLIVE is on: passed by, because it adds " + latencyText (info.reportedLatency) + " of latency"
+                                               : "\nAdds " + latencyText (info.reportedLatency) + " of latency (" + juce::String (info.reportedLatency) + " samples)";
+    setTooltip (info.loaded ? label + " (" + info.format + ")  -  click to open, arrow for options" + latencyNote
                             : info.hasContent ? label + "  -  " + (info.pending ? juce::String ("loading...") : info.status)
                                               : "Slot " + juce::String (slot + 1) + "  -  click to load an effect");
     knob.setTooltip (label + " mix (dry/wet). Double-click for 100%.");
@@ -64,11 +74,23 @@ void SlotRow::paint (juce::Graphics& g)
     g.setColour (info.hasContent ? textColour.withAlpha (0.8f) : dimTextColour.withAlpha (0.6f));
     g.fillPath (arrow);
     // Name, or "Slot n" in italics when empty.
-    const auto nameArea = juce::Rectangle<float> (20.0f, 0.0f, (float) lfoArea().getX() - 22.0f, r.getHeight());
+    auto nameArea = juce::Rectangle<float> (20.0f, 0.0f, (float) lfoArea().getX() - 22.0f, r.getHeight());
+    // Latency badge: what this effect adds (amber; red from 10 ms, too late to play through), or LIVE OFF.
+    if (info.loaded && info.reportedLatency > 0)
+    {
+        const auto text = info.liveBypassed ? juce::String ("LIVE OFF") : latencyText (info.reportedLatency).removeCharacters (" ");
+        g.setFont (juce::FontOptions (9.0f, juce::Font::bold));
+        const float w = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 6.0f;
+        const auto badge = juce::Rectangle<float> (nameArea.getRight() - w, cy - 6.5f, w, 13.0f);
+        const auto tint = info.liveBypassed ? dimTextColour : latencyMs (info.reportedLatency) >= 10.0 ? juce::Colour (0xffe8705c) : juce::Colour (0xffe8b35c);
+        g.setColour (tint.withAlpha (0.18f)); g.fillRoundedRectangle (badge, 3.0f);
+        g.setColour (tint); g.drawText (text, badge, juce::Justification::centred);
+        nameArea.setRight (badge.getX() - 3.0f);
+    }
     if (info.name.isNotEmpty())
     {
         auto nameColour = info.status.isNotEmpty() ? juce::Colour (0xffe8a15c) : textColour;
-        if (! info.enabled) nameColour = nameColour.withAlpha (0.45f);
+        if (! info.enabled || info.liveBypassed) nameColour = nameColour.withAlpha (0.45f);
         g.setColour (nameColour);
         g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         g.drawFittedText (info.name + (info.pending ? juce::String (" ...") : juce::String()), nameArea.toNearestInt(),
@@ -93,6 +115,15 @@ void SlotRow::paint (juce::Graphics& g)
     }
     else g.setColour (juce::Colour (0xff4a504c));
     g.fillEllipse (light);
+}
+void SlotRow::animate()
+{
+    bool modulated = false;
+    const float live = processor.getSlotLiveMix (band, slot, modulated);
+    if (modulated == info.modulated && std::abs (live - info.liveMix) < 0.05f) return;
+    info.modulated = modulated;
+    info.liveMix = live;
+    repaint (knob.getBounds().expanded (6));
 }
 void SlotRow::paintOverChildren (juce::Graphics& g)
 {
@@ -264,7 +295,7 @@ void BandStrip::layoutRows()
     addButton.setBounds (0, y, juce::jmax (40, width), addHeight);
     slotHolder.setSize (juce::jmax (40, width), y + addHeight + 2);
 }
-void BandStrip::update (const std::vector<float>& crossovers, int bandCount, float nyquist, float newLevel)
+void BandStrip::update (const std::vector<float>& crossovers, int bandCount, float nyquist)
 {
     startHz = band == 0 ? 0.0f : crossovers[(size_t) band - 1];
     endHz = band < (int) crossovers.size() ? crossovers[(size_t) band] : nyquist;
@@ -285,12 +316,39 @@ void BandStrip::update (const std::vector<float>& crossovers, int bandCount, flo
         rebuildRows (count);
         if (! grew) slotView.setViewPosition (position);
     }
-    for (int s = 0; s < (int) rows.size(); ++s) rows[(size_t) s]->update (processor.getSlotInfo (band, s), count);
-    // Level meter: fast attack, gentle fall, peak hold.
-    level = juce::jmax (newLevel, level * 0.7f);
-    if (newLevel >= peakHold) { peakHold = newLevel; holdFrames = 15; }
-    else if (--holdFrames < 0) peakHold *= 0.85f;
-    repaint (0, getHeight() - footerHeight, getWidth(), footerHeight);
+    int chain = 0;
+    for (int s = 0; s < (int) rows.size(); ++s)
+    {
+        const auto info = processor.getSlotInfo (band, s);
+        chain += info.latency;
+        rows[(size_t) s]->update (info, count);
+    }
+    if (chain != chainLatency) { chainLatency = chain; repaint(); }
+}
+// Every frame (up to 60 a second): the level meter and the LFO dots on the slot knobs.
+void BandStrip::animate (float newLevel, double dt)
+{
+    // Fast attack, gentle fall (about -30 dB a second), peak hold for 0.75 s, timed by the frame clock.
+    const float before = level, holdBefore = peakHold;
+    level = juce::jmax (newLevel, level * (float) std::pow (0.7, dt * 20.0));
+    if (newLevel >= peakHold) { peakHold = newLevel; holdTime = 0.75; }
+    else if ((holdTime -= dt) < 0.0) peakHold *= (float) std::pow (0.85, dt * 20.0);
+    if (level < 1.0e-4f) level = 0.0f;
+    if (peakHold < 1.0e-4f) peakHold = 0.0f;
+    if (std::abs (level - before) > 1.0e-5f || std::abs (peakHold - holdBefore) > 1.0e-5f)
+        repaint (meterArea().expanded (4).getUnion (peakTextArea()));
+    for (auto& row : rows) row->animate();
+}
+juce::Rectangle<int> BandStrip::meterArea() const
+{
+    // Under the volume slider, as long as its track.
+    const int footerTop = getHeight() - footerHeight;
+    return { volume.getX() + 7, footerTop + 50, juce::jmax (10, volume.getWidth() - 14), 6 };
+}
+juce::Rectangle<int> BandStrip::peakTextArea() const
+{
+    const auto m = meterArea();
+    return { m.getRight() - 60, m.getBottom() + 6, 60, 16 };
 }
 void BandStrip::resized()
 {
@@ -326,7 +384,7 @@ void BandStrip::paint (juce::Graphics& g)
     const auto db = (float) volume.getValue();
     g.setColour (textColour); g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
     g.drawText ((db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB", right - 80, footerTop + 8, 80, 16, juce::Justification::centredRight);
-    const auto meter = juce::Rectangle<float> ((float) left, (float) footerTop + 50.0f, (float) (right - left - 44), 6.0f);
+    const auto meter = meterArea().toFloat();
     g.setColour (juce::Colour (0xff111312)); g.fillRoundedRectangle (meter, 2.0f);
     auto position = [&meter] (float gain)
     {
@@ -344,9 +402,17 @@ void BandStrip::paint (juce::Graphics& g)
         g.fillRect (position (peakHold) - 1.0f, meter.getY() - 1.0f, 2.0f, meter.getHeight() + 2.0f);
     }
     g.setColour (dimTextColour); g.setFont (juce::FontOptions (10.0f));
-    g.drawText (formatDb (peakHold), (int) meter.getRight() + 2, (int) meter.getY() - 5, 44, 16, juce::Justification::centredRight);
+    g.drawText (formatDb (peakHold), peakTextArea(), juce::Justification::centredRight);
     const int n = (int) rows.size();
-    g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), left, footerTop + 64, 80, 16, juce::Justification::centredLeft);
+    g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), left, footerTop + 62, 80, 16, juce::Justification::centredLeft);
+    if (chainLatency > 0)
+    {
+        // The band's latency (its effects added up); the slowest band sets Triad's total.
+        const double ms = 1000.0 * chainLatency / juce::jmax (1.0, processor.getSampleRateForDisplay());
+        g.setColour (ms >= 10.0 ? juce::Colour (0xffe8705c) : juce::Colour (0xffe8b35c));
+        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        g.drawText (juce::String (ms, ms < 10.0 ? 1 : 0) + " ms latency", left, footerTop + 74, 90, 14, juce::Justification::centredLeft);
+    }
     g.setColour (juce::Colour (0xffa5afa2)); g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
     g.drawText ("BAND MIX", getWidth() - 80, footerTop + 70, 70, 16, juce::Justification::centred);
 }

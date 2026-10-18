@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.4.3 LANGUAGES C CXX)
+project(Triad VERSION 0.5.0 LANGUAGES C CXX)
 # Installed as "Triad v4.vst3" / "Triad v4.component"; the plug-in IDs are unchanged from Triad 0.1,
 # so projects made with the earlier "Triad", "Triad v2" and "Triad v3" open with Triad v4.
 set(TRIAD_PRODUCT_NAME "Triad v4")

@@ -58,9 +58,14 @@ public:
     int getNumStrips() const noexcept { return (int) strips.size(); }
     BandStrip* getStrip (int band) const { return band >= 0 && band < (int) strips.size() ? strips[(size_t) band].get() : nullptr; }
     juce::String getStatusText() const { return status.getText(); }
-    void refreshNow() { timerCallback(); }
+    void refreshNow() { timerCallback(); animate (lastFrame + 0.05); }
+    // Every frame of the screen (up to 60 a second): meters, CPU, the LFO dots on the knobs.
+    void animate (double frameTime);
     bool savePreset (const juce::String& name);
     bool loadPreset (const juce::File&);
+    // The startup preset (settings): "" = Init, a preset name, or TriadSettings::currentSettings.
+    void setStartupPreset (const juce::String& choice);
+    bool useCurrentSettingsAtStartup();   // saves the current settings and opens new Triads with them
     bool saveChain (int band, const juce::String& name);
     bool loadChain (int band, const juce::File&);
 
@@ -90,6 +95,8 @@ private:
     void paintContent (juce::Graphics&);
     void layoutContent();
     void timerCallback() override;
+    double lastFrame = 0.0;
+    juce::VBlankAttachment frames { this, [this] (double t) { animate (t); } };
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void rebuildStrips();
     void layoutStrips();

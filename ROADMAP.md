@@ -1,6 +1,23 @@
 # Triad roadmap
 
-## Current testing version — 0.4.3 ("Triad v4")
+## Current testing version — 0.5.0 ("Triad v4")
+
+0.5.0 (2026-10-17), from Thomas's notes after 0.4.3:
+- **Latency meter** (LAT) and **CPU meter** beside IN / OUT; each band's latency in its strip; a latency badge on each
+  effect that adds it; **LIVE** passes every latency-adding effect by while recording (saved with the project).
+- **Startup preset**: gear menu → Change startup preset (Init, any saved preset, or "Use the current settings as the
+  startup preset"); **Initialize** in the PRESET menu.
+- **Smoother, cleaner interface**: meters, knob LFO dots, spectrum and the LFO playhead move at up to 60 frames a
+  second in step with the screen (were 20-30); the crossover display and the LFO grid draw their still parts once
+  into cached pictures (the LFO grid's playhead now redraws a 12-pixel strip, not the whole grid); no repaint of the
+  whole display or the preset button 20 times a second; slot knobs show numbers that fit; the band meter lines up
+  with its slider; slope readouts never cover each other, the pills or other dividers (compact "24" when tight);
+  divider lines stop at pills; palette thumbnails are drawn from the shapes' points (Gate 1/8 was a grey block).
+- New tests: visual check (drawing time of each moving part, cached pictures not redrawn per frame), GUI stress
+  (400 random interface actions, window drawn every 20), and a stress-test section that moves the parameters
+  inside every hosted effect from the audio thread (for "LFOs on knobs inside effects", below).
+
+### 0.4.3
 
 0.4.3 (2026-10-17): found by the new **live vocal monitoring** stress test — with Triad's window open, about one
 audio block in 4,500 came out silent (a click): Triad's 10-per-second latency check, and every project save or DAW

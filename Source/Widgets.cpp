@@ -273,11 +273,14 @@ void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
     g.setColour (slider.findColour (juce::Slider::rotarySliderFillColourId)); g.strokePath (value, juce::PathStrokeType (stroke));
     // The percentage, inside the circle.
     const auto v = slider.getValue();
-    const auto label = (v >= 99.95 ? juce::String ("100") : juce::String (juce::roundToInt (v))) + "%";
+    // Small knobs show just the number, sized to fit inside the ring (the slot's tooltip says it is a %).
+    const auto label = (v >= 99.95 ? juce::String ("100") : juce::String (juce::roundToInt (v))) + (small ? "" : "%");
     g.setColour (textColour.withAlpha (slider.isEnabled() ? 0.95f : 0.5f));
-    g.setFont (small ? juce::FontOptions (9.5f, juce::Font::bold) : juce::FontOptions (juce::jmax (11.0f, radius * 0.46f), juce::Font::bold));
-    const auto inner = juce::Rectangle<float> ((arcRadius - stroke * 0.5f) * 2.0f, radius).withCentre (centre).toNearestInt();
-    g.drawFittedText (label, inner, juce::Justification::centred, 1, 0.68f);
+    const float innerWidth = (arcRadius - stroke * 0.5f) * 2.0f;
+    g.setFont (small ? juce::FontOptions (juce::jlimit (7.5f, 9.5f, innerWidth * 0.45f), juce::Font::bold)
+                     : juce::FontOptions (juce::jmax (11.0f, radius * 0.46f), juce::Font::bold));
+    const auto inner = juce::Rectangle<float> (innerWidth, radius).withCentre (centre).toNearestInt();
+    g.drawFittedText (label, inner, juce::Justification::centred, 1, 0.85f);
 }
 void TriadLook::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float,
                                   juce::Slider::SliderStyle style, juce::Slider& slider)

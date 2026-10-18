@@ -8,7 +8,7 @@
 //   Add a point: double-click.        Move: drag a point (Alt / Cmd: no snapping).
 //   Delete: double-click a point.     Curve: drag the small dot in the middle of a line.
 //   Select: drag in empty space.      Right-click: flip, copy, paste, grid options.
-class ShapeEditor final : public juce::Component, private juce::Timer
+class ShapeEditor final : public juce::Component
 {
 public:
     explicit ShapeEditor (TriadProcessor&);
@@ -36,8 +36,10 @@ public:
     juce::Point<float> toScreen (const triad::mod::Point&) const;
     const triad::mod::Shape& getShape() const noexcept { return shape; }
     std::function<void()> onChange;
+    int getLayerRenders() const noexcept { return layerRenders; }
+    void frame (double time);   // every frame of the screen (up to 60 a second): the playing position
 private:
-    void timerCallback() override;
+    void paintLayer (juce::Graphics&);
     int hitPoint (juce::Point<float>) const;
     int hitCurve (juce::Point<float>) const;
     juce::Point<float> curveHandle (int segment) const;
@@ -54,6 +56,13 @@ private:
     juce::Rectangle<float> selection;
     std::vector<bool> selectionStart;
     float phase = -1.0f;
+    // Everything but the playing position is drawn once into an image (until the shape, selection, hover,
+    // grid or size changes), so following the playhead costs a narrow strip per frame.
+    juce::Image layer;
+    juce::int64 layerKey = 0;
+    int layerRenders = 0;
+    double lastFrame = 0.0;
+    juce::VBlankAttachment frames { this, [this] (double t) { frame (t); } };
 };
 
 // The LFO tab: band chooser, one tab per LFO (labelled with what it moves), the grid with its

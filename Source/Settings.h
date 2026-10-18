@@ -24,6 +24,14 @@ public:
     int getPaletteCategory() const;
     void setPaletteCategory (int);
 
+    // The preset every new Triad opens with: "" = Init (an empty Triad), a saved preset's name, or
+    // currentSettings (the settings saved with "Use the current settings as the startup preset").
+    static constexpr const char* currentSettings = "*current*";
+    juce::String getStartupPreset() const;
+    void setStartupPreset (const juce::String&);
+    static juce::File startupPresetFile (const juce::String& choice);   // {} for Init
+    static juce::File startupSettingsFile();                            // ~/Music/Triad/Startup settings.triadpreset
+
     static juce::String favouriteKey (const juce::String& format, const juce::String& name);
     bool isFavourite (const juce::String& key) const;
     void setFavourite (const juce::String& key, bool);

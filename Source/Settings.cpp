@@ -138,6 +138,28 @@ juce::File TriadSettings::chainFolder()
 {
     return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/Chains");
 }
+juce::String TriadSettings::getStartupPreset() const
+{
+    reload();
+    return file->getValue ("startupPreset", {});
+}
+void TriadSettings::setStartupPreset (const juce::String& choice)
+{
+    reload();
+    file->setValue ("startupPreset", choice);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
+juce::File TriadSettings::startupSettingsFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/Startup settings.triadpreset");
+}
+juce::File TriadSettings::startupPresetFile (const juce::String& choice)
+{
+    if (choice.isEmpty()) return {};
+    if (choice == currentSettings) return startupSettingsFile();
+    return presetFolder().getChildFile (choice + ".triadpreset");
+}
 juce::File TriadSettings::lfoShapeFolder()
 {
     return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/LFO Shapes");
