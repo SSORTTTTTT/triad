@@ -31,6 +31,9 @@
  #include <cstring>
  #include <execinfo.h>
 #endif
+#if JUCE_MAC
+ #include <mach/mach.h>
+#endif
 
 #if JUCE_MAC
 std::string triadStressOpenGLRenderer();      // StressMac.mm
@@ -55,6 +58,23 @@ void require (bool ok, const juce::String& message)
 }
 void pump (int ms) { juce::MessageManager::getInstance()->runDispatchLoopUntil (ms); }
 juce::String ms (double v) { return juce::String (v, 2) + " ms"; }
+// The stress process's memory in use now (resident), in MB.
+int memoryMB()
+{
+   #if JUCE_MAC
+    mach_task_basic_info info {};
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info (mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t) &info, &count) == KERN_SUCCESS)
+        return (int) (info.resident_size / (1024 * 1024));
+    return 0;
+   #elif JUCE_LINUX
+    long pages = 0, resident = 0;
+    if (auto* f = std::fopen ("/proc/self/statm", "r")) { if (std::fscanf (f, "%ld %ld", &pages, &resident) != 2) resident = 0; std::fclose (f); }
+    return (int) (resident * sysconf (_SC_PAGESIZE) / (1024 * 1024));
+   #else
+    return 0;
+   #endif
+}
 
 // Watches the run from its own thread. If one step takes far too long (a hang, or a plug-in waiting
 // on a dialog nobody can see), or the audio thread stops finishing blocks, it says where, saves the
@@ -667,6 +687,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     bool timeLimit = false;
     constexpr int maxEffects = 120;
     const auto started = juce::Time::getMillisecondCounterHiRes();
+    int peakWaiting = 0, peakMemory = 0;   // removed effects waiting to be deleted; the process's memory (MB)
     std::vector<juce::File> userShapes;   // LFO shapes saved to USER by the palette edits (deleted at the end)
     auto removeUserShapes = [&userShapes] { for (const auto& f : userShapes) triad::userShapes::remove (f); userShapes.clear(); };
     try
@@ -675,9 +696,11 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
         {
             const double elapsed = (juce::Time::getMillisecondCounterHiRes() - started) / 1000.0;
             if (op > 0 && op % 100 == 0)
-                std::cout << "  ... " << op << " edits in " << juce::String (elapsed, 1) << " s, " << loadedCount (p) << " effects loaded, "
-                          << blocks.load() << " audio blocks" << std::endl;
+                std::cout << "  ... " << op << " edits in " << juce::String (elapsed, 1) << " s, " << loadedCount (p) << " effects loaded (" << TriadProcessor::getRetiredEffectCount() << " removed, waiting to be deleted), "
+                          << blocks.load() << " audio blocks, " << memoryMB() << " MB in use" << std::endl;
             if (maxSeconds > 0.0 && elapsed > maxSeconds) { timeLimit = true; break; }
+            peakWaiting = juce::jmax (peakWaiting, TriadProcessor::getRetiredEffectCount());
+            peakMemory = juce::jmax (peakMemory, memoryMB());
             const auto opStart = juce::Time::getMillisecondCounterHiRes();
             const int bands = p.getBandCount();
             // One edit in eight is on the PRE or POST chain (every slot, LFO and link function takes them as bands).
@@ -1061,7 +1084,9 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     require (! nonFinite.load(), "Audio stayed finite");
     say (juce::String (done) + " edits in " + juce::String ((juce::Time::getMillisecondCounterHiRes() - started) / 1000.0, 1) + " s: "
          + juce::String (blocks.load()) + " audio blocks processed alongside the edits (" + juce::String (automation.load())
-         + " automation moves), worst block " + ms (worstBlock.load()) + ", up to " + juce::String (peakEffects) + " effects loaded at once");
+         + " automation moves), worst block " + ms (worstBlock.load()) + ", up to " + juce::String (peakEffects) + " effects loaded at once, up to "
+         + juce::String (peakWaiting) + " removed effects waiting to be deleted, memory up to " + juce::String (peakMemory) + " MB");
+    require (peakWaiting < 400, "Removed effects are deleted as fast as they are removed (no pile-up holding memory)");
     if (windowsOpened + windowsNotDrawn > 0)
         say ("Effect windows opened on top of Triad: " + juce::String (windowsOpened)
              + (windowsNotDrawn > 0 ? " (" + juce::String (windowsNotDrawn) + " OpenGL windows skipped: no graphics card on this test Mac)" : juce::String()));

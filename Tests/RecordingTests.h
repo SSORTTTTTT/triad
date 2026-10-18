@@ -331,7 +331,7 @@ public:
                 {
                     const float v = audio.getSample (c, s);
                     if (! std::isfinite (v)) finite = false;
-                    if (v != 0.0f) silent = false;
+                    if (std::abs (v) > 0.0f) silent = false;
                 }
             if (! finite) ++result.invalid;
             if (silent && inputPeak > 0.01f && i > warmUp) ++dropouts;

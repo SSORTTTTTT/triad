@@ -61,10 +61,12 @@ public:
         entries.push_back ({ std::move (effect), std::move (window), juce::Time::getMillisecondCounter() });
         if (! isTimerRunning()) startTimer (tickMs);
     }
-    // One entry is deleted per tick, at least `delayMs` after it was retired: when a project reloads, dozens of
-    // effects go at once, and deleting them one at a time (the message loop running in between) lets each one's
-    // own pending messages arrive first (ChowMatrix crashed once when many went in the same moment).
+    // Effects are deleted at least `delayMs` after they were retired, and at most one copy of each plug-in per tick
+    // (the message loop runs in between): when a project reloads, dozens of effects go at once, and ChowMatrix
+    // crashed once when many of its copies were deleted in the same moment. Different plug-ins go together, within
+    // a time budget per tick, so a long session never piles up effects waiting to be deleted (they hold memory).
     static constexpr int tickMs = 40, delayMs = 1500;
+    static int waitingCount() { return current != nullptr ? (int) current->entries.size() : 0; }
 private:
     EffectGraveyard() = default;
     struct Entry
@@ -79,24 +81,34 @@ private:
         if (d.manufacturerName.startsWithIgnoreCase ("Apple")) return {};   // macOS's own effects need no keeper
         return d.pluginFormatName + "|" + d.fileOrIdentifier + "|" + d.name;
     }
+    static juce::String pluginKey (const Entry& e)
+    {
+        if (e.effect == nullptr) return {};
+        const auto d = e.effect->getPluginDescription();
+        return d.pluginFormatName + "|" + d.fileOrIdentifier + "|" + d.name;
+    }
     void timerCallback() override
     {
         const auto now = juce::Time::getMillisecondCounter();
-        std::vector<Entry> due;
-        if (! entries.empty() && now - entries.front().since >= (juce::uint32) delayMs)
+        const auto start = juce::Time::getMillisecondCounterHiRes();
+        // A big backlog (a long session of reloads) is cleared without the time budget.
+        const double budgetMs = entries.size() > 64 ? 1.0e9 : 12.0;
+        juce::StringArray deletedNow;
+        for (auto it = entries.begin(); it != entries.end() && now - it->since >= (juce::uint32) delayMs;)
         {
-            due.push_back (std::move (entries.front()));   // the oldest one only
-            entries.erase (entries.begin());
-        }
-        if (entries.empty()) stopTimer();
-        for (auto& e : due)
-        {
+            if (! deletedNow.isEmpty() && juce::Time::getMillisecondCounterHiRes() - start > budgetMs) break;
+            const auto key = pluginKey (*it);
+            if (key.isNotEmpty() && deletedNow.contains (key)) { ++it; continue; }   // its next copy: next tick
+            deletedNow.add (key);
+            auto e = std::move (*it);
+            it = entries.erase (it);
             e.window.reset();
             if (e.effect == nullptr) continue;
-            const auto key = keeperKey (*e.effect);
-            if (key.isNotEmpty() && keepers.find (key) == keepers.end()) keepers[key] = std::move (e.effect);   // kept idle
+            const auto keep = keeperKey (*e.effect);
+            if (keep.isNotEmpty() && keepers.find (keep) == keepers.end()) keepers[keep] = std::move (e.effect);   // kept idle
             else e.effect.reset();
         }
+        if (entries.empty()) stopTimer();
         if (entries.empty() && keepers.empty()) delete this;   // `this` is gone after this line
     }
     std::vector<Entry> entries;
@@ -796,6 +808,7 @@ void TriadProcessor::handleInvalidAudio()
     setStatus (message);
 }
 int TriadProcessor::getIdleEffectCount() { return EffectGraveyard::keeperCount(); }
+int TriadProcessor::getRetiredEffectCount() { return EffectGraveyard::waitingCount(); }
 void TriadProcessor::releaseIdleEffects() { EffectGraveyard::releaseAll(); }
 void TriadProcessor::retire (std::unique_ptr<juce::AudioPluginInstance> effect)
 {
@@ -2764,7 +2777,7 @@ void TriadProcessor::commitHistory()
     historySizes.push_back (size);
     history.push_back (std::move (snapshot));
     size_t total = 0;
-    for (auto size : historySizes) total += size;
+    for (auto bytes : historySizes) total += bytes;
     while (history.size() > 1 && ((int) history.size() > maxHistorySteps + 1 || total > maxHistoryBytes))
     {
         total -= historySizes.front();

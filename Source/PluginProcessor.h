@@ -111,6 +111,8 @@ public:
     // Third-party effects kept loaded, idle, after their last copy was removed (one per effect, for the
     // session): deleting a plug-in's last copy makes it shut down, which crashes some plug-ins.
     static int getIdleEffectCount();
+    // Removed effects waiting to be deleted (each goes 1.5 s after it was removed).
+    static int getRetiredEffectCount();
     // Audio blocks Triad output as silence because the message thread was changing the bands at that
     // moment (Triad never waits on the audio thread); a dropout. For the live-monitoring test and meters.
     int getSilencedBlockCount() const noexcept { return silencedBlocks.load(); }
