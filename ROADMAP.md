@@ -4,6 +4,32 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
+## Next build — Triad v6 (0.7.0): Auto-Tune and live vocals (Thomas, 2026-10-18)
+
+Thomas tested v4 on a raw vocal with Auto-Tune Pro (retune speed 0), Fresh Air, an LA-2A compressor and a basic EQ,
+split into three bands: it "works pretty good", but there was a lot of latency with Auto-Tune in its normal mode
+(the same four plug-ins straight on a track felt instant), and its Low Latency mode made little difference apart
+from some warbling. First thing for the next build:
+
+- **Find where the delay comes from, measured.** Triad itself adds 0 samples (measured on every CI run); it reports
+  and lines the bands up to what the hosted effects report. Compare, in FL Studio and Ableton, the same chain on a
+  plain track and inside Triad: the latency each reports, the delay actually heard (an impulse through each),
+  AU vs VST3, Auto-Tune's normal vs Low Latency mode (does Triad pass the new, lower latency on straight away, and
+  does the DAW take it?), and what Triad gives the hosted effect (sample rate, block size, offline/real-time flags)
+  compared with what the DAW gives it directly. Thomas's LAT tooltip (per band, per effect) from v5 is the first clue.
+- **Free pitch correctors in the CI stress tests** (e.g. MAutoPitch, Graillon's free edition, if their installers
+  can be fetched), to test pitch correction inside Triad: latency reported vs heard, Low Latency switching, warble.
+- **PRE chain:** a full-range chain of slots before the bands split (and maybe a POST chain after they come back
+  together), for effects that need the whole voice: pitch correction, a de-esser, a gate, the first EQ. Auto-Tune
+  in a band only hears that band's part of the voice (the note is in the low band; the high bands are mostly breath
+  and "s"), so each copy tracks differently and the corrected parts no longer line up: likely the warble. Latency of
+  effects in different bands does not add up (bands play side by side); in the PRE chain it simply adds once.
+- **Hard wall for every divider in one click** (Thomas): "All dividers: hard wall (96 dB/oct)" and "All dividers:
+  soft / default" in the display's right-click menu and the slope list, keeping the sloping as it is. Each divider
+  can already be set to 96 dB/oct. (A true brickwall made with linear-phase filters would add latency, so not for
+  live vocals.)
+- Maybe: a **1-band / full-range** switch (no split at all) for chains that should not be split.
+
 ## Current testing version — 0.6.0 ("Triad v5")
 
 0.6.0 (2026-10-17), from Thomas's notes after 0.5.0:
