@@ -75,7 +75,26 @@ Built from the notes below (2026-10-15/16):
 
 Still to come: see "Next update" below (LFO randomizer, soft crossovers, knobs inside third-party effects) and "Later" (most-used sorting, routing between bands).
 
-## Next update — latency meter (Thomas, 2026-10-17, after using 0.4.2)
+## Next: LFOs on the knobs inside your effects (Thomas, 2026-10-17) — feasible
+
+Asked: can Triad's LFOs move parameters inside the hosted plug-ins, linked from the LFO page? **Yes.** Tested in 0.5.0's
+stress test with the 51 effects on the CI Mac: 50 expose automatable parameters (median 15 each, up to 666 for
+ChowMatrix), and moving four of them from the audio thread every 128 samples (as an LFO would) worked in all 50: the
+sound followed in 48 (the other two did not change the test noise), no NaN/Inf. One effect crashed inside its own code
+when moved this way: Apple's AUPitch (its Rate parameter, meant for offline time-stretching).
+
+Plan:
+- **Learn:** in the LFO page (or a slot's ~ menu), "Link a knob inside this effect": move a knob in the effect's own
+  window and Triad links the LFO to it; or pick it from a searchable list of the effect's parameters (names from the
+  plug-in). Several LFOs per effect, several knobs per LFO, each with amount / invert / on-off, in the MATRIX too.
+- **How it plays:** Triad sets the value just before the effect processes each block (smoothed every 32 samples for
+  fast LFOs); the effect's own knob moves on screen; projects save the links by parameter ID.
+- **Safety:** parameters that are not automatable are not offered; a short list of known-unsafe ones (like AUPitch's
+  Rate) is left out; an effect that produces NaN/Inf while modulated is silenced and its link paused, as today.
+- Some effects step or limit values (AU versions of chowdsp and Tilr effects read values back slightly differently):
+  fine for sound, the LFO line shows the value the effect actually took.
+
+## Next update — latency meter (Thomas, 2026-10-17, after using 0.4.2) — done in 0.5.0
 
 Thomas: 0.4.2 "is working great". Next: a **latency meter**, shown like the IN/OUT and band volume meters, so he
 can see at a glance whether Triad is still zero-latency (for recording vocals through it) and, if not, what adds it.
@@ -94,7 +113,7 @@ can see at a glance whether Triad is still zero-latency (for recording vocals th
 - Background: see VALIDATION.md, "Live vocal monitoring" (Triad alone adds no latency; what the crossovers'
   phase does to timing; how Triad keeps up at 32–256-sample buffers).
 
-### Startup preset in the settings (Thomas, 2026-10-17)
+### Startup preset in the settings (Thomas, 2026-10-17) — done in 0.5.0
 
 - Settings (gear) → **Change startup preset ▸**: a list with "Init (empty Triad)" at the top and every saved preset
   below it, the current choice ticked; every new Triad opens with it (projects that already have Triad keep their
@@ -102,7 +121,7 @@ can see at a glance whether Triad is still zero-latency (for recording vocals th
 - Preset menu → **Initialize**: back to Init (3 bands, empty slots, 24 dB/oct, LFOs off), as one undoable step.
 - Works the same in FL Studio and Ableton (it is Triad's own setting, not the DAW's default-preset feature).
 
-### Smoother interface (visual tests, 2026-10-17)
+### Smoother interface (visual tests, 2026-10-17) — done in 0.5.0 (except eased hover/press transitions and a lighter CPU at 10 bands x 96 dB/oct)
 
 Measured by the new visual check in TriadTests (drawing times of each part, plus 4x close-ups of the knobs,
 sliders and dots; the CI Mac prints its own numbers). Linux test machine, optimised build, at 1x / 2x (Retina):

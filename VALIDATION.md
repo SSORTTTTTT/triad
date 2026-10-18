@@ -1,5 +1,18 @@
 # Validation — Triad
 
+## Triad v4 (0.5.0) on macOS — 2026-10-17
+
+Commit `479315b`, run 39096363512 (macos-14 runner, virtual Apple M1). New in 0.5.0: latency and CPU meters, LIVE,
+startup preset and Initialize, 60 fps animation with cached drawing, close-up fixes.
+
+| Check | Result |
+| --- | --- |
+| Installer `Triad-v4-0.5.0-macOS-AppleSilicon.pkg` | Built and installed; AU VALIDATION SUCCEEDED; pluginval SUCCESS (VST3 and AU); integration tests passed (incl. startup preset, Initialize, latency/CPU meters, LIVE, GUI stress) |
+| Stress tests (test effects; 51 real effects, 5 x 3,000 edits incl. LIVE on/off) | All passed; no NaN/Inf output; live monitoring: 0 silenced blocks |
+| Drawing, whole window at 1x / 2x (Retina) | BANDS 9.2 / 13.0 ms; LFO 2.2 / 3.9 ms (0.4.3: 10.0 / 31.9); MATRIX 1.6 / 7.1 ms |
+| Drawing per frame (what moves) at 2x | Crossover display 3.8 ms (was 9.0, the whole display); LFO grid playhead strip under 0.1 ms (was the whole grid, 24.7 ms); band meter and knob dot about 0.1 ms |
+| LFOs on parameters inside effects (feasibility) | 50 of 51 effects expose automatable parameters (median 15, up to 666); moved from the audio thread every 128 samples for 2 s: the sound followed in 48, values read back exactly in 42 (the rest step or limit them, e.g. AU versions of chowdsp and Tilr effects); 1 crashed inside its own code: Apple's AUPitch (its Rate) |
+
 ## Triad v4 (0.4.3) on macOS — 2026-10-17
 
 Commit `801c304`, run 39027201610 (macos-14 runner, virtual Apple M1, 3 cores). New in 0.4.3: no dropouts from
