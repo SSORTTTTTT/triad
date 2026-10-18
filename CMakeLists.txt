@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.6.0 LANGUAGES C CXX)
-# Installed as "Triad v5.vst3" / "Triad v5.component"; the plug-in IDs are unchanged from Triad 0.1,
-# so projects made with the earlier "Triad", "Triad v2", "Triad v3" and "Triad v4" open with Triad v5.
+project(Triad VERSION 0.7.0 LANGUAGES C CXX)
+# Installed as "Triad v6.vst3" / "Triad v6.component"; the plug-in IDs are unchanged from Triad 0.1,
+# so projects made with the earlier "Triad", "Triad v2" ... "Triad v5" open with Triad v6.
 # Each new release gets the next name (v6, v7, ...) and replaces the earlier ones when installed.
-set(TRIAD_PRODUCT_NAME "Triad v5")
+set(TRIAD_PRODUCT_NAME "Triad v6")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(TRIAD_BUILD_TESTS "Build integration tests and a test effect" ON)

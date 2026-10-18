@@ -49,7 +49,15 @@ public:
     void endSlopeGesture();
     void showSlopeMenu (int index);
     static constexpr float slopeDragStep = 6.0f;   // mouse travel (pixels) per slope step when dragging the dot
-    static void addSlopeItems (juce::PopupMenu& menu, int current, int idBase);
+    // The slope list; with `hz`, each slope also shows how much later the sound at that crossover comes out.
+    static void addSlopeItems (juce::PopupMenu& menu, int current, int idBase, float hz = 0.0f, double sampleRate = 48000.0);
+    // "All dividers": hard wall (96 dB/oct), default (24) or soft (6), as menu items `idBase` + order.
+    static void addAllDividerItems (juce::PopupMenu& menu, int idBase);
+    static constexpr int allDividersBase = 1000;
+    // PRE: shows or hides the PRE chain's strip (the editor decides; it keeps the button up to date).
+    std::function<void()> onTogglePre;
+    void setPreState (bool shown, int effects);
+    juce::Button& getPreButton() noexcept { return preButton; }
     juce::Rectangle<float> slopeReadoutBounds (int index) const;
     int getActiveSlope() const noexcept { return activeSlope; }
     void updateSpectrum (double dt = 1.0 / 30.0);
@@ -94,7 +102,7 @@ private:
 
     TriadProcessor& processor;
     std::vector<std::unique_ptr<Handle>> handles;
-    juce::TextButton addButton { "+ BAND" };
+    juce::TextButton addButton { "+ BAND" }, preButton { "PRE" };
     int activeHandle = -1, activeSlope = -1;
     std::vector<float> cuts;
     std::vector<int> pillRows;

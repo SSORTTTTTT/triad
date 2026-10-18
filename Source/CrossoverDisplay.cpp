@@ -9,6 +9,13 @@ CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p)
     addButton.setTooltip ("Add a band (up to 10). Tip: double-click the display to split a band right there.");
     addButton.onClick = [this] { processor.addBand(); refresh(); };
     addAndMakeVisible (addButton);
+    preButton.setClickingTogglesState (false);
+    preButton.setTooltip ("PRE: effects on the full sound before it is split into bands (Auto-Tune, a de-esser, a gate...). "
+                          "Click to show or hide its strip.");
+    preButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffd9dcd6));
+    preButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
+    preButton.onClick = [this] { if (onTogglePre) onTogglePre(); };
+    addAndMakeVisible (preButton);
     liveButton.setClickingTogglesState (true);
     liveButton.setTooltip ("LIVE, for recording through Triad: effects that add latency are passed by, so Triad adds none. "
                            "Switch it off again for mixing.");
@@ -147,23 +154,45 @@ void CrossoverDisplay::showSlopeMenu (int index)
     if (index < 0 || index >= (int) cuts.size()) return;
     juce::PopupMenu menu;
     menu.addSectionHeader ("CROSSOVER " + juce::String (index + 1) + " SLOPE");
-    addSlopeItems (menu, processor.getCrossoverSlope (index), 0);
+    addSlopeItems (menu, processor.getCrossoverSlope (index), 0, cuts[(size_t) index], processor.getSampleRateForDisplay());
+    addAllDividerItems (menu, allDividersBase);
     juce::Component::SafePointer<CrossoverDisplay> safe (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, index] (int choice)
     {
-        if (safe != nullptr && choice > 0) safe->setSlope (index, choice);
+        if (safe == nullptr || choice <= 0) return;
+        if (choice > allDividersBase) { safe->processor.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); }
+        else safe->setSlope (index, choice);
     });
 }
 // The quick list of slopes: 6 to 48 dB/oct, then the steeper, near-brickwall cuts up to 96 dB/oct.
-void CrossoverDisplay::addSlopeItems (juce::PopupMenu& menu, int current, int idBase)
+void CrossoverDisplay::addSlopeItems (juce::PopupMenu& menu, int current, int idBase, float hz, double sampleRate)
 {
+    // Beside each slope: how much later the sound right at this crossover comes out (the phase of the bands
+    // added back; it matters for the timing of a voice when the crossover sits in its lower notes).
+    if (hz > 0.0f) menu.addSectionHeader ("RIGHT: SOUND AT " + formatHz (hz).toUpperCase() + " COMES OUT LATER BY");
     for (int order = triad::CrossoverFilter::minOrder; order <= triad::CrossoverFilter::maxOrder; ++order)
     {
         if (order == triad::CrossoverFilter::steepestClassic + 1) menu.addSectionHeader ("HARDER CUTS (NEAR BRICKWALL)");
-        menu.addItem (idBase + order, TriadProcessor::slopeText (order) + (order == 1 ? "  (softest)" : order == triad::CrossoverFilter::defaultOrder ? "  (default)"
-                                                                         : order == triad::CrossoverFilter::maxOrder ? "  (hardest)" : ""),
-                      true, order == current);
+        juce::PopupMenu::Item item (TriadProcessor::slopeText (order) + (order == 1 ? "  (softest)" : order == triad::CrossoverFilter::defaultOrder ? "  (default)"
+                                                                       : order == triad::CrossoverFilter::maxOrder ? "  (hardest)" : ""));
+        item.itemID = idBase + order;
+        item.isTicked = order == current;
+        if (hz > 0.0f) item.shortcutKeyDescription = formatMs (triad::crossoverGroupDelayMs (order, hz, sampleRate));
+        menu.addItem (std::move (item));
     }
+}
+void CrossoverDisplay::addAllDividerItems (juce::PopupMenu& menu, int idBase)
+{
+    menu.addSectionHeader ("ALL DIVIDERS");
+    menu.addItem (idBase + triad::CrossoverFilter::maxOrder, "All dividers: hard wall (" + TriadProcessor::slopeText (triad::CrossoverFilter::maxOrder) + ")");
+    menu.addItem (idBase + triad::CrossoverFilter::defaultOrder, "All dividers: default (" + TriadProcessor::slopeText (triad::CrossoverFilter::defaultOrder) + ")");
+    menu.addItem (idBase + triad::CrossoverFilter::minOrder, "All dividers: soft (" + TriadProcessor::slopeText (triad::CrossoverFilter::minOrder) + ")");
+}
+void CrossoverDisplay::setPreState (bool shown, int effects)
+{
+    const auto text = effects > 0 ? "PRE " + juce::String (effects) : juce::String ("PRE");
+    if (preButton.getButtonText() != text) preButton.setButtonText (text);
+    preButton.setToggleState (shown, juce::dontSendNotification);
 }
 // Each slope readout sits beside its dot: to the right, else to the left, else a compact one ("24") on
 // either side, whichever does not cover another readout or a frequency pill.
@@ -317,10 +346,16 @@ void CrossoverDisplay::showBandMenu (int band, float hz)
     menu.addItem (removeId, "Remove band " + juce::String (band + 1), count > 1);
     menu.addItem (addId, "Add a band here (" + formatHz (hz) + ")", count < triad::maxBands);
     menu.addItem (lfoId, "Edit LFO for band " + juce::String (band + 1) + " mix...");
+    if (count > 1)
+    {
+        menu.addSeparator();
+        addAllDividerItems (menu, allDividersBase);
+    }
     juce::Component::SafePointer<CrossoverDisplay> safe (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, band, hz] (int choice)
     {
         if (safe == nullptr) return;
+        if (choice > allDividersBase) { safe->processor.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
         if (choice == copyId) { safe->processor.copyBandState (band); return; }
         if (choice == pasteId) safe->processor.pasteBandState (band);
         else if (choice == removeId) safe->processor.removeBand (band);
@@ -336,8 +371,9 @@ void CrossoverDisplay::showCrossoverMenu (int index)
     menu.addSectionHeader ("CROSSOVER " + juce::String (index + 1) + "  " + (index < (int) cuts.size() ? formatHz (cuts[(size_t) index]) : juce::String()));
     juce::PopupMenu slopes;
     const int current = processor.getCrossoverSlope (index);
-    addSlopeItems (slopes, current, slopeBase);
+    addSlopeItems (slopes, current, slopeBase, index < (int) cuts.size() ? cuts[(size_t) index] : 0.0f, processor.getSampleRateForDisplay());
     menu.addSubMenu ("Slope: " + TriadProcessor::slopeText (current), slopes);
+    addAllDividerItems (menu, allDividersBase);
     menu.addSeparator();
     menu.addItem (removeBelow, "Remove band " + juce::String (index + 1) + " (below)");
     menu.addItem (removeAbove, "Remove band " + juce::String (index + 2) + " (above)");
@@ -346,6 +382,7 @@ void CrossoverDisplay::showCrossoverMenu (int index)
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, index] (int choice)
     {
         if (safe == nullptr) return;
+        if (choice > allDividersBase) { safe->processor.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
         if (choice > slopeBase) { safe->setSlope (index, choice - slopeBase); return; }
         if (choice == removeBelow) safe->processor.removeBand (index);
         else if (choice == removeAbove) safe->processor.removeBand (index + 1);
@@ -511,6 +548,7 @@ float CrossoverDisplay::pillTop (int index) const
 void CrossoverDisplay::resized()
 {
     addButton.setBounds (getWidth() - 96 - (int) meterWidth, 7, 78, 24);
+    preButton.setBounds (addButton.getX() - 66, 7, 60, 24);
     {
         const int x0 = getWidth() - 18 - (int) meterWidth + 12;
         liveButton.setBounds (x0 + 50, 6, 52, 20);
@@ -611,7 +649,7 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
     g.setColour (juce::Colour (0xffb8bcba)); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
     g.drawText ("BAND CROSSOVERS", 18, 8, 175, 23, juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (11.0f)); g.setColour (juce::Colour (0xff898f8b));
-    g.drawText ("Drag a divider  /  Drag its upper dot: slope  /  Double-click: add a band  /  Right-click: band menu", getWidth() - 756, 8, 530, 23,
+    g.drawText ("Drag a divider  /  Its upper dot: slope  /  Double-click: add a band  /  Right-click: menu", getWidth() - 776, 8, 480, 23,
                 juce::Justification::centredRight);
     paintBandCurves (g);
     for (int i = 0; i < count && i + 1 < (int) xs.size(); ++i)

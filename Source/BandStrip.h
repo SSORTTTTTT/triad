@@ -95,6 +95,7 @@ public:
     juce::Slider& getMixKnob() { return mix; }
     juce::Slider& getVolumeSlider() { return volume; }
     int getBand() const noexcept { return band; }
+    bool isPre() const noexcept { return band == TriadProcessor::preBand; }   // the PRE chain's strip
     static constexpr int preferredHeight = 352;   // header, six slot rows before scrolling, volume and band mix
     static constexpr int headerHeight = 58;
 private:

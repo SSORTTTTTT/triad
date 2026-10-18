@@ -230,6 +230,29 @@ private:
     float cutoff = 2000.0f, g = 0.0f;
 };
 
+// How much later the sound right at a crossover comes out when the bands are added back together (the
+// group delay of the crossover's all-pass sum at that frequency), in milliseconds. Steeper slopes delay it
+// more; it falls off away from the crossover (Triad itself reports no latency: nothing is delayed overall).
+inline double crossoverGroupDelayMs (int order, float hz, double sampleRate)
+{
+    CrossoverFilter filter;
+    filter.prepare (sampleRate);
+    filter.setOrder (order);
+    filter.setCutoffFrequency (hz);
+    // Impulse response of the all-pass sum, long enough to ring out; then Re(sum(n h e^-jwn) / sum(h e^-jwn)).
+    const int length = juce::jlimit (4096, 1 << 18, (int) (sampleRate / juce::jmax (1.0f, hz) * 64.0));
+    const double w = juce::MathConstants<double>::twoPi * hz / sampleRate;
+    std::complex<double> sum, weighted;
+    for (int n = 0; n < length; ++n)
+    {
+        const double h = filter.processAllpass (0, n == 0 ? 1.0f : 0.0f);
+        const std::complex<double> e (std::cos (w * n), -std::sin (w * n));
+        sum += h * e;
+        weighted += (double) n * h * e;
+    }
+    return std::abs (sum) > 1.0e-12 ? (weighted / sum).real() / sampleRate * 1000.0 : 0.0;
+}
+
 // N-band crossover (1 to 10 bands) with a slope per crossover. Band b is the low-pass at crossover b
 // of what remains above crossover b-1, followed by the all-pass of every higher crossover, so the
 // bands sum to the cascade of all-passes: flat magnitude, phase-rotated.

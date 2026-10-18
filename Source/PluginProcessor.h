@@ -50,6 +50,12 @@ public:
 
     // ---- Bands (positional, low to high) -------------------------------------------------
     int getBandCount() const noexcept { return bandCount.load(); }
+    // The PRE chain: slots that process the full-range sound before it is split into bands (pitch correction,
+    // a de-esser, a gate...). Every slot, LFO and link function takes it as band `preBand`.
+    static constexpr int preBand = triad::maxBands;
+    bool isValidBand (int band) const noexcept { return (band >= 0 && band < getBandCount()) || band == preBand; }
+    bool hasPreEffects() const;                               // any PRE slot holds an effect
+    int getPreLatencySamples() const noexcept { return preLatency.load(); }
     int getStructureVersion() const noexcept { return structureVersion.load(); }
     std::vector<float> effectiveCrossovers() const;          // numBands - 1 values, ascending
     std::pair<float, float> effectiveCutoffs() const;        // first two crossovers (0.1 API)
@@ -60,6 +66,7 @@ public:
     juce::RangedAudioParameter* slopeParameter (int index) const;
     int getCrossoverSlope (int index) const;                // order 1-16
     void setCrossoverSlope (int index, int order);          // as one undoable, automatable gesture
+    void setAllCrossoverSlopes (int order);                 // every divider at once (e.g. all hard wall, 96 dB/oct)
     static juce::String slopeText (int order) { return juce::String (triad::CrossoverFilter::dbPerOctave (order)) + " dB/oct"; }
     static float defaultCrossover (int index, int bandCount);
     // Adds a band by splitting the band containing `hz` there (or the widest band if hz <= 0).
@@ -313,7 +320,8 @@ private:
     };
     struct Band
     {
-        explicit Band (bool withSlot = true);
+        explicit Band (bool withSlot = true, bool isPre = false);
+        bool pre = false;                // the PRE chain: no band LFO, mix or volume
         int serial = 0;                  // unique in this process (undo keeps LFO undo lists with their band)
         std::vector<std::unique_ptr<Slot>> slots;
         std::vector<std::unique_ptr<Lfo>> lfos;
@@ -337,7 +345,7 @@ private:
     struct PendingLoad { int slot; const juce::XmlElement* node; };
 
     juce::AudioPluginFormatManager formats;
-    std::array<std::unique_ptr<Band>, triad::maxBands> bands;
+    std::array<std::unique_ptr<Band>, triad::maxBands + 1> bands;   // the bands, then the PRE chain at [preBand]
     // Removed effects and closed effect windows (also those of a closed Triad) are deleted a moment
     // later; see EffectGraveyard.
     static void retire (std::unique_ptr<juce::AudioPluginInstance>);
@@ -351,7 +359,7 @@ private:
     // gate: band/slot structure, shared with the audio thread (which only ever try-locks it).
     // infoLock: the editor's snapshot and status text; never taken by the audio thread.
     mutable juce::CriticalSection gate, stateGate, infoLock;
-    std::array<std::vector<SlotInfo>, triad::maxBands> info;
+    std::array<std::vector<SlotInfo>, triad::maxBands + 1> info;
     std::unique_ptr<juce::XmlElement> pendingState;
     std::atomic<bool> restoring { false }, muted { false };
     std::atomic<int> silencedBlocks { 0 };
@@ -368,7 +376,8 @@ private:
     std::atomic<int> pendingCreations { 0 }, bandCount { 3 }, structureVersion { 0 };
     std::atomic<double> tail { 0.0 };
     std::atomic<double> rate { 44100.0 };
-    std::atomic<int> totalLatency { 0 };
+    std::atomic<int> totalLatency { 0 }, preLatency { 0 };
+    int bandsLatency = 0;            // the slowest band's chain (guarded by gate); total = PRE + this
     std::atomic<float> inputPeak { 0.0f }, outputPeak { 0.0f };
     std::array<std::atomic<float>, triad::maxBands> bandPeaks {};
     juce::int64 nextRequest = 1;
@@ -430,7 +439,8 @@ private:
     void restoreFrom (const juce::XmlElement&);
     void writeBand (juce::XmlElement&, const Band&, bool forHistory = false) const;
     std::unique_ptr<Band> readBand (const juce::XmlElement* node, int version, const std::function<float (int)>& legacyMix,
-                                    std::vector<PendingLoad>& loads) const;
+                                    std::vector<PendingLoad>& loads, bool pre = false) const;
+    bool runChain (Band&, juce::AudioBuffer<float>&, int n);   // audio thread: a band's (or PRE's) slots in order
     juce::String destinationName (const Band&, const Destination&) const;
     void stateChanged (bool undoable = true);
     bool sendKeyToHost();

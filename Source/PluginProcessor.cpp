@@ -131,7 +131,7 @@ constexpr int controlRate = 32;   // LFO values are updated every 32 samples, th
 constexpr int parameterRate = 64; // knobs inside effects that LFOs move are set every 64 samples
 juce::String windowTitle (int band, int slot, const juce::String& name)
 {
-    return "Band " + juce::String (band + 1) + juce::String::fromUTF8 (" \xc2\xb7 Slot ") + juce::String (slot + 1)
+    return (band == triad::maxBands ? juce::String ("PRE") : "Band " + juce::String (band + 1)) + juce::String::fromUTF8 (" \xc2\xb7 Slot ") + juce::String (slot + 1)
          + juce::String::fromUTF8 (" \xe2\x80\x94 ") + name;
 }
 bool isTriad (const juce::PluginDescription& d) { return triad::isTriadName (d.name) || triad::isTriadName (d.descriptiveName); }
@@ -239,7 +239,7 @@ std::atomic<int> serials { 0 };
 int nextSerial() { return ++serials; }
 }
 TriadProcessor::Slot::Slot() : serial (nextSerial()) {}
-TriadProcessor::Band::Band (bool withSlot) : serial (nextSerial())
+TriadProcessor::Band::Band (bool withSlot, bool isPre) : pre (isPre), serial (nextSerial())
 {
     if (! withSlot) return;
     appendSlot();
@@ -272,7 +272,7 @@ void TriadProcessor::Band::ensureModulation()
         r->muted.store (! l.touched);
         routes.push_back (std::move (r));
     };
-    if (std::none_of (lfos.begin(), lfos.end(), [] (auto& l) { return l->bandLfo; }))
+    if (! pre && std::none_of (lfos.begin(), lfos.end(), [] (auto& l) { return l->bandLfo; }))
         addAutomatic (appendLfo (0, true), Destination { Destination::bandMix, 0 });
     for (auto& s : slots)
         if (std::none_of (lfos.begin(), lfos.end(), [&] (auto& l) { return l->slotId == s->id; }))
@@ -290,9 +290,11 @@ void TriadProcessor::Band::relink()
     for (auto& s : slots) take ([&] (const Lfo& l) { return ! l.bandLfo && l.slotId == s->id; });
     take ([] (const Lfo&) { return true; });   // extra LFOs, and LFOs of slots that no longer exist
     lfos = std::move (ordered);
+    if (pre) lfos.erase (std::remove_if (lfos.begin(), lfos.end(), [] (auto& l) { return l->bandLfo; }), lfos.end());
     routes.erase (std::remove_if (routes.begin(), routes.end(), [this] (const std::unique_ptr<Route>& r)
     {
         const bool toSlot = r->destination.kind == Destination::slotMix || r->destination.kind == Destination::effectParameter;
+        if (pre && ! toSlot) return true;   // the PRE chain has no band mix or volume
         return findLfo (r->lfoId) == nullptr || (toSlot && findSlot (r->destination.slotId) == nullptr);
     }), routes.end());
     for (auto& s : slots) { s->modulators.clear(); s->parameterModulators.clear(); }
@@ -471,6 +473,7 @@ TriadProcessor::TriadProcessor()
         bandGainValues[(size_t) b] = parameters.getRawParameterValue (bandGainID (b));
         bands[(size_t) b] = std::make_unique<Band>();
     }
+    bands[(size_t) preBand] = std::make_unique<Band> (true, true);
     {
         const juce::ScopedLock lock (gate);
         publishInfo();
@@ -479,7 +482,9 @@ TriadProcessor::TriadProcessor()
     ownWatch = std::make_unique<OwnWatch> (historySignal);
     for (auto* parameter : getParameters()) parameter->addListener (ownWatch.get());
     createdAt = juce::Time::getMillisecondCounterHiRes();
-    startTimerHz (10);
+    // 30 times a second: an effect that changes its latency (a pitch corrector switched to its low-latency mode)
+    // is lined up again within about 35 ms; the check itself takes no lock unless something changed.
+    startTimerHz (30);
     ++liveTriads;
 }
 TriadProcessor::~TriadProcessor()
@@ -527,21 +532,26 @@ void TriadProcessor::setCrossoverSlope (int index, int order)
         p->endChangeGesture();
     }
 }
+void TriadProcessor::setAllCrossoverSlopes (int order)
+{
+    for (int j = 0; j + 1 < getBandCount(); ++j) setCrossoverSlope (j, order);
+    setStatus ("Every divider: " + slopeText (juce::jlimit (triad::CrossoverFilter::minOrder, triad::CrossoverFilter::maxOrder, order)));
+}
 TriadProcessor::Slot* TriadProcessor::slotAt (int band, int slot) const
 {
-    if (band < 0 || band >= numBands) return nullptr;
+    if (band != preBand && (band < 0 || band >= numBands)) return nullptr;
     const auto& slots = bands[(size_t) band]->slots;
     return slot >= 0 && slot < (int) slots.size() ? slots[(size_t) slot].get() : nullptr;
 }
 TriadProcessor::Lfo* TriadProcessor::lfoAt (int band, int lfo) const
 {
-    if (band < 0 || band >= numBands) return nullptr;
+    if (band != preBand && (band < 0 || band >= numBands)) return nullptr;
     const auto& lfos = bands[(size_t) band]->lfos;
     return lfo >= 0 && lfo < (int) lfos.size() ? lfos[(size_t) lfo].get() : nullptr;
 }
 TriadProcessor::Route* TriadProcessor::routeAt (int band, int route) const
 {
-    if (band < 0 || band >= numBands) return nullptr;
+    if (band != preBand && (band < 0 || band >= numBands)) return nullptr;
     const auto& routes = bands[(size_t) band]->routes;
     return route >= 0 && route < (int) routes.size() ? routes[(size_t) route].get() : nullptr;
 }
@@ -554,12 +564,13 @@ void TriadProcessor::prepareBand (int index, bool prepareEffects)
 {
     auto& band = *bands[(size_t) index];
     const auto sr = rate.load();
+    const bool positional = index >= 0 && index < triad::maxBands;   // the PRE chain has no band mix or volume
     band.dry.setSize (2, capacity);
     band.slotDry.setSize (2, capacity);
     band.mix.reset (sr, 0.005);
-    band.mix.setCurrentAndTargetValue (bandMixValues[(size_t) index]->load() * 0.01f);
+    band.mix.setCurrentAndTargetValue (positional ? bandMixValues[(size_t) index]->load() * 0.01f : 1.0f);
     band.gain.reset (sr, 0.005);
-    band.gain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (bandGainValues[(size_t) index]->load()));
+    band.gain.setCurrentAndTargetValue (positional ? juce::Decibels::decibelsToGain (bandGainValues[(size_t) index]->load()) : 1.0f);
     for (auto& slot : band.slots)
     {
         prepareSlot (*slot);
@@ -593,7 +604,7 @@ void TriadProcessor::prepareToPlay (double sr, int block)
     for (auto& buffer : split) buffer.setSize (2, capacity);
     wide.setSize (maxEffectChannels, capacity);
     childMidi.ensureSize (4096);
-    for (int b = 0; b < triad::maxBands; ++b) prepareBand (b, true);
+    for (int b = 0; b <= preBand; ++b) prepareBand (b, true);
     fadeLength = juce::jmax (1, (int) (sr * 0.01));
     fadeRemaining = 0;
     prepared = true;
@@ -628,12 +639,11 @@ juce::RangedAudioParameter* TriadProcessor::crossoverParameter (int index) const
 }
 void TriadProcessor::alignLatency()
 {
-    int longest = 0;
     double longestTail = 0.0;
     bool changed = false;
-    for (int b = 0; b < numBands; ++b)
+    // One chain (a band, or PRE): each slot's latency, errors and LIVE state; returns the chain's latency.
+    auto chainOf = [&] (Band& band)
     {
-        auto& band = *bands[(size_t) b];
         int chain = 0;
         for (auto& slotPtr : band.slots)
         {
@@ -666,22 +676,30 @@ void TriadProcessor::alignLatency()
         changed |= band.chainLatency != chain;
         band.chainLatency = chain;
         band.dryDelay.ensureCapacity (chain);
-        longest = juce::jmax (longest, chain);
-    }
+        return chain;
+    };
+    // The PRE chain runs first, on the full sound; then the bands side by side, lined up to the slowest one.
+    const int pre = juce::jmin (chainOf (*bands[(size_t) preBand]), triad::maxLatency);
+    int longest = 0;
+    for (int b = 0; b < numBands; ++b) longest = juce::jmax (longest, chainOf (*bands[(size_t) b]));
+    longest = juce::jmin (longest, triad::maxLatency);
     for (int b = 0; b < numBands; ++b) bands[(size_t) b]->alignDelay.ensureCapacity (longest - bands[(size_t) b]->chainLatency);
-    bypassDelay.ensureCapacity (longest);
-    changed |= totalLatency.load() != longest;
-    totalLatency.store (longest);
-    tail.store (longestTail + (double) longest / rate.load());
+    const int total = pre + longest;
+    bypassDelay.ensureCapacity (total);
+    changed |= totalLatency.load() != total || bandsLatency != longest;
+    bandsLatency = longest;
+    preLatency.store (pre);
+    totalLatency.store (total);
+    tail.store (longestTail + (double) total / rate.load());
     if (changed && prepared) resetDelays();
     alignedSignature.store (latencySignature());
-    if (getLatencySamples() != longest) setLatencySamples (longest);
+    if (getLatencySamples() != total) setLatencySamples (total);
     publishInfo();
 }
 void TriadProcessor::timerCallback()
 {
     // Effects can change their latency at any time; check without the lock (the bands only change on this
-    // thread) and take it only when something changed, so the audio thread is not kept waiting ten times a
+    // thread) and take it only when something changed, so the audio thread is not kept waiting 30 times a
     // second for nothing (it outputs silence rather than wait, which is a dropout while recording).
     if (! startupDecided && juce::Time::getMillisecondCounterHiRes() - createdAt > startupDelayMs)
     {
@@ -705,10 +723,11 @@ juce::int64 TriadProcessor::latencySignature() const
     add ((juce::uint64) prepared);
     add ((juce::uint64) liveMode.load());
     addDouble (rate.load());
-    for (int b = 0; b < numBands; ++b)
+    for (int b = -1; b < numBands; ++b)
     {
-        add ((juce::uint64) bands[(size_t) b]->slots.size());
-        for (auto& slotPtr : bands[(size_t) b]->slots)
+        const auto& band = *bands[(size_t) (b < 0 ? preBand : b)];   // PRE first, then the bands
+        add ((juce::uint64) band.slots.size());
+        for (auto& slotPtr : band.slots)
         {
             const auto& s = *slotPtr;
             add ((juce::uint64) reinterpret_cast<std::uintptr_t> (s.effect.get()));
@@ -728,15 +747,15 @@ void TriadProcessor::handleInvalidAudio()
 {
     // The structure only changes on this (message) thread, so it can be read here without the lock.
     bool any = false;
-    for (int b = 0; b < numBands && ! any; ++b)
-        for (auto& s : bands[(size_t) b]->slots)
+    for (int b = -1; b < numBands && ! any; ++b)
+        for (auto& s : bands[(size_t) (b < 0 ? preBand : b)]->slots)
             any |= s->effect != nullptr && s->invalidBlocks.load (std::memory_order_relaxed) != s->invalidHandled;
     if (! any) return;
     juce::String message;
     {
         const juce::ScopedLock lock (gate);
-        for (int b = 0; b < numBands; ++b)
-            for (auto& slotPtr : bands[(size_t) b]->slots)
+        for (int b = -1; b < numBands; ++b)
+            for (auto& slotPtr : bands[(size_t) (b < 0 ? preBand : b)]->slots)
             {
                 auto& s = *slotPtr;
                 const int bad = s.invalidBlocks.load (std::memory_order_relaxed);
@@ -871,12 +890,83 @@ void TriadProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBu
         return;
     }
     // Never emit misaligned audio while a hosted effect changes its reported latency.
-    for (int b = 0; b < numBands; ++b)
-        for (auto& s : bands[(size_t) b]->slots)
+    for (int b = -1; b < numBands; ++b)
+        for (auto& s : bands[(size_t) (b < 0 ? preBand : b)]->slots)
             if (s->isActive() && (s->effect->getLatencySamples() != s->latency || effectChannels (*s->effect) != s->channels))
             { audio.clear(); return; }
     process (audio);
     storeMax (outputPeak, peakOf (audio, 2));
+}
+bool TriadProcessor::runChain (Band& band, juce::AudioBuffer<float>& buffer, int n)
+{
+    // The band's chain: each active slot processes the output of the one above it.
+    for (auto& slotPtr : band.slots)
+    {
+        auto& slot = *slotPtr;
+        if (! slot.isActive()) { slot.mix.skip (n); continue; }
+        for (int ch = 0; ch < 2; ++ch) band.slotDry.copyFrom (ch, 0, buffer, ch, 0, n);
+        slot.effect->setPlayHead (getPlayHead());
+        slot.effect->setNonRealtime (isNonRealtime());
+        auto runEffect = [&] (int start, int length)
+        {
+            childMidi.clear();
+            if (slot.channels > 2)
+            {
+                // An effect with an extra bus that stays on: give it silence there.
+                for (int ch = 0; ch < slot.channels; ++ch)
+                    if (ch < 2) wide.copyFrom (ch, start, buffer, ch, start, length);
+                    else wide.clear (ch, start, length);
+                juce::AudioBuffer<float> view (wide.getArrayOfWritePointers(), slot.channels, start, length);
+                slot.effect->processBlock (view, childMidi);
+                for (int ch = 0; ch < 2; ++ch) buffer.copyFrom (ch, start, wide, ch, start, length);
+            }
+            else
+            {
+                juce::AudioBuffer<float> view (buffer.getArrayOfWritePointers(), 2, start, length);
+                slot.effect->processBlock (view, childMidi);
+            }
+        };
+        if (slot.parameterModulators.empty()) runEffect (0, n);
+        else
+        {
+            // Knobs inside the effect follow their LFOs: set before every 64 samples it processes.
+            for (int start = 0; start < n; start += parameterRate)
+            {
+                applyParameterModulation (slot, start);
+                runEffect (start, juce::jmin (parameterRate, n - start));
+            }
+        }
+        // An effect that outputs NaN/Inf would break the whole mix in the DAW: silence it.
+        if (! allFinite (buffer, 2, n))
+        {
+            for (int ch = 0; ch < 2; ++ch) buffer.clear (ch, 0, n);
+            slot.invalidBlocks.fetch_add (1, std::memory_order_relaxed);
+        }
+        if (slot.effect->getLatencySamples() != slot.latency) return false;
+        // Slot dry/wet (knob, moved by its LFOs); the dry signal is delayed by the slot's latency.
+        const float knob = slot.mixPercent.load (std::memory_order_relaxed) * 0.01f;
+        for (int frame = 0; frame < n; ++frame)
+        {
+            if (frame % controlRate == 0)
+            {
+                float target = knob;
+                for (auto* r : slot.modulators)
+                    if (! r->muted.load (std::memory_order_relaxed))
+                        target += r->amount.load (std::memory_order_relaxed) * (r->value (frame) - target);
+                slot.mix.setTargetValue (juce::jlimit (0.0f, 1.0f, target));
+            }
+            const float mix = slot.mix.getNextValue();
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const float d = slot.dryDelay.tick (ch, band.slotDry.getSample (ch, frame), slot.latency);
+                const float w = buffer.getSample (ch, frame);
+                buffer.setSample (ch, frame, d + mix * (w - d));
+            }
+            slot.dryDelay.advance();
+        }
+        slot.liveMix.store (slot.mix.getCurrentValue() * 100.0f, std::memory_order_relaxed);
+    }
+    return true;
 }
 void TriadProcessor::process (juce::AudioBuffer<float>& audio)
 {
@@ -886,10 +976,19 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
     readSlopes (slopes.data());
     splitter.setCutoffs (cuts.data());
     splitter.setSlopes (slopes.data());
-    const int total = totalLatency.load();
+    const int longest = bandsLatency;   // the bands are lined up to the slowest one (PRE came before them)
     for (int offset = 0; offset < audio.getNumSamples(); offset += capacity)
     {
         const int n = juce::jmin (capacity, audio.getNumSamples() - offset);
+        // The PRE chain, on the full-range sound, before it is split into bands.
+        auto& pre = *bands[(size_t) preBand];
+        if (std::any_of (pre.slots.begin(), pre.slots.end(), [] (const auto& slotPtr) { return slotPtr->isActive(); }))
+        {
+            advanceLfos (pre, offset, n);
+            for (int ch = 0; ch < 2; ++ch) pre.dry.copyFrom (ch, 0, audio, ch, offset, n);
+            if (! runChain (pre, pre.dry, n)) { audio.clear(); return; }
+            for (int ch = 0; ch < 2; ++ch) audio.copyFrom (ch, offset, pre.dry, ch, 0, n);
+        }
         splitter.process (audio, offset, n, split);
         for (int ch = 0; ch < 2; ++ch) audio.clear (ch, offset, n);
         for (int b = 0; b < numBands; ++b)
@@ -899,75 +998,9 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
             advanceLfos (band, offset, n);
             for (int ch = 0; ch < 2; ++ch) band.dry.copyFrom (ch, 0, buffer, ch, 0, n);
             // The band's chain: each active slot processes the output of the one above it.
-            for (auto& slotPtr : band.slots)
-            {
-                auto& slot = *slotPtr;
-                if (! slot.isActive()) { slot.mix.skip (n); continue; }
-                for (int ch = 0; ch < 2; ++ch) band.slotDry.copyFrom (ch, 0, buffer, ch, 0, n);
-                slot.effect->setPlayHead (getPlayHead());
-                slot.effect->setNonRealtime (isNonRealtime());
-                auto runEffect = [&] (int start, int length)
-                {
-                    childMidi.clear();
-                    if (slot.channels > 2)
-                    {
-                        // An effect with an extra bus that stays on: give it silence there.
-                        for (int ch = 0; ch < slot.channels; ++ch)
-                            if (ch < 2) wide.copyFrom (ch, start, buffer, ch, start, length);
-                            else wide.clear (ch, start, length);
-                        juce::AudioBuffer<float> view (wide.getArrayOfWritePointers(), slot.channels, start, length);
-                        slot.effect->processBlock (view, childMidi);
-                        for (int ch = 0; ch < 2; ++ch) buffer.copyFrom (ch, start, wide, ch, start, length);
-                    }
-                    else
-                    {
-                        juce::AudioBuffer<float> view (buffer.getArrayOfWritePointers(), 2, start, length);
-                        slot.effect->processBlock (view, childMidi);
-                    }
-                };
-                if (slot.parameterModulators.empty()) runEffect (0, n);
-                else
-                {
-                    // Knobs inside the effect follow their LFOs: set before every 64 samples it processes.
-                    for (int start = 0; start < n; start += parameterRate)
-                    {
-                        applyParameterModulation (slot, start);
-                        runEffect (start, juce::jmin (parameterRate, n - start));
-                    }
-                }
-                // An effect that outputs NaN/Inf would break the whole mix in the DAW: silence it.
-                if (! allFinite (buffer, 2, n))
-                {
-                    for (int ch = 0; ch < 2; ++ch) buffer.clear (ch, 0, n);
-                    slot.invalidBlocks.fetch_add (1, std::memory_order_relaxed);
-                }
-                if (slot.effect->getLatencySamples() != slot.latency)
-                { audio.clear(); return; }
-                // Slot dry/wet (knob, moved by its LFOs); the dry signal is delayed by the slot's latency.
-                const float knob = slot.mixPercent.load (std::memory_order_relaxed) * 0.01f;
-                for (int frame = 0; frame < n; ++frame)
-                {
-                    if (frame % controlRate == 0)
-                    {
-                        float target = knob;
-                        for (auto* r : slot.modulators)
-                            if (! r->muted.load (std::memory_order_relaxed))
-                                target += r->amount.load (std::memory_order_relaxed) * (r->value (frame) - target);
-                        slot.mix.setTargetValue (juce::jlimit (0.0f, 1.0f, target));
-                    }
-                    const float mix = slot.mix.getNextValue();
-                    for (int ch = 0; ch < 2; ++ch)
-                    {
-                        const float d = slot.dryDelay.tick (ch, band.slotDry.getSample (ch, frame), slot.latency);
-                        const float w = buffer.getSample (ch, frame);
-                        buffer.setSample (ch, frame, d + mix * (w - d));
-                    }
-                    slot.dryDelay.advance();
-                }
-                slot.liveMix.store (slot.mix.getCurrentValue() * 100.0f, std::memory_order_relaxed);
-            }
+            if (! runChain (band, buffer, n)) { audio.clear(); return; }
             // Band mix (dry band vs. its chain) and volume, then align all bands to the longest chain.
-            const int align = total - band.chainLatency;
+            const int align = longest - band.chainLatency;
             const float mixKnob = bandMixValues[(size_t) b]->load (std::memory_order_relaxed) * 0.01f;
             const float gainKnob = juce::Decibels::decibelsToGain (bandGainValues[(size_t) b]->load (std::memory_order_relaxed), minGainDb - 0.05f);
             float peak = 0.0f;
@@ -1213,9 +1246,9 @@ bool TriadProcessor::moveBand (int from, int to)
 // ---- Slots --------------------------------------------------------------------------------------------
 void TriadProcessor::publishInfo()
 {
-    std::array<std::vector<SlotInfo>, triad::maxBands> next;
-    for (int b = 0; b < numBands; ++b)
-        for (auto& slotPtr : bands[(size_t) b]->slots)
+    std::array<std::vector<SlotInfo>, triad::maxBands + 1> next;
+    for (int b = -1; b < numBands; ++b)
+        for (auto& slotPtr : bands[(size_t) (b < 0 ? preBand : b)]->slots)
         {
             const auto& s = *slotPtr;
             SlotInfo n;
@@ -1233,22 +1266,28 @@ void TriadProcessor::publishInfo()
             n.channels = s.effect != nullptr ? s.channels : 2;
             n.invalidAudio = s.effect != nullptr ? s.invalidBlocks.load (std::memory_order_relaxed) : 0;
             n.mix = s.mixPercent.load();
-            next[(size_t) b].push_back (std::move (n));
+            next[(size_t) (b < 0 ? preBand : b)].push_back (std::move (n));
         }
     const juce::ScopedLock lock (infoLock);
     info = std::move (next);
 }
+bool TriadProcessor::hasPreEffects() const
+{
+    const juce::ScopedLock lock (infoLock);
+    const auto& list = info[(size_t) preBand];
+    return std::any_of (list.begin(), list.end(), [] (const SlotInfo& i) { return i.hasContent; });
+}
 int TriadProcessor::getSlotCount (int band) const
 {
     const juce::ScopedLock lock (infoLock);
-    return band >= 0 && band < triad::maxBands ? (int) info[(size_t) band].size() : 0;
+    return band >= 0 && band <= preBand ? (int) info[(size_t) band].size() : 0;
 }
 TriadProcessor::SlotInfo TriadProcessor::getSlotInfo (int band, int slot) const
 {
     SlotInfo result;
     {
         const juce::ScopedLock lock (infoLock);
-        if (band < 0 || band >= triad::maxBands || slot < 0 || slot >= (int) info[(size_t) band].size()) return {};
+        if (band < 0 || band > preBand || slot < 0 || slot >= (int) info[(size_t) band].size()) return {};
         result = info[(size_t) band][(size_t) slot];
     }
     if (juce::MessageManager::existsAndIsCurrentThread())
@@ -1288,7 +1327,7 @@ int TriadProcessor::addSlot (int band)
     int index = -1;
     {
         const juce::ScopedLock lock (gate);
-        if (band < 0 || band >= numBands) return -1;
+        if (band != preBand && (band < 0 || band >= numBands)) return -1;
         auto& b = *bands[(size_t) band];
         prepareSlot (b.appendSlot());
         b.ensureModulation();
@@ -1330,7 +1369,7 @@ juce::String TriadProcessor::loadEffect (int band, int slot, const juce::PluginD
     juce::String result;
     if (isTriad (desc)) result = "Triad cannot host itself.";
     else if (desc.isInstrument) result = "Choose an audio effect, not an instrument.";
-    else if (band < 0 || band >= getBandCount()) result = "That band does not exist.";
+    else if (! isValidBand (band)) result = "That band does not exist.";
     else
     {
         const bool append = slot == getSlotCount (band);
@@ -1348,7 +1387,7 @@ juce::String TriadProcessor::loadEffect (int band, int slot, const juce::PluginD
 juce::String TriadProcessor::loadInstance (int band, int slot, std::unique_ptr<juce::AudioPluginInstance> instance)
 {
     if (instance == nullptr) return "No effect.";
-    if (band < 0 || band >= getBandCount()) return "That band does not exist.";
+    if (! isValidBand (band)) return "That band does not exist.";
     const bool append = slot == getSlotCount (band);
     if (append) slot = addSlot (band);
     if (slot < 0 || slot >= getSlotCount (band)) return "That slot does not exist.";
@@ -1438,9 +1477,12 @@ juce::String TriadProcessor::requestInstall (int band, int slot, const juce::Plu
 bool TriadProcessor::findPending (juce::int64 request, int& band, int& slot) const
 {
     const juce::ScopedLock lock (gate);
-    for (int b = 0; b < numBands; ++b)
-        for (int s = 0; s < (int) bands[(size_t) b]->slots.size(); ++s)
-            if (bands[(size_t) b]->slots[(size_t) s]->pendingRequest == request) { band = b; slot = s; return true; }
+    for (int b = -1; b < numBands; ++b)
+    {
+        const int index = b < 0 ? preBand : b;
+        for (int s = 0; s < (int) bands[(size_t) index]->slots.size(); ++s)
+            if (bands[(size_t) index]->slots[(size_t) s]->pendingRequest == request) { band = index; slot = s; return true; }
+    }
     return false;
 }
 juce::String TriadProcessor::finishInstall (int band, int slotIndex, const juce::PluginDescription& desc, const juce::MemoryBlock& state,
@@ -1639,7 +1681,7 @@ void TriadProcessor::showEffect (int band, int slot)
 }
 void TriadProcessor::refreshWindowTitles()
 {
-    for (int b = 0; b < triad::maxBands; ++b)
+    for (int b = 0; b <= preBand; ++b)
         for (int s = 0; s < (int) bands[(size_t) b]->slots.size(); ++s)
             if (auto& w = bands[(size_t) b]->slots[(size_t) s]->window)
                 w->setName (windowTitle (b, s, bands[(size_t) b]->slots[(size_t) s]->description.name));
@@ -1653,7 +1695,7 @@ void TriadProcessor::closeWindows()
 // ---- LFOs ------------------------------------------------------------------------------------------------
 int TriadProcessor::getLfoCount (int band) const
 {
-    return band >= 0 && band < getBandCount() ? (int) bands[(size_t) band]->lfos.size() : 0;
+    return isValidBand (band) ? (int) bands[(size_t) band]->lfos.size() : 0;
 }
 TriadProcessor::LfoInfo TriadProcessor::getLfoInfo (int band, int index) const
 {
@@ -1695,7 +1737,7 @@ int TriadProcessor::getSlotLfo (int band, int slot) const
 }
 int TriadProcessor::getBandLfo (int band) const
 {
-    if (band < 0 || band >= getBandCount()) return -1;
+    if (! isValidBand (band)) return -1;
     const auto& lfos = bands[(size_t) band]->lfos;
     for (size_t i = 0; i < lfos.size(); ++i) if (lfos[i]->bandLfo) return (int) i;
     return -1;
@@ -1762,7 +1804,7 @@ int TriadProcessor::addLfo (int band)
     int index = -1;
     {
         const juce::ScopedLock lock (gate);
-        if (band < 0 || band >= numBands) return -1;
+        if (band != preBand && (band < 0 || band >= numBands)) return -1;
         auto& b = *bands[(size_t) band];
         const int id = b.appendLfo (0, false).id;
         b.relink();
@@ -1814,7 +1856,7 @@ juce::String TriadProcessor::destinationName (const Band& b, const Destination& 
 }
 int TriadProcessor::getRouteCount (int band) const
 {
-    return band >= 0 && band < getBandCount() ? (int) bands[(size_t) band]->routes.size() : 0;
+    return isValidBand (band) ? (int) bands[(size_t) band]->routes.size() : 0;
 }
 TriadProcessor::RouteInfo TriadProcessor::getRouteInfo (int band, int index) const
 {
@@ -1849,6 +1891,7 @@ int TriadProcessor::addRoute (int band, int lfo, Destination destination)
         if (l == nullptr) return -1;
         auto& b = *bands[(size_t) band];
         if (destination.kind == Destination::slotMix && b.findSlot (destination.slotId) == nullptr) return -1;
+        if (b.pre && (destination.kind == Destination::bandMix || destination.kind == Destination::bandVolume)) return -1;
         auto r = std::make_unique<Route>();
         if (destination.kind == Destination::effectParameter)
         {
@@ -1889,6 +1932,7 @@ void TriadProcessor::setRouteDestination (int band, int route, Destination desti
         if (r == nullptr) return;
         auto& b = *bands[(size_t) band];
         if (destination.kind == Destination::slotMix && b.findSlot (destination.slotId) == nullptr) return;
+        if (b.pre && (destination.kind == Destination::bandMix || destination.kind == Destination::bandVolume)) return;
         if (destination.kind == Destination::effectParameter)
         {
             auto* s = b.findSlot (destination.slotId);
@@ -1937,10 +1981,13 @@ void TriadProcessor::removeRoute (int band, int route)
 std::vector<std::pair<TriadProcessor::Destination, juce::String>> TriadProcessor::getDestinations (int band) const
 {
     std::vector<std::pair<Destination, juce::String>> list;
-    if (band < 0 || band >= getBandCount()) return list;
+    if (! isValidBand (band)) return list;
     const auto& b = *bands[(size_t) band];
-    list.push_back ({ Destination { Destination::bandMix, 0 }, "Band Mix" });
-    list.push_back ({ Destination { Destination::bandVolume, 0 }, "Band Volume" });
+    if (! b.pre)
+    {
+        list.push_back ({ Destination { Destination::bandMix, 0 }, "Band Mix" });
+        list.push_back ({ Destination { Destination::bandVolume, 0 }, "Band Volume" });
+    }
     for (auto& s : b.slots) list.push_back ({ Destination { Destination::slotMix, s->id }, destinationName (b, Destination { Destination::slotMix, s->id }) });
     return list;
 }
@@ -2012,7 +2059,8 @@ bool TriadProcessor::beginParameterLearn (int band, int lfo)
         }
     if (next->watches.empty()) return false;
     learn = std::move (next);
-    setStatus ("LEARN: move a knob in one of band " + juce::String (band + 1) + "'s effect windows (it is linked to LFO " + juce::String (lfo + 1) + ")");
+    setStatus ("LEARN: move a knob in one of " + (band == preBand ? juce::String ("PRE") : "band " + juce::String (band + 1)) + "'s effect windows (it is linked to LFO "
+               + juce::String (lfo + 1) + ")");
     return true;
 }
 void TriadProcessor::endParameterLearn()
@@ -2044,7 +2092,7 @@ int TriadProcessor::pollParameterLearn()
     }
     const int band = learn->band, slotId = learn->learnedSlot.load(), lfoId = learn->lfoId;
     endParameterLearn();
-    if (band >= getBandCount()) return -1;
+    if (! isValidBand (band)) return -1;
     auto& b = *bands[(size_t) band];
     const int lfo = b.lfoIndex (lfoId);
     if (lfo < 0 || b.findSlot (slotId) == nullptr) return -1;
@@ -2129,9 +2177,9 @@ void TriadProcessor::writeBand (juce::XmlElement& node, const Band& band, bool f
 }
 std::unique_ptr<TriadProcessor::Band> TriadProcessor::readBand (const juce::XmlElement* node, int version,
                                                                 const std::function<float (int)>& legacyMix,
-                                                                std::vector<PendingLoad>& loads) const
+                                                                std::vector<PendingLoad>& loads, bool pre) const
 {
-    auto band = std::make_unique<Band> (false);
+    auto band = std::make_unique<Band> (false, pre);
     if (node != nullptr && node->hasAttribute ("serial")) band->serial = node->getIntAttribute ("serial");
     int count = node != nullptr ? juce::jlimit (1, 4096, node->getIntAttribute ("slots", 1)) : 1;
     if (node != nullptr)
@@ -2217,6 +2265,7 @@ std::unique_ptr<juce::XmlElement> TriadProcessor::createPresetXml (bool forHisto
         bandNode->setAttribute ("index", b);
         writeBand (*bandNode, *bands[(size_t) b], forHistory);
     }
+    writeBand (*root->createNewChildElement ("Pre"), *bands[(size_t) preBand], forHistory);   // the PRE chain (0.7.0)
     return root;
 }
 void TriadProcessor::getStateInformation (juce::MemoryBlock& output)
@@ -2322,13 +2371,13 @@ void TriadProcessor::restoreFrom (const juce::XmlElement& xml)
     endParameterLearn();   // LEARN listens to the effects: stop before any of them moves or goes
     const int version = xml.getIntAttribute ("version");
     const int count = version >= 2 ? juce::jlimit (1, triad::maxBands, xml.getIntAttribute ("bands", 3)) : 3;
-    std::array<std::unique_ptr<Band>, triad::maxBands> old;
+    std::array<std::unique_ptr<Band>, triad::maxBands + 1> old;   // the bands and PRE
     {
         const juce::ScopedLock lock (gate);
-        for (int b = 0; b < triad::maxBands; ++b)
+        for (int b = 0; b <= preBand; ++b)
         {
             old[(size_t) b] = std::move (bands[(size_t) b]);
-            bands[(size_t) b] = std::make_unique<Band>();
+            bands[(size_t) b] = std::make_unique<Band> (true, b == preBand);
             if (prepared)
                 for (auto& s : old[(size_t) b]->slots) if (s->effect) s->effect->releaseResources();
         }
@@ -2359,8 +2408,8 @@ void TriadProcessor::restoreFrom (const juce::XmlElement& xml)
                 }
         parameters.replaceState (tree);
     }
-    std::array<std::unique_ptr<Band>, triad::maxBands> fresh;
-    std::array<std::vector<PendingLoad>, triad::maxBands> loads;
+    std::array<std::unique_ptr<Band>, triad::maxBands + 1> fresh;
+    std::array<std::vector<PendingLoad>, triad::maxBands + 1> loads;
     if (version == 1)
     {
         for (auto* node : xml.getChildWithTagNameIterator ("Slot"))
@@ -2380,26 +2429,31 @@ void TriadProcessor::restoreFrom (const juce::XmlElement& xml)
             };
             fresh[(size_t) b] = readBand (bandNode, version, legacyMix, loads[(size_t) b]);
         }
+        // The PRE chain (saved since 0.7.0).
+        if (auto* preNode = xml.getChildByName ("Pre"))
+            fresh[(size_t) preBand] = readBand (preNode, 4, [] (int) { return 100.0f; }, loads[(size_t) preBand], true);
     }
-    for (auto& f : fresh) if (f == nullptr) f = std::make_unique<Band>();
+    for (int b = 0; b <= preBand; ++b)
+        if (fresh[(size_t) b] == nullptr) fresh[(size_t) b] = std::make_unique<Band> (true, b == preBand);
     setPresetName (xml.getStringAttribute ("preset"));
     liveMode.store (xml.getBoolAttribute ("live", false));
     {
         const juce::ScopedLock lock (gate);
         numBands = count;
         bandCount.store (count);
-        for (int b = 0; b < triad::maxBands; ++b) bands[(size_t) b] = std::move (fresh[(size_t) b]);
+        for (int b = 0; b <= preBand; ++b) bands[(size_t) b] = std::move (fresh[(size_t) b]);
         std::array<float, triad::maxCrossovers> cuts {};
         std::array<int, triad::maxCrossovers> slopes {};
         readCrossovers (cuts.data());
         readSlopes (slopes.data());
         splitter.setBandCount (numBands, cuts.data(), slopes.data());
-        for (int b = 0; b < triad::maxBands; ++b) prepareBand (b, false);
+        for (int b = 0; b <= preBand; ++b) prepareBand (b, false);
         alignLatency();
     }
     ++structureVersion;
-    for (int b = 0; b < count; ++b)
-        for (auto& load : loads[(size_t) b]) installFromXml (b, load.slot, *load.node, true);
+    for (int b = 0; b <= preBand; ++b)
+        if (b < count || b == preBand)
+            for (auto& load : loads[(size_t) b]) installFromXml (b, load.slot, *load.node, true);
 }
 void TriadProcessor::handleAsyncUpdate()
 {
@@ -2513,7 +2567,7 @@ juce::String TriadProcessor::pasteEffectState (int band, int slot)
     JUCE_ASSERT_MESSAGE_THREAD
     const auto clipboard = effectClipboard();   // a copy: the clipboard may change while this loads
     if (! clipboard.valid) return "No plug-in state copied yet.";
-    if (band < 0 || band >= getBandCount()) return "That band does not exist.";
+    if (! isValidBand (band)) return "That band does not exist.";
     const bool append = slot == getSlotCount (band);
     if (append) slot = addSlot (band);
     auto* s = slotAt (band, slot);
@@ -2534,7 +2588,8 @@ juce::String TriadProcessor::pasteEffectState (int band, int slot)
         return error;
     }
     setSlotMix (band, slot, clipboard.mix);
-    setStatus ("Pasted " + clipboard.description.name + " (with its settings) into band " + juce::String (band + 1) + ", slot " + juce::String (slot + 1));
+    setStatus ("Pasted " + clipboard.description.name + " (with its settings) into " + (band == preBand ? juce::String ("PRE") : "band " + juce::String (band + 1))
+               + ", slot " + juce::String (slot + 1));
     return {};
 }
 bool TriadProcessor::hasCopiedEffect() { return effectClipboard().valid; }
@@ -2547,10 +2602,18 @@ void TriadProcessor::clearCopiedEffect() { effectClipboard() = {}; }
 // effect still loading. `historyCursor` is the snapshot showing now; undo applies the one before it.
 namespace
 {
+// The chains in a snapshot: its bands and the PRE chain.
+std::vector<const juce::XmlElement*> chainsIn (const juce::XmlElement& xml)
+{
+    std::vector<const juce::XmlElement*> chains;
+    for (auto* child : xml.getChildIterator())
+        if (child->hasTagName ("Band") || child->hasTagName ("Pre")) chains.push_back (child);
+    return chains;
+}
 size_t snapshotSize (const juce::XmlElement& xml)
 {
     size_t bytes = 4096;
-    for (auto* band : xml.getChildWithTagNameIterator ("Band"))
+    for (auto* band : chainsIn (xml))
         for (auto* slot : band->getChildWithTagNameIterator ("Slot"))
             if (auto* state = slot->getChildByName ("State")) bytes += (size_t) state->getAllSubText().length() + 512;
     return bytes;
@@ -2569,8 +2632,8 @@ bool TriadProcessor::historyBusy() const
 {
     if (restoring.load() || pendingCreations.load() > 0 || historySignal->open.load() > 0) return true;
     if (juce::ModifierKeys::getCurrentModifiersRealtime().isAnyMouseButtonDown()) return true;
-    for (int b = 0; b < numBands; ++b)
-        for (auto& s : bands[(size_t) b]->slots) if (s->pendingRequest != 0) return true;
+    for (int b = -1; b < numBands; ++b)
+        for (auto& s : bands[(size_t) (b < 0 ? preBand : b)]->slots) if (s->pendingRequest != 0) return true;
     return false;
 }
 void TriadProcessor::historyTick()
@@ -2619,11 +2682,11 @@ void TriadProcessor::commitHistory()
         for (const auto* tag : { "State", "Knobs" })
         {
             std::map<int, juce::String> before;
-            for (auto* band : history[(size_t) historyCursor]->getChildWithTagNameIterator ("Band"))
+            for (auto* band : chainsIn (*history[(size_t) historyCursor]))
                 for (auto* slot : band->getChildWithTagNameIterator ("Slot"))
                     if (auto* text = slot->getChildByName (tag); text != nullptr && text->getFirstChildElement() != nullptr)
                         before[slot->getIntAttribute ("serial")] = text->getFirstChildElement()->getText();
-            for (auto* band : snapshot->getChildWithTagNameIterator ("Band"))
+            for (auto* band : chainsIn (*snapshot))
                 for (auto* slot : band->getChildWithTagNameIterator ("Slot"))
                     if (auto* text = slot->getChildByName (tag); text != nullptr && text->getFirstChildElement() != nullptr)
                         if (const auto it = before.find (slot->getIntAttribute ("serial")); it != before.end() && it->second == text->getFirstChildElement()->getText())
@@ -2688,8 +2751,8 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
     const int count = juce::jlimit (1, triad::maxBands, xml.getIntAttribute ("bands", 3));
     // Crossovers, slopes, band mixes and volumes.
     if (auto* p = xml.getChildByName ("Parameters")) parameters.replaceState (juce::ValueTree::fromXml (*p));
-    std::array<std::unique_ptr<Band>, triad::maxBands> fresh, old;
-    std::array<std::vector<PendingLoad>, triad::maxBands> loads;
+    std::array<std::unique_ptr<Band>, triad::maxBands + 1> fresh, old;   // the bands, then PRE
+    std::array<std::vector<PendingLoad>, triad::maxBands + 1> loads;
     for (int b = 0; b < count; ++b)
     {
         const juce::XmlElement* node = nullptr;
@@ -2697,7 +2760,10 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
             if (n->getIntAttribute ("index", -1) == b) { node = n; break; }
         fresh[(size_t) b] = readBand (node, 4, [] (int) { return 100.0f; }, loads[(size_t) b]);
     }
-    for (auto& f : fresh) if (f == nullptr) f = std::make_unique<Band>();
+    fresh[(size_t) preBand] = readBand (xml.getChildByName ("Pre"), 4, [] (int) { return 100.0f; }, loads[(size_t) preBand], true);
+    for (int b = 0; b <= preBand; ++b)
+        if (fresh[(size_t) b] == nullptr) fresh[(size_t) b] = std::make_unique<Band> (true, b == preBand);
+    auto inUse = [count] (int b) { return b < count || b == preBand; };
     struct Kept { int band, slot; juce::MemoryBlock state; };
     std::vector<Kept> kept;
     const auto withEffects = loads;   // every slot with an effect, for its knobs below
@@ -2705,11 +2771,12 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
         const juce::ScopedLock lock (gate);
         // Effects still loaded are taken over by the slot with the same serial, when it holds the same effect.
         std::map<int, Slot*> loaded;
-        for (int b = 0; b < numBands; ++b)
-            for (auto& s : bands[(size_t) b]->slots)
+        for (int b = -1; b < numBands; ++b)
+            for (auto& s : bands[(size_t) (b < 0 ? preBand : b)]->slots)
                 if (s->effect != nullptr && s->pendingRequest == 0) loaded[s->serial] = s.get();
-        for (int b = 0; b < count; ++b)
+        for (int b = 0; b <= preBand; ++b)
         {
+            if (! inUse (b)) continue;
             auto& list = loads[(size_t) b];
             for (auto it = list.begin(); it != list.end();)
             {
@@ -2739,7 +2806,7 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
             }
             fresh[(size_t) b]->relink();   // links to knobs find the effects that were taken over
         }
-        for (int b = 0; b < triad::maxBands; ++b)
+        for (int b = 0; b <= preBand; ++b)
         {
             old[(size_t) b] = std::move (bands[(size_t) b]);
             bands[(size_t) b] = std::move (fresh[(size_t) b]);
@@ -2753,15 +2820,15 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
         readCrossovers (cuts.data());
         readSlopes (slopes.data());
         splitter.setBandCount (numBands, cuts.data(), slopes.data());
-        for (int b = 0; b < triad::maxBands; ++b) prepareBand (b, false);
+        for (int b = 0; b <= preBand; ++b) prepareBand (b, false);
         resetDelays();
         alignLatency();
         startFadeIn();
     }
     // LFO undo lists stay with their LFOs.
     for (auto& previous : old)
-        for (int b = 0; b < count; ++b)
-            if (bands[(size_t) b]->serial == previous->serial)
+        for (int b = 0; b <= preBand; ++b)
+            if (inUse (b) && bands[(size_t) b]->serial == previous->serial)
                 for (auto& l : bands[(size_t) b]->lfos)
                     if (auto* before = previous->findLfo (l->id)) { l->undo = std::move (before->undo); l->redo = std::move (before->redo); }
     for (auto& band : old)
@@ -2777,15 +2844,16 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
             if (current != k.state) s->effect->setStateInformation (k.state.getData(), (int) k.state.getSize());
         }
     // Effects that are gone are loaded again.
-    for (int b = 0; b < count; ++b)
-        for (auto& load : loads[(size_t) b]) installFromXml (b, load.slot, *load.node, false);
+    for (int b = 0; b <= preBand; ++b)
+        if (inUse (b))
+            for (auto& load : loads[(size_t) b]) installFromXml (b, load.slot, *load.node, false);
     {
         const juce::ScopedLock lock (gate);
-        for (int b = 0; b < count; ++b) bands[(size_t) b]->relink();
+        for (int b = 0; b <= preBand; ++b) if (inUse (b)) bands[(size_t) b]->relink();
         alignLatency();
     }
     // Knobs the settings did not bring back (some effects keep a few out of them) are set as they were.
-    for (int b = 0; b < count; ++b)
+    for (int b = 0; b <= preBand; ++b)
         for (auto& load : withEffects[(size_t) b])
             if (auto* s = slotAt (b, load.slot); s != nullptr && s->effect != nullptr && s->pendingRequest == 0)
                 if (auto* knobsXml = load.node->getChildByName ("Knobs"))
@@ -2807,8 +2875,9 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
     historyDirty = false;
     historyRefresh = true;
     lastChange = juce::Time::getMillisecondCounterHiRes();
-    for (int b = 0; b < count && ! historyAwaitingLoads; ++b)
-        for (auto& s : bands[(size_t) b]->slots) if (s->pendingRequest != 0) historyAwaitingLoads = true;
+    for (int b = 0; b <= preBand && ! historyAwaitingLoads; ++b)
+        if (inUse (b))
+            for (auto& s : bands[(size_t) b]->slots) if (s->pendingRequest != 0) historyAwaitingLoads = true;
     stateChanged();   // the host's project changed (not a new undo step: historyApplying is set)
 }
 

@@ -680,11 +680,12 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             if (maxSeconds > 0.0 && elapsed > maxSeconds) { timeLimit = true; break; }
             const auto opStart = juce::Time::getMillisecondCounterHiRes();
             const int bands = p.getBandCount();
-            const int band = r.nextInt (bands);
+            // One edit in eight is on the PRE chain (every slot, LFO and link function takes it as a band).
+            const int band = r.nextInt (8) == 0 ? TriadProcessor::preBand : r.nextInt (bands);
             const int slots = p.getSlotCount (band);
             const int slot = r.nextInt (slots);
             const int effects = loadedCount (p);
-            int choice = r.nextInt (152);
+            int choice = r.nextInt (158);
             if (effects >= maxEffects && choice < 30) choice = 30 + r.nextInt (70);   // full: edit or remove instead
             juce::String name;
             auto begin = [&] (const char* what, const juce::String& extra = {})
@@ -925,6 +926,39 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                     row.mouseUp (at (endY, true));
                 }
                 else p.moveSlotTo (band, slot, to);
+            }
+            else if (choice >= 152 && choice < 155)
+            {
+                begin ("all dividers: hard wall / default / soft");
+                const int orders[] { triad::CrossoverFilter::maxOrder, triad::CrossoverFilter::defaultOrder, triad::CrossoverFilter::minOrder,
+                                     1 + r.nextInt (triad::CrossoverFilter::maxOrder) };
+                p.setAllCrossoverSlopes (orders[r.nextInt (4)]);
+            }
+            else if (choice >= 155)
+            {
+                // PRE: an effect loaded into it, one removed, or its strip opened / closed in Triad's window.
+                begin ("PRE chain");
+                constexpr int pre = TriadProcessor::preBand;
+                const int preSlots = p.getSlotCount (pre);
+                switch (r.nextInt (4))
+                {
+                    case 0:
+                    case 1:
+                        if (effects < maxEffects - 5)
+                        {
+                            const auto& d = pool.effects[(size_t) r.nextInt ((int) pool.effects.size())];
+                            if (p.loadEffect (pre, r.nextBool() ? preSlots : r.nextInt (preSlots), d, false).isNotEmpty()) ++failedLoads;
+                        }
+                        break;
+                    case 2: p.removeSlot (pre, r.nextInt (preSlots)); break;
+                    default:
+                        if (auto* e = dynamic_cast<TriadEditor*> (editor.get()))
+                        {
+                            e->setTab (TriadEditor::Tab::bands);
+                            e->togglePre();
+                        }
+                        break;
+                }
             }
             else if (choice >= 146)
             {

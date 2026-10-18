@@ -928,7 +928,7 @@ void LfoPage::generate()
 juce::String LfoPage::signature() const
 {
     juce::String s;
-    s << processor.getBandCount() << ":" << processor.getStructureVersion() << ":";
+    s << processor.getBandCount() << ":" << processor.getStructureVersion() << ":" << (processor.hasPreEffects() ? "P" : "-") << ":";
     for (int i = 0; i < processor.getLfoCount (band); ++i)
     {
         const auto l = processor.getLfoInfo (band, i);
@@ -940,7 +940,7 @@ juce::String LfoPage::signature() const
 }
 void LfoPage::select (int b, int l)
 {
-    band = juce::jlimit (0, juce::jmax (0, processor.getBandCount() - 1), b);
+    band = b == TriadProcessor::preBand ? b : juce::jlimit (0, juce::jmax (0, processor.getBandCount() - 1), b);
     lfo = juce::jlimit (0, juce::jmax (0, processor.getLfoCount (band) - 1), l);
     editor.setTarget (band, lfo);
     builtSignature.clear();
@@ -948,7 +948,11 @@ void LfoPage::select (int b, int l)
 }
 void LfoPage::startLearn()
 {
-    if (! processor.beginParameterLearn (band, lfo)) { processor.setStatus ("LEARN: this band has no effect loaded"); return; }
+    if (! processor.beginParameterLearn (band, lfo))
+    {
+        processor.setStatus (band == TriadProcessor::preBand ? "LEARN: PRE has no effect loaded" : "LEARN: this band has no effect loaded");
+        return;
+    }
     // With a single effect in the band, open its window to move a knob in.
     int loaded = -1, count = 0;
     for (int s = 0; s < processor.getSlotCount (band); ++s)
@@ -963,9 +967,9 @@ void LfoPage::refresh()
         if (processor.pollParameterLearn() >= 0) rebuild();
         updateToolbar();
     }
-    if (band >= processor.getBandCount() || lfo >= processor.getLfoCount (band))
+    if (! processor.isValidBand (band) || lfo >= processor.getLfoCount (band))
     {
-        band = juce::jmin (band, processor.getBandCount() - 1);
+        if (! processor.isValidBand (band)) band = juce::jmin (band, processor.getBandCount() - 1);
         lfo = juce::jlimit (0, juce::jmax (0, processor.getLfoCount (band) - 1), lfo);
         editor.setTarget (band, lfo);
     }
@@ -978,12 +982,15 @@ void LfoPage::rebuild()
     builtSignature = signature();
     editor.setTarget (band, lfo);
     bandButtons.clear();
-    for (int b = 0; b < processor.getBandCount(); ++b)
+    // PRE first (when it has effects, or is the one shown), then the bands.
+    const bool withPre = processor.hasPreEffects() || band == TriadProcessor::preBand;
+    for (int b = withPre ? -1 : 0; b < processor.getBandCount(); ++b)
     {
-        auto button = std::make_unique<juce::TextButton> ("BAND " + juce::String (b + 1));
-        button->setColour (juce::TextButton::buttonColourId, b == band ? bandColour (b).withAlpha (0.85f) : slotRow);
-        button->setColour (juce::TextButton::textColourOffId, b == band ? juce::Colour (0xff111312) : bandColour (b));
-        button->onClick = [this, b] { select (b, processor.getBandLfo (b)); };
+        const int index = b < 0 ? TriadProcessor::preBand : b;
+        auto button = std::make_unique<juce::TextButton> (b < 0 ? juce::String ("PRE") : "BAND " + juce::String (b + 1));
+        button->setColour (juce::TextButton::buttonColourId, index == band ? bandColour (index).withAlpha (0.85f) : slotRow);
+        button->setColour (juce::TextButton::textColourOffId, index == band ? juce::Colour (0xff111312) : bandColour (index));
+        button->onClick = [this, index] { select (index, juce::jmax (0, processor.getBandLfo (index))); };
         addAndMakeVisible (*button);
         bandButtons.push_back (std::move (button));
     }
@@ -1167,7 +1174,7 @@ void LfoPage::paint (juce::Graphics& g)
     g.drawText ("ROUTING", header.removeFromTop (16), juce::Justification::centredLeft);
     g.setColour (textColour);
     g.setFont (juce::FontOptions (12.0f));
-    g.drawText ("Band " + juce::String (band + 1) + u8 (" \xc2\xb7 ") + info.name + u8 (" \xe2\x86\x92"), header.removeFromTop (18),
+    g.drawText ((band == TriadProcessor::preBand ? juce::String ("PRE") : "Band " + juce::String (band + 1)) + u8 (" \xc2\xb7 ") + info.name + u8 (" \xe2\x86\x92"), header.removeFromTop (18),
                 juce::Justification::centredLeft);
     g.setColour (dimTextColour);
     g.setFont (juce::FontOptions (11.0f));

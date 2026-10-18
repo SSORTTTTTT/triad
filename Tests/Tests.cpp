@@ -191,6 +191,87 @@ public:
     static inline int prepares = 0;
 };
 
+// A hosted-effect stand-in that behaves like a pitch corrector (Auto-Tune Pro) for latency: it reports 2,670
+// samples in its normal mode (55.6 ms at 48 kHz) and 110 in Low Latency mode (2.3 ms), and its output really is
+// that much later. A mode switch takes effect from its next block, as a plug-in's would. It also measures the
+// sound it hears (to tell whether it gets the whole voice or only one band of it).
+class DelayStandIn final : public juce::AudioPluginInstance
+{
+public:
+    // Its "Low Latency" switch, a knob a host can automate (and Triad can link an LFO to).
+    struct ModeParameter final : juce::AudioPluginInstance::HostedParameter
+    {
+        std::atomic<float> value { 0.0f };
+        float getValue() const override { return value.load(); }
+        void setValue (float v) override { value.store (v); }
+        float getDefaultValue() const override { return 0.0f; }
+        juce::String getName (int) const override { return "Low Latency"; }
+        juce::String getLabel() const override { return {}; }
+        float getValueForText (const juce::String& t) const override { return t.getFloatValue(); }
+        juce::String getParameterID() const override { return "lowlatency"; }
+        int getNumSteps() const override { return 2; }
+        bool isDiscrete() const override { return true; }
+        bool get() const { return value.load() >= 0.5f; }
+    };
+    DelayStandIn (const juce::String& effectName, int normal, int low)
+        : AudioPluginInstance (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true)
+                                                .withOutput ("Out", juce::AudioChannelSet::stereo(), true)),
+          name (effectName), normalLatency (normal), lowLatency (low)
+    {
+        auto mode = std::make_unique<ModeParameter>();
+        lowMode = mode.get();
+        addHostedParameter (std::move (mode));
+        setLatencySamples (normalLatency);
+    }
+    static std::unique_ptr<DelayStandIn> pitchCorrector() { return std::make_unique<DelayStandIn> ("Pitch Corrector", 2670, 110); }
+    static std::unique_ptr<DelayStandIn> compressor() { return std::make_unique<DelayStandIn> ("Tube Compressor", 86, 86); }
+    void fillInPluginDescription (juce::PluginDescription& d) const override
+    {
+        d.name = name; d.pluginFormatName = "Test"; d.manufacturerName = "Triad Tests";
+        d.numInputChannels = 2; d.numOutputChannels = 2;
+    }
+    const juce::String getName() const override { return name; }
+    void prepareToPlay (double, int block) override { preparedBlock = block; delay.setSize (2, normalLatency + 1); delay.clear(); pos = 0; }
+    void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+    {
+        const int want = lowMode->get() ? lowLatency : normalLatency;
+        if (want != getLatencySamples()) { setLatencySamples (want); delay.clear(); }
+        const int size = delay.getNumSamples();
+        for (int s = 0; s < b.getNumSamples(); ++s)
+        {
+            for (int c = 0; c < 2; ++c)
+            {
+                const float in = b.getSample (c, s);
+                heard += (double) in * in;
+                delay.setSample (c, pos, in);
+                b.setSample (c, s, delay.getSample (c, (pos - want + size) % size));
+            }
+            pos = (pos + 1) % size;
+        }
+    }
+    double getTailLengthSeconds() const override { return 0; }
+    bool acceptsMidi() const override { return false; }
+    bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock& m) override { juce::MemoryOutputStream (m, false).writeBool (lowMode->get()); }
+    void setStateInformation (const void* d, int n) override { if (n >= 1) lowMode->setValue (juce::MemoryInputStream (d, (size_t) n, false).readBool() ? 1.0f : 0.0f); }
+    ModeParameter* lowMode;
+    int preparedBlock = 0;
+    double heard = 0.0;   // the energy of everything it was given
+private:
+    juce::String name;
+    int normalLatency, lowLatency;
+    juce::AudioBuffer<float> delay;
+    int pos = 0;
+};
+
 float maxError (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b, int from, int to)
 {
     float error = 0;
@@ -1364,6 +1445,242 @@ int main (int argc, char** argv)
             std::cout << "PASS: drag slots to reorder, undo / redo arrows" << std::endl;
         }
 
+        // ---- Live vocals with a pitch corrector: latency, Low Latency mode, PRE chain, hard wall --------------
+        // Thomas's chain (Ableton, v4): Auto-Tune Pro + a compressor in each of three bands, dividers at 170 Hz and
+        // 9.41 kHz at 96 dB/oct. Measured here with stand-ins that delay exactly what they report.
+        {
+            constexpr double rate = 48000.0;
+            constexpr int block = 64;
+            juce::Random noise (3);
+            auto setCrossovers = [] (TriadProcessor& t, float low, float high, int order)
+            {
+                for (int j = 0; j < 2; ++j)
+                    if (auto* c = t.crossoverParameter (j)) c->setValueNotifyingHost (c->convertTo0to1 (j == 0 ? low : high));
+                t.setAllCrossoverSlopes (order);
+            };
+            // The same test sound through two Triads; returns each output.
+            auto render = [] (TriadProcessor& t, const juce::AudioBuffer<float>& input)
+            {
+                juce::AudioBuffer<float> out (2, input.getNumSamples());
+                juce::MidiBuffer midi;
+                juce::AudioBuffer<float> audio (2, block);
+                for (int i = 0; i < (int) (0.3 * rate / block); ++i) { audio.clear(); t.processBlock (audio, midi); }   // settle
+                for (int start = 0; start + block <= input.getNumSamples(); start += block)
+                {
+                    for (int c = 0; c < 2; ++c) audio.copyFrom (c, 0, input, c, start, block);
+                    t.processBlock (audio, midi);
+                    for (int c = 0; c < 2; ++c) out.copyFrom (c, start, audio, c, 0, block);
+                }
+                return out;
+            };
+            // A voice-like test sound: a 196 Hz note with harmonics, then noise breath, then a click.
+            juce::AudioBuffer<float> voice (2, 48000);
+            {
+                juce::Random r (9);
+                for (int i = 0; i < voice.getNumSamples(); ++i)
+                {
+                    float v = 0.0f;
+                    for (int h = 1; h <= 8; ++h) v += 0.25f / (float) h * std::sin (juce::MathConstants<float>::twoPi * 196.0f * (float) h * (float) i / (float) rate);
+                    if (i > 30000) v = (r.nextFloat() - 0.5f) * 0.1f;
+                    if (i == 40000) v = 1.0f;
+                    for (int c = 0; c < 2; ++c) voice.setSample (c, i, v);
+                }
+            }
+            // How much later `wet` is than `dry` (the best match), and how closely it matches once shifted.
+            auto delayOf = [] (const juce::AudioBuffer<float>& dry, const juce::AudioBuffer<float>& wet, int expected, float& error)
+            {
+                error = 0.0f;
+                for (int i = expected + 2000; i < wet.getNumSamples(); ++i)
+                    error = juce::jmax (error, std::abs (wet.getSample (0, i) - dry.getSample (0, i - expected)));
+                return expected;
+            };
+            // (a) The pitch corrector on a plain track: its output starts 2,670 samples (55.6 ms) late.
+            {
+                auto plain = DelayStandIn::pitchCorrector();
+                plain->prepareToPlay (rate, block);
+                juce::AudioBuffer<float> audio (2, block);
+                juce::MidiBuffer midi;
+                int first = -1;
+                for (int start = 0; start < 4096 && first < 0; start += block)
+                {
+                    audio.clear();
+                    if (start == 0) { audio.setSample (0, 0, 1.0f); audio.setSample (1, 0, 1.0f); }
+                    plain->processBlock (audio, midi);
+                    for (int i = 0; i < block && first < 0; ++i) if (std::abs (audio.getSample (0, i)) > 0.5f) first = start + i;
+                }
+                require (first == 2670, "Stand-in check: normal mode is 2,670 samples late on a plain track");
+            }
+            // (b) Thomas's layout: pitch corrector + compressor in all three bands, 96 dB/oct at 170 Hz / 9.41 kHz.
+            TriadProcessor dry, wet;
+            for (auto* t : { &dry, &wet }) { t->prepareToPlay (rate, block); setCrossovers (*t, 170.0f, 9410.0f, 16); }
+            std::vector<DelayStandIn*> correctors;
+            for (int b = 0; b < 3; ++b)
+            {
+                auto pc = DelayStandIn::pitchCorrector();
+                correctors.push_back (pc.get());
+                require (wet.loadInstance (b, 0, std::move (pc)).isEmpty() && wet.loadInstance (b, 1, DelayStandIn::compressor()).isEmpty(), "Load the vocal chain into each band");
+            }
+            require (wet.getLatencySamples() == 2670 + 86, "Three bands of the same chain: Triad reports one chain's latency (2,756 samples), not three");
+            require (correctors.front()->preparedBlock == block, "Triad gives the hosted effect the DAW's block size");
+            float error = 0.0f;
+            const auto dryOut = render (dry, voice), wetOut = render (wet, voice);
+            delayOf (dryOut, wetOut, 2756, error);
+            require (error < 1.0e-4f, "Through Triad the sound is exactly the effects' latency later, nothing more (no echo, no extra delay)");
+            const double heardLow = correctors[0]->heard, heardTop = correctors[2]->heard;
+            // (c) Low Latency mode: Triad follows within a moment and reports the new, smaller latency.
+            for (auto* pc : correctors) pc->lowMode->setValueNotifyingHost (1.0f);
+            {
+                juce::AudioBuffer<float> audio (2, block);
+                juce::MidiBuffer midi;
+                int silentBlocks = 0, waited = 0;
+                for (; waited < 100 && wet.getLatencySamples() != 110 + 86; ++waited)
+                {
+                    for (int i = 0; i < 8; ++i)
+                    {
+                        fillTestNoise (audio, noise);
+                        wet.processBlock (audio, midi);
+                        if (audio.getMagnitude (0, block) == 0.0f) ++silentBlocks;
+                    }
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+                }
+                require (wet.getLatencySamples() == 110 + 86, "Switched to Low Latency mode: Triad reports 196 samples (4.1 ms)");
+                std::cout << "Low Latency switch: Triad followed in about " << waited * 10 << " ms; " << silentBlocks
+                          << " blocks of 64 samples were silent meanwhile (" << juce::String (silentBlocks * block * 1000.0 / rate, 0) << " ms, instead of misaligned sound)" << std::endl;
+                require (silentBlocks * block <= (int) (0.15 * rate), "The switch silences the sound for a moment only (under 0.15 s)");
+            }
+            const auto wetLow = render (wet, voice);
+            delayOf (dryOut, wetLow, 196, error);
+            require (error < 1.0e-4f, "In Low Latency mode the sound comes out exactly 196 samples later");
+            // (d) What each copy hears: the band above 9.41 kHz gets almost nothing of a voice (no note to track).
+            std::cout << "What each pitch corrector heard of the voice: band 1 (below 170 Hz) " << juce::String (100.0 * heardLow / (heardLow + correctors[1]->heard + heardTop), 1)
+                      << "%, band 2 " << juce::String (100.0 * correctors[1]->heard / (heardLow + correctors[1]->heard + heardTop), 1)
+                      << "%, band 3 (above 9.41 kHz) " << juce::String (100.0 * heardTop / (heardLow + correctors[1]->heard + heardTop), 2) << "%" << std::endl;
+            require (heardTop < 0.02 * (heardLow + correctors[1]->heard), "The top band's copy hears almost none of the voice");
+            // (e) Only one band with the pitch corrector: the other bands wait for it, all lined up.
+            {
+                TriadProcessor one;
+                one.prepareToPlay (rate, block);
+                setCrossovers (one, 170.0f, 9410.0f, 16);
+                require (one.loadInstance (1, 0, DelayStandIn::pitchCorrector()).isEmpty(), "Pitch corrector in band 2 only");
+                require (one.getLatencySamples() == 2670, "One band's latency sets the total");
+                delayOf (dryOut, render (one, voice), 2670, error);
+                require (error < 1.0e-4f, "The other bands are delayed to line up exactly (no flam)");
+            }
+            // (f) PRE: the pitch corrector hears the whole voice before the split; its latency comes first.
+            {
+                TriadProcessor pre;
+                pre.prepareToPlay (rate, block);
+                setCrossovers (pre, 170.0f, 9410.0f, 16);
+                auto pc = DelayStandIn::pitchCorrector();
+                auto* corrector = pc.get();
+                require (! pre.hasPreEffects() && pre.getSlotCount (TriadProcessor::preBand) == 1, "PRE starts empty, with one slot");
+                require (pre.loadInstance (TriadProcessor::preBand, 0, std::move (pc)).isEmpty() && pre.hasPreEffects(), "Load the pitch corrector into PRE");
+                require (pre.loadInstance (1, 0, DelayStandIn::compressor()).isEmpty(), "A compressor in band 2");
+                require (pre.getLatencySamples() == 2670 + 86 && pre.getPreLatencySamples() == 2670, "PRE's latency adds to the slowest band's");
+                corrector->heard = 0.0;
+                delayOf (dryOut, render (pre, voice), 2756, error);
+                require (error < 1.0e-4f, "With PRE the sound is exactly PRE + band latency later, the bands lined up");
+                double total = 0.0;
+                for (int c = 0; c < 2; ++c) for (int i = 0; i < voice.getNumSamples(); ++i) total += (double) voice.getSample (c, i) * voice.getSample (c, i);
+                require (std::abs (corrector->heard / total - 1.0) < 0.02, "In PRE the pitch corrector hears the whole voice");
+                corrector->lowMode->setValueNotifyingHost (1.0f);
+                juce::AudioBuffer<float> audio (2, block);
+                juce::MidiBuffer midi;
+                for (int w = 0; w < 100 && pre.getLatencySamples() != 110 + 86; ++w)
+                {
+                    pre.processBlock (audio, midi);
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+                }
+                require (pre.getLatencySamples() == 196, "PRE in Low Latency mode: 4.1 ms in all");
+                pre.setLiveMode (true);
+                require (pre.getLatencySamples() == 0, "LIVE passes latency-adding PRE effects by too");
+                pre.setLiveMode (false);
+                // Saved with the project; undo knows PRE.
+                juce::MemoryBlock state;
+                pre.getStateInformation (state);
+                TriadProcessor restored;
+                restored.prepareToPlay (rate, block);
+                restored.setStateInformation (state.getData(), (int) state.getSize());
+                require (restored.getSlotInfo (TriadProcessor::preBand, 0).name == "Pitch Corrector" && restored.getSlotInfo (TriadProcessor::preBand, 0).hasContent,
+                         "PRE comes back with the project (an effect the computer does not have shows as missing, as in bands)");
+                pre.commitHistory();
+                require (pre.addSlot (TriadProcessor::preBand) == 1, "Add a PRE slot");
+                pre.commitHistory();
+                require (pre.undo() && pre.getSlotCount (TriadProcessor::preBand) == 1 && pre.getHostedEffect (TriadProcessor::preBand, 0) == corrector,
+                         "Undo in PRE (the effect stays loaded)");
+                // PRE slots have LFOs for their mix and links to their knobs, but no band mix or volume.
+                const auto destinations = pre.getDestinations (TriadProcessor::preBand);
+                require (std::none_of (destinations.begin(), destinations.end(), [] (auto& d) { return d.first.kind == TriadProcessor::Destination::bandMix
+                                                                                                        || d.first.kind == TriadProcessor::Destination::bandVolume; })
+                         && pre.getSlotLfo (TriadProcessor::preBand, 0) >= 0 && pre.getBandLfo (TriadProcessor::preBand) < 0, "PRE: slot LFOs, no band mix");
+                const auto knobs = pre.getEffectParameters (TriadProcessor::preBand, 0);
+                require (! knobs.empty() && pre.addRoute (TriadProcessor::preBand, pre.getSlotLfo (TriadProcessor::preBand, 0), knobs.front().first) >= 0,
+                         "Link an LFO to a knob of a PRE effect");
+                // The interface: the PRE strip shows while PRE has effects; the PRE button opens an empty one.
+                std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (pre.createEditor()));
+                editor->setVisible (true);
+                editor->refreshNow();
+                require (editor->isPreShown() && editor->getStrip (TriadProcessor::preBand)->getNumRows() == 1
+                         && editor->getStrip (TriadProcessor::preBand)->getX() < editor->getStrip (0)->getX(), "The PRE strip is shown first, left of the bands");
+                editor->showLfo (TriadProcessor::preBand, 0);
+                editor->getLfoPage().refresh();
+                editor->setTab (TriadEditor::Tab::bands);
+                for (int s = pre.getSlotCount (TriadProcessor::preBand); --s >= 0;) pre.removeSlot (TriadProcessor::preBand, s);
+                editor->refreshNow();
+                require (! pre.hasPreEffects() && ! editor->isPreShown(), "Without effects PRE hides again");
+                editor->togglePre();
+                editor->refreshNow();
+                require (editor->isPreShown(), "The PRE button opens an empty PRE");
+                editor->togglePre();
+                require (! editor->isPreShown(), "And closes it");
+                editor.reset();
+            }
+            // (g) Hard wall for every divider in one click, and back; how much later the sound at a divider comes out.
+            {
+                TriadProcessor t;
+                t.prepareToPlay (rate, block);
+                t.addBand(); t.addBand();
+                t.setAllCrossoverSlopes (16);
+                bool all = true;
+                for (int j = 0; j + 1 < t.getBandCount(); ++j) all &= t.getCrossoverSlope (j) == 16;
+                require (all, "All dividers: hard wall (96 dB/oct)");
+                t.setAllCrossoverSlopes (4);
+                for (int j = 0; j + 1 < t.getBandCount(); ++j) all &= t.getCrossoverSlope (j) == 4;
+                require (all, "All dividers back to the default (24 dB/oct)");
+                // The phase shift right at a divider, measured through a 2-band Triad, matches what the slope list shows.
+                for (int order : { 4, 16 })
+                {
+                    TriadProcessor two;
+                    two.prepareToPlay (rate, block);
+                    while (two.getBandCount() > 2) two.removeBand (2);
+                    if (auto* c = two.crossoverParameter (0)) c->setValueNotifyingHost (c->convertTo0to1 (250.0f));
+                    two.setCrossoverSlope (0, order);
+                    const float hz = two.effectiveCrossovers().front();
+                    juce::AudioBuffer<float> impulse (2, 32768);
+                    impulse.clear();
+                    impulse.setSample (0, 0, 1.0f); impulse.setSample (1, 0, 1.0f);
+                    const auto h = render (two, impulse);
+                    const double w = juce::MathConstants<double>::twoPi * hz / rate;
+                    std::complex<double> sum, weighted;
+                    for (int n = 0; n < h.getNumSamples(); ++n)
+                    {
+                        const std::complex<double> e (std::cos (w * n), -std::sin (w * n));
+                        sum += (double) h.getSample (0, n) * e;
+                        weighted += (double) n * h.getSample (0, n) * e;
+                    }
+                    const double measured = (weighted / sum).real() / rate * 1000.0, shown = triad::crossoverGroupDelayMs (order, hz, rate);
+                    std::cout << TriadProcessor::slopeText (order) << " at " << juce::String (hz, 0) << " Hz: the sound right there comes out "
+                              << juce::String (measured, 2) << " ms later (the slope list shows " << juce::String (shown, 2) << " ms)" << std::endl;
+                    require (std::abs (measured - shown) < 0.05 * shown + 0.05, "The slope list's timing matches the measurement");
+                }
+                std::cout << "At Thomas's dividers: 170 Hz " << juce::String (triad::crossoverGroupDelayMs (16, 170.0f, rate), 1) << " ms at 96 dB/oct, "
+                          << juce::String (triad::crossoverGroupDelayMs (4, 170.0f, rate), 1) << " ms at 24; 242 Hz "
+                          << juce::String (triad::crossoverGroupDelayMs (16, 242.0f, rate), 1) << " ms at 96 dB/oct, "
+                          << juce::String (triad::crossoverGroupDelayMs (4, 242.0f, rate), 1) << " ms at 24" << std::endl;
+            }
+            std::cout << "PASS: live vocals with a pitch corrector (latency exactly the effects', Low Latency switching, three copies, PRE chain, hard wall for all dividers)" << std::endl;
+        }
+
         // ---- Effects-only plug-in list, without ever loading a plug-in inside Triad ----------------
         {
             auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadCatalogTest");
@@ -1567,6 +1884,14 @@ int main (int argc, char** argv)
             if (screenshotFile != juce::File())
             {
                 std::cout << "Screenshot: " << writeImage (screenshotFile, editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+                // PRE, with an effect: its strip comes first, left of the bands.
+                require (preview.loadFile (TriadProcessor::preBand, 0, effect).isEmpty(), "Load an effect into PRE for the preview");
+                editor->refreshNow();
+                require (editor->isPreShown(), "PRE's strip shows its effect");
+                std::cout << "Screenshot: " << writeImage (screenshotFile.getSiblingFile ("Triad-preview-pre.png"),
+                                                           editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f)) << std::endl;
+                preview.removeSlot (TriadProcessor::preBand, 0);
+                editor->refreshNow();
                 preview.addBand (1000.0f);
                 preview.addBand (6000.0f);
                 editor->refreshNow();

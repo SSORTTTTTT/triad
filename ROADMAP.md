@@ -4,41 +4,48 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Next build — Triad v6 (0.7.0): Auto-Tune and live vocals (Thomas, 2026-10-18)
+## Current testing version — 0.7.0 ("Triad v6"): Auto-Tune and live vocals
 
-Thomas tested v4 on a raw vocal with Auto-Tune Pro (retune speed 0), Fresh Air, an LA-2A compressor and a basic EQ,
-split into three bands: it "works pretty good", but there was a lot of latency with Auto-Tune in its normal mode
-(the same four plug-ins straight on a track felt instant), and its Low Latency mode made little difference apart
-from some warbling. First thing for the next build:
+0.7.0 (2026-10-18), from Thomas's vocal test with v4 (Ableton): Auto-Tune Pro (retune speed 0), UADx LA-2A, Fresh Air
+and a 3-band EQ in each of three bands, dividers at 170 Hz and 9.41 kHz at 96 dB/oct. It "works pretty good", but in
+Auto-Tune's normal mode there was a lot of latency, and Low Latency mode brought some warbling.
 
-- **Thomas's screenshots (Ableton, v4 0.5.0):** the same chain in all three bands (Auto-Tune Pro, UADx LA-2A, Fresh
-  Air, kHs 3-Band EQ), crossovers at 96 dB/oct. Auto-Tune Pro reports **55.6 ms** in its normal mode (2.3 ms in Low
-  Latency mode) and the LA-2A 1.8 ms, so each band is 57.4 ms (4.1 ms in Low Latency mode) and so is Triad's total:
-  exactly the effects' own latency, nothing added by Triad. Auto-Tune in band 3 (above 5.6-9.4 kHz) hears only breath
-  and "s", and the three copies correct separately: the likely warble. For now: Auto-Tune once, on the track before
-  Triad (or in a 1-band Triad), in Low Latency mode for tracking.
-- **Fixed for v6 (found in the screenshots):** latency readouts of 10 ms and more showed every decimal ("57.4375 ms
-  latency", "55.625ms", "57.43..." on the LAT meter); now whole milliseconds ("57 ms").
-- **Find where the delay comes from, measured.** Triad itself adds 0 samples (measured on every CI run); it reports
-  and lines the bands up to what the hosted effects report. Compare, in FL Studio and Ableton, the same chain on a
-  plain track and inside Triad: the latency each reports, the delay actually heard (an impulse through each),
-  AU vs VST3, Auto-Tune's normal vs Low Latency mode (does Triad pass the new, lower latency on straight away, and
-  does the DAW take it?), and what Triad gives the hosted effect (sample rate, block size, offline/real-time flags)
-  compared with what the DAW gives it directly. Thomas's LAT tooltip (per band, per effect) from v5 is the first clue.
-- **Free pitch correctors in the CI stress tests** (e.g. MAutoPitch, Graillon's free edition, if their installers
-  can be fetched), to test pitch correction inside Triad: latency reported vs heard, Low Latency switching, warble.
-- **PRE chain:** a full-range chain of slots before the bands split (and maybe a POST chain after they come back
-  together), for effects that need the whole voice: pitch correction, a de-esser, a gate, the first EQ. Auto-Tune
-  in a band only hears that band's part of the voice (the note is in the low band; the high bands are mostly breath
-  and "s"), so each copy tracks differently and the corrected parts no longer line up: likely the warble. Latency of
-  effects in different bands does not add up (bands play side by side); in the PRE chain it simply adds once.
-- **Hard wall for every divider in one click** (Thomas): "All dividers: hard wall (96 dB/oct)" and "All dividers:
-  soft / default" in the display's right-click menu and the slope list, keeping the sloping as it is. Each divider
-  can already be set to 96 dB/oct. (A true brickwall made with linear-phase filters would add latency, so not for
-  live vocals.)
-- Maybe: a **1-band / full-range** switch (no split at all) for chains that should not be split.
+What the screenshots and the new tests showed:
+- **The latency is Auto-Tune's own.** Auto-Tune Pro reports 55.6 ms in its normal mode (2.3 ms in Low Latency mode),
+  the LA-2A 1.8 ms: 57.4 ms per band (4.1 ms), and Triad reports exactly that, adding nothing. The new test does the
+  same with stand-ins that delay exactly what they report: through Triad the sound comes out exactly the effects'
+  latency later (no echo, no extra delay), three copies in three bands cost one copy's latency, a band without the
+  effect is lined up exactly, and Triad gives the effect the DAW's block size. The same effect on a plain track is just
+  as late, so a plain track that felt instant most likely had Auto-Tune in Low Latency mode, or was heard through the
+  audio interface's own monitoring.
+- **The warble:** each band's copy of Auto-Tune hears only its part of the voice (in the test, band 3 above 9.41 kHz
+  got 0.4% of a sung note), and the copies correct separately.
+- **Steep dividers delay the voice's low notes:** right at a divider the sound comes out later, more with steeper
+  slopes: at 170 Hz 17 ms at 96 dB/oct, 2.6 ms at 24 (at 242 Hz: 12 ms and 1.9 ms). Not latency (Triad reports none
+  and the rest of the voice is on time), but a voice's lowest notes trailing behind can feel like it.
 
-## Current testing version — 0.6.0 ("Triad v5")
+New in 0.7.0:
+- **PRE**: a chain of effects on the whole sound before the split, for pitch correction, a de-esser, a gate, the first
+  EQ. PRE button beside + BAND; its strip comes first, left of the bands; slots, mix knobs, LFOs, links to knobs,
+  LEARN, copy / paste plugin state, dragging, undo; no band mix or volume. Its latency comes first and adds to every
+  band's; LIVE passes its latency-adding effects by too. Saved with projects (older projects open with PRE empty).
+- **All dividers in one click:** "All dividers: hard wall (96 dB/oct)", "default (24)" and "soft (6)" in every slope
+  list and in a band's right-click menu.
+- **Each slope in the list shows its timing** at that divider (how much later the sound there comes out), computed
+  from the filters and checked against a measurement in the tests.
+- **Faster when an effect changes its latency** (Auto-Tune's Low Latency switch): Triad lines up again within about
+  35 ms (was up to 200 ms), silent for that moment rather than out of line.
+- Latency readouts of 10 ms and more in whole milliseconds ("57 ms", was "57.4375 ms latency").
+- For tracking: Auto-Tune once, in PRE, in Low Latency mode; dividers in the voice's low notes at 24 dB/oct or softer.
+
+Still to do from this list:
+- Measure Thomas's exact chain in FL Studio and Ableton on the Mac (plain track vs Triad, AU vs VST3) once he has
+  tried v6, and **free pitch correctors in the CI stress tests** (MAutoPitch, Graillon's free edition, if their
+  installers can be fetched), for latency reported vs heard with a real pitch corrector.
+- Maybe a **POST** chain (after the bands come back together, e.g. a limiter), and PRE in the MATRIX tab.
+- Maybe a **1-band / full-range** switch (no split at all) for chains that should not be split.
+
+### 0.6.0 ("Triad v5")
 
 0.6.0 (2026-10-17), from Thomas's notes after 0.5.0:
 - **LFOs on the knobs inside your effects.** In the LFO page, **+ ROUTE TO...** lists every knob inside the band's effects
