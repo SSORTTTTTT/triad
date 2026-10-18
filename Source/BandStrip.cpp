@@ -29,7 +29,7 @@ double SlotRow::latencyMs (int samples) const { return 1000.0 * samples / juce::
 juce::String SlotRow::latencyText (int samples) const
 {
     const double ms = latencyMs (samples);
-    return juce::String (ms, ms < 10.0 ? 1 : 0) + " ms";
+    return formatMs (ms);
 }
 void SlotRow::update (const TriadProcessor::SlotInfo& next, int slotCount)
 {
@@ -483,7 +483,7 @@ void BandStrip::paint (juce::Graphics& g)
         const double ms = 1000.0 * chainLatency / juce::jmax (1.0, processor.getSampleRateForDisplay());
         g.setColour (ms >= 10.0 ? juce::Colour (0xffe8705c) : juce::Colour (0xffe8b35c));
         g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-        g.drawText (juce::String (ms, ms < 10.0 ? 1 : 0) + " ms latency", left, footerTop + 74, 90, 14, juce::Justification::centredLeft);
+        g.drawText (formatMs (ms) + " latency", left, footerTop + 74, 90, 14, juce::Justification::centredLeft);
     }
     g.setColour (juce::Colour (0xffa5afa2)); g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
     g.drawText ("BAND MIX", getWidth() - 80, footerTop + 70, 70, 16, juce::Justification::centred);

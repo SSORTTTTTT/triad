@@ -1076,6 +1076,9 @@ int main (int argc, char** argv)
             }
             q.setLiveMode (false);
             require (! q.isLiveMode() && q.getLatencySamples() == 73 && ! q.getSlotInfo (1, 0).liveBypassed, "LIVE off: the effect plays again");
+            // Readouts: tenths below 10 ms, whole ms above (Auto-Tune's 2,670 samples showed as "55.625ms").
+            require (triad::ui::formatMs (1000.0 * 2670 / 48000.0) == "56 ms" && triad::ui::formatMs (4.1) == "4.1 ms"
+                     && triad::ui::formatMs (57.4375) == "57 ms", "Latency readouts are rounded");
             std::cout << "PASS: latency meter (total, per slot), CPU meter, LIVE switch" << std::endl;
         }
 

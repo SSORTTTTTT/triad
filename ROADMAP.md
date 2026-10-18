@@ -11,6 +11,14 @@ split into three bands: it "works pretty good", but there was a lot of latency w
 (the same four plug-ins straight on a track felt instant), and its Low Latency mode made little difference apart
 from some warbling. First thing for the next build:
 
+- **Thomas's screenshots (Ableton, v4 0.5.0):** the same chain in all three bands (Auto-Tune Pro, UADx LA-2A, Fresh
+  Air, kHs 3-Band EQ), crossovers at 96 dB/oct. Auto-Tune Pro reports **55.6 ms** in its normal mode (2.3 ms in Low
+  Latency mode) and the LA-2A 1.8 ms, so each band is 57.4 ms (4.1 ms in Low Latency mode) and so is Triad's total:
+  exactly the effects' own latency, nothing added by Triad. Auto-Tune in band 3 (above 5.6-9.4 kHz) hears only breath
+  and "s", and the three copies correct separately: the likely warble. For now: Auto-Tune once, on the track before
+  Triad (or in a 1-band Triad), in Low Latency mode for tracking.
+- **Fixed for v6 (found in the screenshots):** latency readouts of 10 ms and more showed every decimal ("57.4375 ms
+  latency", "55.625ms", "57.43..." on the LAT meter); now whole milliseconds ("57 ms").
 - **Find where the delay comes from, measured.** Triad itself adds 0 samples (measured on every CI run); it reports
   and lines the bands up to what the hosted effects report. Compare, in FL Studio and Ableton, the same chain on a
   plain track and inside Triad: the latency each reports, the delay actually heard (an impulse through each),

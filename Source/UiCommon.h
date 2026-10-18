@@ -26,6 +26,11 @@ inline juce::String formatDb (float gain)
     return (db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB";
 }
 
+// Latency in milliseconds: "4.1 ms" below 10 ms, whole milliseconds above ("57 ms", not "57.4375 ms").
+inline juce::String formatMs (double ms)
+{
+    return ms < 10.0 ? juce::String (ms, 1) + " ms" : juce::String (juce::roundToInt (ms)) + " ms";
+}
 // Readable frequency labels: "37.6 Hz", "133 Hz", "2.5 kHz", "10.95 kHz".
 inline juce::String formatHz (float hz)
 {

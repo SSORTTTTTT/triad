@@ -385,7 +385,7 @@ void CrossoverDisplay::setLatency (int latency, double sampleRate, const juce::S
 juce::String CrossoverDisplay::getLatencyText() const
 {
     const double ms = 1000.0 * latencySamples / latencyRate;
-    return latencySamples == 0 ? juce::String ("0 ms") : juce::String (ms, ms < 10.0 ? 1 : 0) + " ms";
+    return latencySamples == 0 ? juce::String ("0 ms") : triad::ui::formatMs (ms);
 }
 void CrossoverDisplay::paintMeters (juce::Graphics& g)
 {
@@ -428,7 +428,7 @@ void CrossoverDisplay::paintMeters (juce::Graphics& g)
         g.drawText ("CPU", juce::Rectangle<float> (cpuBar.getX() - 8.0f, top - 18.0f, 28.0f, 14.0f), juce::Justification::centred);
         g.setFont (juce::FontOptions (9.0f));
         g.setColour (latColour);
-        g.drawText (latencySamples == 0 ? juce::String ("0ms") : juce::String (ms, ms < 10.0 ? 1 : 0) + "ms",
+        g.drawText (latencySamples == 0 ? juce::String ("0ms") : triad::ui::formatMs (ms).removeCharacters (" "),
                     juce::Rectangle<float> (lat.getX() - 11.0f, bottom + 10.0f, 34.0f, 14.0f), juce::Justification::centred);
         g.setColour (dimTextColour);
         g.drawText (juce::String (juce::roundToInt (cpuShown * 100.0f)) + "%", juce::Rectangle<float> (cpuBar.getX() - 11.0f, bottom + 10.0f, 34.0f, 14.0f),
