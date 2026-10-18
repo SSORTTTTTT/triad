@@ -1,5 +1,21 @@
 # Validation — Triad
 
+## Triad v5 (0.6.0) on macOS — 2026-10-18
+
+Commit `3042036`, run 39105684238 (macos-14 runner, virtual Apple M1, 3 cores; the run before it, `a3c5ba1` /
+39103531873, also passed and found the undo issue fixed in `3042036`). New in 0.6.0: LFOs on the knobs inside
+effects (list and LEARN), undo / redo arrows, Copy / Paste plugin state, dragging effects up and down, the LAT
+tooltip breakdown, the "Triad v5" name.
+
+| Check | Result |
+| --- | --- |
+| Installer `Triad-v5-0.6.0-macOS-AppleSilicon.pkg` | Built and installed over simulated Triad, v2, v3 and v4 installs (all removed); AU VALIDATION SUCCEEDED; pluginval SUCCESS (VST3 and AU); integration tests passed (incl. knob linking, undo / redo, plugin clipboard, slot dragging) |
+| Knob linking with the 51 real effects (each in its own process) | 51 of 51 have knobs to link (median 15, up to 666); an LFO on up to 4 knobs each: the knobs followed in 47 (BYOD, GATE-12 and ChowMatrix AU step or limit them), the sound followed in 49; LEARN linked a knob in 51 of 51; none crashed (AUPitch crashed in 0.5.0's probe, which moved knobs every 128 samples from outside Triad) |
+| Undo with the 51 real effects | A knob turned (as in its window) and undone came back in 51 of 51 (45 before `3042036`: three Chowdhury effects keep a knob out of their saved settings; undo now also keeps knob positions) |
+| Undo, 200 effects in one Triad | Snapshot 72 ms with real effects (13 ms with the test effect); undoing a removed effect 56 ms (it is loaded again, the other 199 stay loaded); undoing a slot mix 52 ms; redoing both 107 ms |
+| Stress tests (test effects; 51 real effects, 5 x 3,000 random edits) | All passed, no NaN/Inf output; each real sequence had 120-145 undo / redo clicks, 55-65 copy / paste plugin state, 45-70 slot drags, 65-90 knob links / LEARN; live monitoring: 0 silenced blocks |
+| Drawing, whole window at 1x / 2x | BANDS 4.0 / 11.4 ms; LFO 1.5 / 4.0 ms; MATRIX 1.7 / 5.8 ms; crossover display per frame 1.8 / 3.3 ms |
+
 ## Triad v4 (0.5.0) on macOS — 2026-10-17
 
 Commit `479315b`, run 39096363512 (macos-14 runner, virtual Apple M1). New in 0.5.0: latency and CPU meters, LIVE,
