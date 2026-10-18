@@ -115,6 +115,8 @@ public:
     static int getRetiredEffectCount();
     // Of those, the ones still there 3 s or more after their time (deletion falling behind).
     static int getLateRetiredEffectCount();
+    // The last effects and windows deleted, newest first, written into `out` (no allocation: a crash handler can call it).
+    static void describeRecentDeletions (char* out, size_t size);
     // Audio blocks Triad output as silence because the message thread was changing the bands at that
     // moment (Triad never waits on the audio thread); a dropout. For the live-monitoring test and meters.
     int getSilencedBlockCount() const noexcept { return silencedBlocks.load(); }

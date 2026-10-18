@@ -187,6 +187,10 @@ void onCrash (int signal)
         writeText (stepTrail[i % 5]);
         writeText ("\n");
     }
+    static char deletions[2600];
+    TriadProcessor::describeRecentDeletions (deletions, sizeof (deletions));
+    writeText ("Effects and windows Triad deleted just before (newest first):\n");
+    writeText (deletions);
     writeText ("Call stack of the crashing thread:\n");
     void* frames[128];
     backtrace_symbols_fd (frames, backtrace (frames, 128), 2);

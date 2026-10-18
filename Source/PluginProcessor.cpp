@@ -25,6 +25,12 @@ namespace
 // be deleted while it still runs. Whenever something new is loaded the graveyard is re-made, so if
 // it is still there at shutdown (JUCE deletes the newest objects first) it goes before the plug-in
 // format caches and window managers that its contents need.
+// The last effects and windows the graveyard deleted (for a crash report).
+struct RecentDeletion { char name[112]; juce::uint32 at; };
+constexpr int recentSize = 16;
+std::array<RecentDeletion, recentSize> recent {};
+std::atomic<int> recentCount { 0 };
+
 class EffectGraveyard final : private juce::Timer, public juce::DeletedAtShutdown
 {
 public:
@@ -58,14 +64,18 @@ public:
     }
     void add (std::unique_ptr<juce::AudioPluginInstance> effect, std::unique_ptr<juce::DocumentWindow> window)
     {
-        entries.push_back ({ std::move (effect), std::move (window), juce::Time::getMillisecondCounter() });
+        const auto now = juce::Time::getMillisecondCounter();
+        // A window (the effect's editor) goes first; its effect at least `afterWindowMs` later, so whatever the
+        // editor's deletion posted to the effect has been delivered before the effect itself goes.
+        const auto due = now + (juce::uint32) (effect != nullptr ? delayMs + afterWindowMs : delayMs);
+        entries.push_back ({ std::move (effect), std::move (window), now, due });
         if (! isTimerRunning()) startTimer (tickMs);
     }
     // Effects are deleted at least `delayMs` after they were retired, a few copies of each plug-in per tick (the message
-    // loop runs in between): when a project reloads, dozens of effects go at once, and ChowMatrix crashed once when
-    // many of its copies were deleted in the same moment. Within a time budget per tick; a backlog of more than 64
-    // (a long session of fast edits) is cleared without limits, so removed effects never pile up holding memory.
-    static constexpr int tickMs = 40, delayMs = 1500, copiesPerTick = 4, backlog = 64;
+    // loop runs in between): when a project reloads, dozens of effects go at once, and ChowMatrix crashed when many
+    // went in the same moment. Within a time budget per tick; a backlog of more than 64 (a long session of fast
+    // edits) is cleared without the budget, so removed effects never pile up holding memory.
+    static constexpr int tickMs = 40, delayMs = 1500, afterWindowMs = 400, copiesPerTick = 4, backlog = 64;
     static constexpr double budgetMs = 25.0;
     static int waitingCount() { return current != nullptr ? (int) current->entries.size() : 0; }
     // Entries still waiting `lateMs` or more past their time (deletion falling behind).
@@ -74,7 +84,22 @@ public:
         if (current == nullptr) return 0;
         const auto now = juce::Time::getMillisecondCounter();
         return (int) std::count_if (current->entries.begin(), current->entries.end(),
-                                    [&] (const Entry& e) { return now - e.since >= (juce::uint32) (delayMs + lateMs); });
+                                    [&] (const Entry& e) { return (juce::int32) (now - e.due) >= lateMs; });
+    }
+    // The last effects and windows deleted, newest first ("1234 ms ago: ChowMatrix (VST3)"), for a crash report:
+    // fixed buffers only, so a signal handler can read them.
+    static void describeRecent (char* out, size_t size)
+    {
+        if (size == 0) return;
+        out[0] = 0;
+        const auto now = juce::Time::getMillisecondCounter();
+        const int count = recentCount.load();
+        size_t used = 0;
+        for (int i = count - 1; i >= juce::jmax (0, count - recentSize) && used + 140 < size; --i)
+        {
+            const auto& r = recent[(size_t) (i % recentSize)];
+            used += (size_t) std::snprintf (out + used, size - used, "  %u ms ago: %s\n", (unsigned) (now - r.at), r.name);
+        }
     }
 private:
     EffectGraveyard() = default;
@@ -82,8 +107,16 @@ private:
     {
         std::unique_ptr<juce::AudioPluginInstance> effect;
         std::unique_ptr<juce::DocumentWindow> window;   // declared after the effect: deleted first
-        juce::uint32 since = 0;
+        juce::uint32 since = 0, due = 0;
     };
+    static void remember (const juce::String& what)
+    {
+        const int i = recentCount.load();
+        auto& r = recent[(size_t) (i % recentSize)];
+        r.at = juce::Time::getMillisecondCounter();
+        what.copyToUTF8 (r.name, sizeof (r.name));
+        recentCount.store (i + 1);
+    }
     static juce::String keeperKey (const juce::AudioPluginInstance& effect)
     {
         const auto d = effect.getPluginDescription();
@@ -103,8 +136,9 @@ private:
         const bool catchUp = (int) entries.size() > backlog;
         std::map<juce::String, int> deletedNow;
         int deleted = 0;
-        for (auto it = entries.begin(); it != entries.end() && now - it->since >= (juce::uint32) delayMs;)
+        for (auto it = entries.begin(); it != entries.end();)
         {
+            if ((juce::int32) (now - it->due) < 0) { ++it; continue; }   // not yet
             if (! catchUp && deleted > 0 && juce::Time::getMillisecondCounterHiRes() - start > budgetMs) break;
             const auto key = pluginKey (*it);
             if (! catchUp && key.isNotEmpty() && deletedNow[key] >= copiesPerTick) { ++it; continue; }   // its next copies: next tick
@@ -112,11 +146,15 @@ private:
             ++deleted;
             auto e = std::move (*it);
             it = entries.erase (it);
-            e.window.reset();
+            if (e.window != nullptr) { remember ("window " + e.window->getName()); e.window.reset(); }
             if (e.effect == nullptr) continue;
             const auto keep = keeperKey (*e.effect);
             if (keep.isNotEmpty() && keepers.find (keep) == keepers.end()) keepers[keep] = std::move (e.effect);   // kept idle
-            else e.effect.reset();
+            else
+            {
+                remember (e.effect->getName() + " (" + e.effect->getPluginDescription().pluginFormatName + ")");
+                e.effect.reset();
+            }
         }
         if (entries.empty()) stopTimer();
         if (entries.empty() && keepers.empty()) delete this;   // `this` is gone after this line
@@ -820,6 +858,7 @@ void TriadProcessor::handleInvalidAudio()
 int TriadProcessor::getIdleEffectCount() { return EffectGraveyard::keeperCount(); }
 int TriadProcessor::getRetiredEffectCount() { return EffectGraveyard::waitingCount(); }
 int TriadProcessor::getLateRetiredEffectCount() { return EffectGraveyard::lateCount (3000); }
+void TriadProcessor::describeRecentDeletions (char* out, size_t size) { EffectGraveyard::describeRecent (out, size); }
 void TriadProcessor::releaseIdleEffects() { EffectGraveyard::releaseAll(); }
 void TriadProcessor::retire (std::unique_ptr<juce::AudioPluginInstance> effect)
 {
@@ -1507,7 +1546,11 @@ juce::String TriadProcessor::requestInstall (int band, int slot, const juce::Plu
             auto* self = weak.get();
             if (self == nullptr) return;
             int b = 0, s = 0;
-            if (self->findPending (request, b, s))
+            if (! self->findPending (request, b, s))
+            {
+                if (instance != nullptr) self->retire (std::move (instance));   // the slot was removed meanwhile
+            }
+            else
             {
                 auto failure = self->finishInstall (b, s, desc, state, std::move (instance), error, openEditor);
                 const juce::ScopedLock lock (self->gate);
@@ -1548,6 +1591,14 @@ juce::String TriadProcessor::finishInstall (int band, int slotIndex, const juce:
 {
     endParameterLearn();
     if (! instance) return creationError.isNotEmpty() ? creationError : "Could not open this effect.";
+    // An effect that is turned down below (not stereo, the slot gone...) is deleted like any removed effect, after
+    // a while, never in the same moment it was made: its own start-up messages are still on their way.
+    struct RetireUnused
+    {
+        TriadProcessor& owner;
+        std::unique_ptr<juce::AudioPluginInstance>& unused;
+        ~RetireUnused() { if (unused != nullptr) owner.retire (std::move (unused)); }
+    } retireUnused { *this, instance };
     const auto actual = instance->getPluginDescription();
     if (isTriad (actual)) return "Triad cannot host itself.";
     if (desc.isInstrument || actual.isInstrument) return "Choose an audio effect, not an instrument.";
