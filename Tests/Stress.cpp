@@ -687,7 +687,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     bool timeLimit = false;
     constexpr int maxEffects = 120;
     const auto started = juce::Time::getMillisecondCounterHiRes();
-    int peakWaiting = 0, peakMemory = 0;   // removed effects waiting to be deleted; the process's memory (MB)
+    int peakWaiting = 0, peakLate = 0, peakMemory = 0;   // removed effects waiting to be deleted (all; 3 s late); memory (MB)
     std::vector<juce::File> userShapes;   // LFO shapes saved to USER by the palette edits (deleted at the end)
     auto removeUserShapes = [&userShapes] { for (const auto& f : userShapes) triad::userShapes::remove (f); userShapes.clear(); };
     try
@@ -700,6 +700,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                           << blocks.load() << " audio blocks, " << memoryMB() << " MB in use" << std::endl;
             if (maxSeconds > 0.0 && elapsed > maxSeconds) { timeLimit = true; break; }
             peakWaiting = juce::jmax (peakWaiting, TriadProcessor::getRetiredEffectCount());
+            peakLate = juce::jmax (peakLate, TriadProcessor::getLateRetiredEffectCount());
             peakMemory = juce::jmax (peakMemory, memoryMB());
             const auto opStart = juce::Time::getMillisecondCounterHiRes();
             const int bands = p.getBandCount();
@@ -1085,8 +1086,9 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     say (juce::String (done) + " edits in " + juce::String ((juce::Time::getMillisecondCounterHiRes() - started) / 1000.0, 1) + " s: "
          + juce::String (blocks.load()) + " audio blocks processed alongside the edits (" + juce::String (automation.load())
          + " automation moves), worst block " + ms (worstBlock.load()) + ", up to " + juce::String (peakEffects) + " effects loaded at once, up to "
-         + juce::String (peakWaiting) + " removed effects waiting to be deleted, memory up to " + juce::String (peakMemory) + " MB");
-    require (peakWaiting < 400, "Removed effects are deleted as fast as they are removed (no pile-up holding memory)");
+         + juce::String (peakWaiting) + " removed effects waiting their 1.5 s to be deleted (" + juce::String (peakLate)
+         + " of them 3 s late or more), memory up to " + juce::String (peakMemory) + " MB");
+    require (peakLate < 100, "Removed effects are deleted as fast as they are removed (no pile-up holding memory)");
     if (windowsOpened + windowsNotDrawn > 0)
         say ("Effect windows opened on top of Triad: " + juce::String (windowsOpened)
              + (windowsNotDrawn > 0 ? " (" + juce::String (windowsNotDrawn) + " OpenGL windows skipped: no graphics card on this test Mac)" : juce::String()));

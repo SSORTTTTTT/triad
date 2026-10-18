@@ -113,6 +113,8 @@ public:
     static int getIdleEffectCount();
     // Removed effects waiting to be deleted (each goes 1.5 s after it was removed).
     static int getRetiredEffectCount();
+    // Of those, the ones still there 3 s or more after their time (deletion falling behind).
+    static int getLateRetiredEffectCount();
     // Audio blocks Triad output as silence because the message thread was changing the bands at that
     // moment (Triad never waits on the audio thread); a dropout. For the live-monitoring test and meters.
     int getSilencedBlockCount() const noexcept { return silencedBlocks.load(); }

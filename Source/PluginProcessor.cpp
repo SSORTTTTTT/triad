@@ -68,6 +68,14 @@ public:
     static constexpr int tickMs = 40, delayMs = 1500, copiesPerTick = 4, backlog = 64;
     static constexpr double budgetMs = 25.0;
     static int waitingCount() { return current != nullptr ? (int) current->entries.size() : 0; }
+    // Entries still waiting `lateMs` or more past their time (deletion falling behind).
+    static int lateCount (int lateMs)
+    {
+        if (current == nullptr) return 0;
+        const auto now = juce::Time::getMillisecondCounter();
+        return (int) std::count_if (current->entries.begin(), current->entries.end(),
+                                    [&] (const Entry& e) { return now - e.since >= (juce::uint32) (delayMs + lateMs); });
+    }
 private:
     EffectGraveyard() = default;
     struct Entry
@@ -811,6 +819,7 @@ void TriadProcessor::handleInvalidAudio()
 }
 int TriadProcessor::getIdleEffectCount() { return EffectGraveyard::keeperCount(); }
 int TriadProcessor::getRetiredEffectCount() { return EffectGraveyard::waitingCount(); }
+int TriadProcessor::getLateRetiredEffectCount() { return EffectGraveyard::lateCount (3000); }
 void TriadProcessor::releaseIdleEffects() { EffectGraveyard::releaseAll(); }
 void TriadProcessor::retire (std::unique_ptr<juce::AudioPluginInstance> effect)
 {
