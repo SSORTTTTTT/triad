@@ -1705,6 +1705,120 @@ void parameterLinking (const Pool& pool)
     require (tested > 0, "Knob linking probe ran");
 }
 
+// ---- 2 with real plug-ins: each random sequence in its own process ---------------------------------------------
+// Like one DAW session each, with one format of every plug-in (VST3 or AU, as people use them; both builds of the
+// same plug-in in one process share some of their code and state). Everything the child prints is passed on.
+void writePool (const Pool& pool, const juce::File& file)
+{
+    juce::XmlElement root ("POOL");
+    for (size_t e = 0; e < pool.effects.size(); ++e)
+    {
+        auto x = pool.effects[e].createXml();
+        x->setAttribute ("triadName", pool.names[(int) e]);
+        root.addChildElement (x.release());
+    }
+    for (const auto& key : pool.openGlWindows) root.createNewChildElement ("OPENGL")->setAttribute ("key", key);
+    root.writeTo (file);
+}
+Pool readPool (const juce::File& file)
+{
+    Pool pool;
+    if (auto xml = juce::XmlDocument::parse (file))
+        for (auto* x : xml->getChildIterator())
+        {
+            if (x->hasTagName ("OPENGL")) { pool.openGlWindows.insert (x->getStringAttribute ("key")); continue; }
+            juce::PluginDescription d;
+            if (d.loadFromXml (*x)) { pool.effects.push_back (d); pool.names.add (x->getStringAttribute ("triadName")); }
+        }
+    return pool;
+}
+// Each plug-in once: in `format` where it comes in that format too, otherwise in the one it has.
+Pool oneFormatEach (const Pool& pool, const juce::String& format)
+{
+    auto key = [] (const juce::PluginDescription& d) { return d.name.toLowerCase().removeCharacters (" -_."); };
+    std::map<juce::String, std::vector<size_t>> builds;
+    for (size_t e = 0; e < pool.effects.size(); ++e) builds[key (pool.effects[e])].push_back (e);
+    Pool out;
+    out.openGlWindows = pool.openGlWindows;
+    for (size_t e = 0; e < pool.effects.size(); ++e)
+    {
+        const auto& group = builds[key (pool.effects[e])];
+        const bool hasFormat = std::any_of (group.begin(), group.end(), [&] (size_t i) { return pool.effects[i].pluginFormatName == format; });
+        const auto chosen = hasFormat ? *std::find_if (group.begin(), group.end(), [&] (size_t i) { return pool.effects[i].pluginFormatName == format; })
+                                      : group.front();
+        if (chosen == e) { out.effects.push_back (pool.effects[e]); out.names.add (pool.names[(int) e]); }
+    }
+    return out;
+}
+// Child process: TriadStress --edits <pool.xml> <seed> <max seconds>
+int editsChild (const juce::File& poolFile, juce::int64 seed, double maxSeconds)
+{
+    verbose = true;
+    Watchdog guard;
+    watchdog = &guard;
+    installCrashHandler();
+    try
+    {
+        editsWhilePlaying (readPool (poolFile), seed, 3000, maxSeconds);
+        if (! invalidEffects.empty())
+        {
+            juce::StringArray list;
+            for (auto& [name, count] : invalidEffects) list.add (name + ": " + juce::String (count) + (count == 1 ? " block" : " blocks"));
+            say ("Hosted effects that produced invalid audio (NaN/Inf), which Triad silenced and then restarted or bypassed: " + list.joinIntoString ("; "));
+        }
+        watchdog = nullptr;
+        std::cout << "TRIAD-EDITS-OK" << std::endl;   // the only proof of success (a crashed child can look like exit code 0)
+        return 0;
+    }
+    catch (const std::exception& e)
+    {
+        say (juce::String ("FAIL: ") + e.what());
+        watchdog = nullptr;
+        return 1;
+    }
+}
+void editsInOwnProcess (const Pool& pool, juce::int64 seed, double maxSeconds, const juce::String& format)
+{
+    const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadEdits");
+    folder.createDirectory();
+    const auto poolFile = folder.getChildFile ("pool.xml");
+    const auto chosen = oneFormatEach (pool, format);
+    writePool (chosen, poolFile);
+    say ("\n(Seed " + juce::String (seed) + " in its own process, like one DAW session: " + juce::String ((int) chosen.effects.size())
+         + " effects, each plug-in in one format, " + format + " where it has both)");
+    step ("random edits with real plug-ins, seed " + juce::String (seed) + " (own process)", maxSeconds + 900.0);
+    juce::ChildProcess child;
+    const juce::StringArray args { juce::File::getSpecialLocation (juce::File::currentExecutableFile).getFullPathName(), "--edits",
+                                   poolFile.getFullPathName(), juce::String (seed), juce::String (maxSeconds) };
+    require (child.start (args, juce::ChildProcess::wantStdOut | juce::ChildProcess::wantStdErr), "Start the random edits process");
+    juce::String pending;
+    char buffer[8192];
+    bool succeeded = false;
+    auto forward = [&succeeded] (const juce::String& line)
+    {
+        if (line.trim() == "TRIAD-EDITS-OK") succeeded = true;
+        else if (line.startsWith ("  > ") || line.startsWith ("  ... ")) std::cout << line << std::endl;   // progress: the log only
+        else say (line);
+    };
+    for (;;)
+    {
+        const int n = child.readProcessOutput (buffer, (int) sizeof (buffer));
+        if (n <= 0) break;
+        pending += juce::String::fromUTF8 (buffer, n);
+        for (int end = pending.indexOfChar ('\n'); end >= 0; end = pending.indexOfChar ('\n'))
+        {
+            forward (pending.substring (0, end));
+            pending = pending.substring (end + 1);
+        }
+    }
+    if (pending.isNotEmpty()) forward (pending);
+    child.waitForProcessToFinish (30000);
+    const auto code = child.getExitCode();
+    folder.deleteRecursively();
+    require (succeeded && code == 0, "Random edits with real plug-ins (seed " + juce::String (seed) + ", " + format + "): the process "
+                        + (code == 1 ? juce::String ("failed a check") : juce::String ("crashed (its crash report is above)")));
+}
+
 // ---- 0. Removing effects, one effect at a time --------------------------------------------------------------
 // Each effect on its own, in its own process: loaded into a band, PRE or POST, played, its window opened, then
 // removed (Triad deletes it a moment later), 8 times; then 6 copies at once, all removed by loading an empty project,
@@ -1869,6 +1983,8 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI gui;
     if (argc == 4 && juce::String (argv[1]) == "--param-probe")
         return parameterProbeChild (juce::File (juce::String::fromUTF8 (argv[2])), juce::File (juce::String::fromUTF8 (argv[3])));
+    if (argc == 5 && juce::String (argv[1]) == "--edits")
+        return editsChild (juce::File (juce::String::fromUTF8 (argv[2])), juce::String (argv[3]).getLargeIntValue(), juce::String (argv[4]).getDoubleValue());
     if (argc == 4 && juce::String (argv[1]) == "--removal-probe")
         return removalProbeChild (juce::File (juce::String::fromUTF8 (argv[2])), juce::File (juce::String::fromUTF8 (argv[3])));
     Watchdog guard;
@@ -1933,7 +2049,9 @@ int main (int argc, char** argv)
         bigProject (working, real ? 10.0 : 20.0);
         // With real plug-ins: five different random sequences, each given up to 8 minutes.
         if (real)
-            for (int i = 0; i < 5; ++i) editsWhilePlaying (working, seed + i, 3000, 480.0);
+            for (int i = 0; i < 5; ++i) editsInOwnProcess (working, seed + i, 480.0, i % 2 == 0 ? "VST3" : "AudioUnit");
+        else if (std::getenv ("TRIAD_STRESS_EDITS_IN_CHILD") != nullptr)   // to check the child-process path without real plug-ins
+            editsInOwnProcess (working, seed, 0.0, "VST3");
         else
             editsWhilePlaying (working, seed, 3000, 0.0);
         manyInstances (working);
