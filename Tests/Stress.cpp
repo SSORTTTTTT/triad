@@ -1705,6 +1705,102 @@ void parameterLinking (const Pool& pool)
     require (tested > 0, "Knob linking probe ran");
 }
 
+// ---- 0. Removing effects, one effect at a time --------------------------------------------------------------
+// Each effect on its own, in its own process: loaded into a band, PRE or POST, played, its window opened, then
+// removed (Triad deletes it a moment later), 8 times; then 6 copies at once, all removed by loading an empty project,
+// and Triad closed. An effect that crashes here crashes when it is deleted (inside the effect: any host deletes
+// removed effects sooner or later); it is left out of the random edits that follow, which test Triad.
+int removalProbeChild (const juce::File& descriptionFile, const juce::File& resultFile)
+{
+    juce::PluginDescription description;
+    if (auto xml = juce::XmlDocument::parse (descriptionFile); xml == nullptr || ! description.loadFromXml (*xml)) return 2;
+    const bool display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr;
+    int loaded = 0;
+    {
+        TriadProcessor q;
+        q.prepareToPlay (48000.0, 128);
+        juce::AudioBuffer<float> audio (2, 128);
+        juce::MidiBuffer midi;
+        juce::Random noise (5);
+        auto play = [&] (int blocks) { for (int i = 0; i < blocks; ++i) { fillNoise (audio, noise); q.processBlock (audio, midi); } };
+        auto showWindow = [&] (int band, int slot)
+        {
+            if (! display) return;
+            q.showEffect (band, slot);
+            if (! hardwareGraphics() && usesOpenGL (effectWindow (band, slot))) q.closeWindows();
+            pump (80);
+        };
+        const int chains[] { 0, TriadProcessor::preBand, 1, TriadProcessor::postBand };
+        for (int round = 0; round < 8; ++round)
+        {
+            const int band = chains[round % 4];
+            if (q.loadEffect (band, 0, description, false).isNotEmpty()) continue;
+            settle (q);
+            ++loaded;
+            play (8);
+            if (round % 2 == 0) showWindow (band, 0);
+            q.removeEffect (band, 0);
+            play (4);
+            pump (round == 7 ? 2600 : 250);   // some are deleted while the next copies come and go
+        }
+        for (int copy = 0; copy < 6; ++copy)
+        {
+            const int band = copy % 3;
+            if (q.loadEffect (band, q.getSlotCount (band), description, false).isEmpty()) ++loaded;
+        }
+        settle (q);
+        play (8);
+        showWindow (0, 1);
+        juce::MemoryBlock empty;
+        { TriadProcessor blank; blank.getStateInformation (empty); }
+        q.setStateInformation (empty.getData(), (int) empty.getSize());   // every copy removed in the same moment
+        settle (q);
+        play (8);
+        pump (2600);
+    }
+    pump (500);   // Triad closed: the idle copy kept for this effect goes too
+    resultFile.replaceWithText ("ok|" + juce::String (loaded));
+    return 0;
+}
+juce::StringArray removingEffects (const Pool& pool)
+{
+    say ("\n== 0. Removing effects: each effect loaded, played, its window opened and removed 8 times, then 6 copies removed at once (each effect in its own process) ==");
+    juce::StringArray crashed, notes;
+    int tested = 0;
+    const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadRemovalProbe");
+    folder.createDirectory();
+    for (size_t e = 0; e < pool.effects.size(); ++e)
+    {
+        const auto& name = pool.names[(int) e];
+        step ("removing: " + name, 150);
+        const auto descriptionFile = folder.getChildFile ("effect.xml"), resultFile = folder.getChildFile ("result.txt");
+        resultFile.deleteFile();
+        pool.effects[e].createXml()->writeTo (descriptionFile);
+        juce::ChildProcess child;
+        const juce::StringArray args { juce::File::getSpecialLocation (juce::File::currentExecutableFile).getFullPathName(), "--removal-probe",
+                                       descriptionFile.getFullPathName(), resultFile.getFullPathName() };
+        if (! child.start (args, 0)) { notes.add (name + ": could not start the probe"); continue; }
+        const bool finished = child.waitForProcessToFinish (120000);
+        if (! finished) child.kill();
+        const auto fields = juce::StringArray::fromTokens (resultFile.loadFileAsString(), "|", "");
+        if (! finished || child.getExitCode() != 0 || fields.size() < 2 || fields[0] != "ok")
+        {
+            crashed.add (name);
+            say ("  " + name + ": " + (finished ? "crashed (exit code " + juce::String (child.getExitCode()) + ")" : juce::String ("did not finish in 2 minutes"))
+                 + " while copies of it were removed and deleted");
+            continue;
+        }
+        ++tested;
+        if (fields[1].getIntValue() == 0) notes.add (name + ": did not load in Triad here");
+    }
+    say (juce::String (tested) + " of " + juce::String ((int) pool.effects.size()) + " effects were removed and deleted 14 times each without a problem"
+         + (crashed.isEmpty() ? juce::String() : "; " + juce::String (crashed.size()) + " crashed inside the effect: " + crashed.joinIntoString (", ")
+                                                  + " (left out of the random edits below)"));
+    for (const auto& n : notes) say ("  note: " + n);
+    folder.deleteRecursively();
+    return crashed;
+}
+
 // ---- 6. Plug-in list with crashing plug-ins -------------------------------------------------------
 void pluginList (const juce::File& effect, const juce::File& crashFixture, const juce::File& scanner)
 {
@@ -1773,6 +1869,8 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI gui;
     if (argc == 4 && juce::String (argv[1]) == "--param-probe")
         return parameterProbeChild (juce::File (juce::String::fromUTF8 (argv[2])), juce::File (juce::String::fromUTF8 (argv[3])));
+    if (argc == 4 && juce::String (argv[1]) == "--removal-probe")
+        return removalProbeChild (juce::File (juce::String::fromUTF8 (argv[2])), juce::File (juce::String::fromUTF8 (argv[3])));
     Watchdog guard;
     watchdog = &guard;
     installCrashHandler();
@@ -1818,16 +1916,30 @@ int main (int argc, char** argv)
             watchdog = nullptr;
             return 0;
         }
-        bigProject (pool, real ? 10.0 : 20.0);
+        // First each effect removed and deleted on its own; a real plug-in that crashes inside itself when deleted is
+        // left out of the sections that load and remove effects all the time.
+        auto working = pool;
+        {
+            const auto crashing = removingEffects (pool);
+            require (real || crashing.isEmpty(), "The test effects are removed and deleted without a problem");
+            if (! crashing.isEmpty())
+            {
+                working = {};
+                working.openGlWindows = pool.openGlWindows;
+                for (size_t e = 0; e < pool.effects.size(); ++e)
+                    if (! crashing.contains (pool.names[(int) e])) { working.effects.push_back (pool.effects[e]); working.names.add (pool.names[(int) e]); }
+            }
+        }
+        bigProject (working, real ? 10.0 : 20.0);
         // With real plug-ins: five different random sequences, each given up to 8 minutes.
         if (real)
-            for (int i = 0; i < 5; ++i) editsWhilePlaying (pool, seed + i, 3000, 480.0);
+            for (int i = 0; i < 5; ++i) editsWhilePlaying (working, seed + i, 3000, 480.0);
         else
-            editsWhilePlaying (pool, seed, 3000, 0.0);
-        manyInstances (pool);
-        liveMonitoring (pool, real);
+            editsWhilePlaying (working, seed, 3000, 0.0);
+        manyInstances (working);
+        liveMonitoring (working, real);
         parameterLinking (pool);
-        recordingStress (pool, real);
+        recordingStress (working, real);
         pitchCorrection (pool);
         pluginList (effect, crashFixture, scanner);
         step ({}, 0);
