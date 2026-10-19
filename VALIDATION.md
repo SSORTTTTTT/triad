@@ -1,5 +1,33 @@
 # Validation — Triad
 
+## Triad v6 (0.7.0) on macOS — 2026-10-19
+
+Commit `e1b9db7`, run 39326757744 (macos-14 runner, virtual Apple M1). New in 0.7.0: PRE and POST chains (also in
+the LFO and MATRIX tabs), all dividers in one click, slope timing, faster latency follow, effects prepared and
+released outside the audio lock, removed effects deleted in steps (window first, effect 0.4 s later, at least 1.5 s
+after removal, a few copies per tick), recording and pitch-correction stress tests with Graillon 3 Free.
+
+| Check | Result |
+| --- | --- |
+| Installer `Triad-v6-0.7.0-macOS-AppleSilicon.pkg` | Built and installed over simulated Triad, v2 ... v5 installs; AU VALIDATION SUCCEEDED; pluginval SUCCESS (VST3 and AU); integration tests passed (incl. live vocals with an Auto-Tune stand-in, PRE / POST, LFO and MATRIX panels, all dividers) |
+| Removing effects, each of the 53 real effects on its own process | 53 of 53 loaded, played, window opened, removed and deleted 14 times each without a problem |
+| Random edits, real effects (5 x 3,000, each in its own process, one format per plug-in, VST3 / AU alternating) | All passed, no NaN/Inf; up to 113 effects loaded at once; removed effects waiting to be deleted at most 277 (6 of them 3 s late, once); memory up to 3.4 GB |
+| Recording through Triad (Graillon 3 in PRE, 3 bands at 250 Hz / 2.5 kHz, real effects, every LFO on, window open, save every second) | 32 / 64 / 128 samples at 48 kHz, 64 at 44.1 and 96 kHz: 0 blocks silenced by Triad, 1 dropout in 13,781 blocks (44.1 kHz), 0 not-a-number; Triad's work 4-11% of the buffer on average. Layout changes while recording: undo silenced 4.6 ms on average (worst 8 ms), redo 1.4 ms, add / remove band, LIVE, bypass, load 0.1 ms (worst 1.3 ms), dividers, drag, remove 0 |
+| Pitch correction, sung take A2-G3 (20 cents off, vibrato), Graillon 3 VST3 and AU at 48 kHz | Reports 22.4 ms; heard 15.0 ms on a plain track and in Triad with one band (identical sample for sample), 16.0 ms in PRE with 3 bands at 24 dB/oct (0.3 dB from the plain track), 24 ms with a copy in each band at 24 dB/oct (4.2 dB different), 32 ms at 96 dB/oct (6.8 dB different); notes 8.9 cents off after correction (7.0-9.4 split) |
+| Live monitoring, Triad alone and a real vocal chain | 0 samples latency at every slope and band count; 0 silenced blocks |
+| Knob linking, real effects | 53 of 53 have knobs to link; knobs followed in 49, the sound in 51, LEARN and undo worked in 53 |
+
+Earlier v6 runs, all fixed or explained before this one:
+- `1d77d05`: crash in ChowMatrix's own message queue ("pure virtual function called") after a project reload
+  retired about 50 effects at once.
+- `e9c9b1c`, `157dfce`: removed effects piled up (deleted one per tick; 3,794 waiting and 2.8 GB locally) and the
+  runner killed the test; deletion was made to keep up.
+- `1b4bec6`, `3a341d5`, `701d75d`, `20a406c`: the same kind of crash inside ChowMatrix's or FILT-R's own message
+  queue during the second or third 3,000-edit sequence, with every effect fine on its own (section 0) and, once,
+  nothing deleted for 1.6 s before it. Sequences now run one per process with one format of each plug-in. Seed 779
+  crashed once that way (in ChowMatrix, 90 ms after a batch of deletions) and passed in the final run: an
+  intermittent crash inside third-party JUCE plug-ins under thousands of fast edits remains possible.
+
 ## Triad v5 (0.6.0) on macOS — 2026-10-18
 
 Commit `3042036`, run 39105684238 (macos-14 runner, virtual Apple M1, 3 cores; the run before it, `a3c5ba1` /

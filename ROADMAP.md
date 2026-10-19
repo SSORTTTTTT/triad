@@ -44,8 +44,8 @@ New in 0.7.0:
   35-75 ms (was up to 200 ms), silent for that moment rather than out of line.
 - **Smoother while recording:** a new effect is prepared, and a removed one released, outside the moment the audio
   waits for the bands to change, so loading or removing a big plug-in no longer makes Triad skip blocks. Removed
-  effects are deleted one at a time, 1.5 s after they leave (a crash seen in the v6 CI run: a plug-in's own message
-  queue still running while 50 effects were deleted at once after a project reload).
+  effects are deleted in steps: the window first, the effect 0.4 s later, at least 1.5 s after it left, a few copies
+  of a plug-in at a time (crashes seen in the v6 CI runs inside plug-ins' own message queues when many went at once).
 - Latency readouts of 10 ms and more in whole milliseconds ("57 ms", was "57.4375 ms latency").
 - For tracking: Auto-Tune once, in PRE, in Low Latency mode; dividers in the voice's low notes at 24 dB/oct or softer.
 
@@ -64,6 +64,10 @@ and the dividers at 250 Hz and 2.5 kHz):
   plain track, in Triad with one band, in PRE with 3 bands, and a copy in each band at 96 and at 24 dB/oct: latency
   reported vs heard, how far from the note and how much wobble is left, and how different it sounds from the plain
   track.
+
+Known: under thousands of fast random edits with 40-50 real plug-ins, an intermittent crash inside ChowMatrix's or
+FILT-R's own code was seen in some v6 test runs (every plug-in passes on its own, and the final run passed); keep an
+eye on it with Chowdhury plug-ins.
 
 Still to do from this list:
 - Measure Thomas's exact chain in FL Studio and Ableton on the Mac (plain track vs Triad, AU vs VST3) once he has
