@@ -1777,7 +1777,8 @@ int editsChild (const juce::File& poolFile, juce::int64 seed, double maxSeconds)
         return 1;
     }
 }
-void editsInOwnProcess (const Pool& pool, juce::int64 seed, double maxSeconds, const juce::String& format)
+// True when the sequence finished and held every check; a crash or a failed check is reported, and the caller decides.
+bool editsInOwnProcess (const Pool& pool, juce::int64 seed, double maxSeconds, const juce::String& format)
 {
     const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadEdits");
     folder.createDirectory();
@@ -1815,8 +1816,10 @@ void editsInOwnProcess (const Pool& pool, juce::int64 seed, double maxSeconds, c
     child.waitForProcessToFinish (30000);
     const auto code = child.getExitCode();
     folder.deleteRecursively();
-    require (succeeded && code == 0, "Random edits with real plug-ins (seed " + juce::String (seed) + ", " + format + "): the process "
-                        + (code == 1 ? juce::String ("failed a check") : juce::String ("crashed (its crash report is above)")));
+    if (succeeded && code == 0) return true;
+    say ("FAILED: random edits with real plug-ins (seed " + juce::String (seed) + ", " + format + "): the process "
+         + (code == 1 ? juce::String ("failed a check") : juce::String ("crashed (its crash report is above)")) + "; the other sections go on");
+    return false;
 }
 
 // ---- 0. Removing effects, one effect at a time --------------------------------------------------------------
@@ -2048,10 +2051,40 @@ int main (int argc, char** argv)
         }
         bigProject (working, real ? 10.0 : 20.0);
         // With real plug-ins: five different random sequences, each given up to 8 minutes.
+        juce::StringArray failedSequences;
         if (real)
-            for (int i = 0; i < 5; ++i) editsInOwnProcess (working, seed + i, 480.0, i % 2 == 0 ? "VST3" : "AudioUnit");
+        {
+            std::vector<std::pair<juce::int64, juce::String>> failed;
+            for (int i = 0; i < 5; ++i)
+            {
+                const juce::String format = i % 2 == 0 ? "VST3" : "AudioUnit";
+                if (! editsInOwnProcess (working, seed + i, 480.0, format)) failed.push_back ({ seed + i, format });
+            }
+            // A sequence that crashed inside a plug-in, again without the Chowdhury plug-ins (every crash so far was in
+            // one of their message queues, or FILT-R's): does the crash follow them?
+            if (! failed.empty())
+            {
+                Pool withoutChow;
+                withoutChow.openGlWindows = working.openGlWindows;
+                juce::StringArray leftOut;
+                for (size_t e = 0; e < working.effects.size(); ++e)
+                {
+                    const auto& d = working.effects[e];
+                    if (d.manufacturerName.containsIgnoreCase ("chowdsp") || d.name.startsWithIgnoreCase ("chow") || d.name.containsIgnoreCase ("BYOD"))
+                        leftOut.addIfNotAlreadyThere (d.name);
+                    else { withoutChow.effects.push_back (d); withoutChow.names.add (working.names[(int) e]); }
+                }
+                say ("\nThe sequences that failed, again without the Chowdhury plug-ins (" + leftOut.joinIntoString (", ") + "):");
+                for (const auto& [failedSeed, format] : failed)
+                {
+                    const bool passed = editsInOwnProcess (withoutChow, failedSeed, 480.0, format);
+                    say ("Seed " + juce::String (failedSeed) + " (" + format + ") without them: " + (passed ? "passed" : "failed too"));
+                    failedSequences.add ("seed " + juce::String (failedSeed) + " (" + format + (passed ? "; passed without the Chowdhury plug-ins)" : "; failed without them too)"));
+                }
+            }
+        }
         else if (std::getenv ("TRIAD_STRESS_EDITS_IN_CHILD") != nullptr)   // to check the child-process path without real plug-ins
-            editsInOwnProcess (working, seed, 0.0, "VST3");
+            require (editsInOwnProcess (working, seed, 0.0, "VST3"), "Random edits in their own process");
         else
             editsWhilePlaying (working, seed, 3000, 0.0);
         manyInstances (working);
@@ -2061,6 +2094,7 @@ int main (int argc, char** argv)
         pitchCorrection (pool);
         pluginList (effect, crashFixture, scanner);
         step ({}, 0);
+        require (failedSequences.isEmpty(), "Random edits with real plug-ins crashed or failed a check: " + failedSequences.joinIntoString (", "));
         if (! invalidEffects.empty())
         {
             juce::StringArray list;

@@ -110,7 +110,7 @@ jobs:
 
       - name: Stress test with real third-party plug-ins and every LFO on
         continue-on-error: true
-        timeout-minutes: 50
+        timeout-minutes: 85
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
