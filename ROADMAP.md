@@ -4,7 +4,34 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.7.0 ("Triad v6"): Auto-Tune and live vocals
+## Current testing version — 0.8.0 ("Triad v7"): Triad Time and band MUTE
+
+0.8.0 (2026-10-19), from Thomas's notes after v6 ("I've had friends use it and they love it"):
+- **Triad Time** by Thomas Ross: a Gross Beat-style time and volume gate, Triad's only built-in effect (BUILT IN at the top of
+  the effect list), and also a plug-in of its own with its own installer (Triad-Time-0.8.0-macOS-AppleSilicon.pkg, VST3 + AU)
+  for any track in any DAW. TIME (how far back it plays, from a 12 s rolling buffer: repeats, half speed, tape stops,
+  reverse, scratches) and VOLUME (the gate), 12 patterns each, drawn with Triad's own LFO system: the same grid, toolbar,
+  every preset folder, the USER folder and the generator (HARD / MIX / SOFT and the dice). SMOOTHING crossfades every jump in
+  time (like Gross Beat's click reduction, without the dip); ATTACK and RELEASE smooth the gate; TIME MIX and VOLUME MIX.
+  No latency; synced to the song.
+- **MUTE** at the bottom of every band strip (automatable, saved; it stays with its band when bands are added, removed or moved).
+- Effects that Triad plays in pieces (an LFO on one of their knobs) now see the song's position move on with each piece,
+  so tempo-synced effects (Triad Time, gates, delays) stay exactly in time.
+- The LFO tab's grid, toolbar, palette and generator became one shared part (Triad's LFO tab and Triad Time use the same code).
+
+Next (Thomas, 2026-10-19):
+- **Split mode** (the rest of the week): each band out to its own track in the DAW, so FL's, Ableton's and Pro Tools' own
+  plug-ins can work on one band (Gross Beat on the highs, Saturator on the mids...). FL: Triad's band outputs to mixer
+  inserts and a sum bus, or Triad inside Patcher; Ableton: an Audio Effect Rack with three Triads set to "this band only",
+  dividers linked. Diagram: https://claude.ai/artifact/HBwKVrGQvg8oCEBhn4Lbhe
+- **A routing helper** per DAW, as an add-on: an FL Patcher preset (and an FL Python script that names and routes the band
+  inserts), an Ableton rack preset or Max for Live device that builds the band tracks. Thomas's idea: in Triad, choose for
+  each band "route to insert N"; Triad itself cannot change FL's routing, but its band outputs can be mapped to inserts once
+  in FL's plug-in settings, which a script or template can do for you.
+- **Pro Tools (AAX) version** of Triad and Triad Time (needs Avid's developer program and signing).
+- **Final name: BANDS** (all caps). Triad stays the name while testing; the rename comes last.
+
+### 0.7.0 ("Triad v6"): Auto-Tune and live vocals
 
 0.7.0 (2026-10-18), from Thomas's vocal test with v4 (Ableton): Auto-Tune Pro (retune speed 0), UADx LA-2A, Fresh Air
 and a 3-band EQ in each of three bands, dividers at 170 Hz and 9.41 kHz at 96 dB/oct. It "works pretty good", but in
