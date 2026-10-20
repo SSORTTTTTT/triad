@@ -1,5 +1,22 @@
 # Validation — Triad
 
+## Triad v9 (0.10.0), Triad Time and Triad Split on macOS — 2026-10-20
+
+Commit `bda7754`, run 39484490130 attempt 2 (macos-14 runner, virtual Apple M1). New in 0.10.0: Triad Time's grid laid
+out as ShaperBox's (64 columns and 16 rows for a 1-bar pattern, TIME reaching one pattern length back, labels 0 ...
+-4/4) and training the generator with the green check and the red X.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v9-0.10.0`, `Triad-Time-0.10.0`, `Triad-Split-0.10.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (Triad v9 over simulated Triad ... v8 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| Triad Time grid | 64 x 16 at GRID 1/64 for 1 bar, snapping to every line; Triad's LFO grid unchanged (8 rows, 16 steps); Thomas's ShaperBox teeth (0 to -1/16 over a 1/16) hold the sound still; half speed 440 Hz in, 220.003 Hz out; patterns saved before 0.10 keep their delays |
+| Generator training | Liking straight shapes and disliking curvy ones (40 ratings, Angular 100 / Soft 60): curvy segments 48% untrained, 6% trained; a disliked shape never comes back; ratings saved and read back |
+| Real plug-ins (57) | 5 x 3,000 random edits (each in its own process) all passed: PASS, no crashes, no NaN/Inf output, all checks held |
+
+The first attempt of this run (and run 39434712987) had sequence 779 crash inside a third-party plug-in's own message
+handling (REEV-R; ChowMatrix before, in `juce::MessageQueue::runLoopSourceCallback`), at the same edit; the sequence
+passed without the Chowdhury plug-ins and the whole run passed when repeated.
+
 ## Triad v8 (0.9.0), Triad Split and Triad Time on macOS — 2026-10-19
 
 Commit `7b927f6`, run 39372839847 (macos-14 runner, virtual Apple M1). New in 0.9.0: Triad Split (split mode, its own
