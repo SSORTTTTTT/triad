@@ -1,5 +1,18 @@
 # Validation — Triad
 
+## Triad v7 (0.8.0) and Triad Time on macOS — 2026-10-19
+
+Commit `8de47bc`, run 39350295768 (macos-14 runner, virtual Apple M1). New in 0.8.0: Triad Time (built into Triad, and its
+own VST3 / AU with its own installer), MUTE on every band, the song position for effects played in pieces, the shared
+shape panel.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v7-0.8.0-macOS-AppleSilicon.pkg`, `Triad-Time-0.8.0-macOS-AppleSilicon.pkg` | Both built and installed (Triad v7 over simulated Triad ... v6 installs, all removed); AU VALIDATION SUCCEEDED for both; pluginval SUCCESS for all four (Triad v7 VST3 / AU, Triad Time VST3 / AU); integration tests passed |
+| Triad Time sound | Untouched: identical to the input, 0 latency; one beat back: exactly 24,000 samples late at 120 bpm; half speed: 440 Hz in, 220.003 Hz out; reverse: backwards at normal speed; 1/16 repeats: biggest step 0.036 with 8 ms smoothing vs 0.38 without (the tone's own: 0.029); gates follow 120 and 90 bpm exactly; attack / release without clicks; inside Triad with a knob link (played in 64-sample pieces): within 6e-8 of Triad Time alone |
+| Band MUTE | All muted: silence; band 2 muted: 7% of white noise's energy taken out, the rest plays; mutes stay with their bands when bands are added or removed |
+| Real plug-ins (56, with Triad Time VST3, AU and built in) | 56 of 56 removed and deleted 14 times each without a problem; Triad Time's 9 knobs link to LFOs, LEARN and undo work in all three; 5 x 3,000 random edits (each in its own process) all passed, no NaN/Inf, 0 removed effects late; recording and pitch-correction sections passed |
+
 ## Triad v6 (0.7.0) on macOS — 2026-10-19
 
 Commit `e1b9db7`, run 39326757744 (macos-14 runner, virtual Apple M1). New in 0.7.0: PRE and POST chains (also in
