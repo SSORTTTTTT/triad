@@ -175,23 +175,39 @@ private:
 };
 
 // The shape generator: Angular / Soft / Chaos, HARD / MIX / SOFT, and the dice that draws a new shape on the
-// target editor's grid (undoable).
+// target editor's grid (undoable). Under the dice: the green check (you like the shape on the grid) and the red X
+// (you do not: it draws a new one), which train the dice on your taste, one taste per kind of shape.
 class GeneratorPanel final : public juce::Component
 {
 public:
     GeneratorPanel();
-    void setTarget (ShapeEditor* e) noexcept { target = e; }
+    static constexpr int preferredHeight = 192;
+    void setTarget (ShapeEditor* e) { target = e; updateRatingButtons(); }
     void generate();
+    // Which taste the check and the X train and the dice follows: "lfo" (Triad's LFOs), "time", "volume" (Triad Time).
+    void setTasteKey (const juce::String&);
+    juce::String getTasteKey() const { return tasteKey; }
+    void rate (bool liked);                      // the shape on the grid; a dislike then draws a new one
+    triad::mod::Taste getTaste() const;          // as saved
+    void forgetTaste();
+    juce::Button& getLikeButton() noexcept { return *likeButton; }
+    juce::Button& getDislikeButton() noexcept { return *dislikeButton; }
+    static juce::File tasteFile (const juce::String& key);   // next to Triad's settings
     void setStyle (float angular, float soft, float chaos);   // 0..1 each
     triad::mod::Style getStyle() const;
     void setSeed (juce::int64 seed) { random.setSeed (seed); }
     juce::Button& getGenerateButton() noexcept { return *generateButton; }
+    void mouseDown (const juce::MouseEvent&) override;   // right-click the check or the X: forget the taste
     juce::Slider& getChaosSlider() noexcept { return chaosSlider; }
     void resized() override;
     void paint (juce::Graphics&) override;
 private:
     void saveStyle();
+    void updateRatingButtons();
+    void showTasteMenu();
     ShapeEditor* target = nullptr;
+    juce::String tasteKey { "lfo" };
+    std::unique_ptr<juce::Button> likeButton, dislikeButton;
     juce::Slider angularSlider, softSlider, chaosSlider;
     juce::TextButton hardStyleButton { "HARD" }, mixStyleButton { "MIX" }, softStyleButton { "SOFT" };
     std::unique_ptr<juce::Button> generateButton;

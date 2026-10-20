@@ -16,6 +16,12 @@ shaper box ... a 4x4 square ... so there's more small points ... keep the LFO ta
   ShaperBox 3 at 1 bar: bright lines every 1/16, faint every 1/64, rows every 1/16 of the range).
 - The TIME presets keep their sound on the new grid; patterns saved with 0.8 / 0.9 are converted when they open.
 - Triad's LFO tab grid is unchanged (8 rows, its own snapping).
+- **Train the dice** (Thomas: "a green check mark and an X under the button ... it trains the randomizer on what you like
+  and don't like"): under NEW SHAPE in every generator (Triad's LFO tab and Triad Time), the green check likes the
+  shape on the grid and the red X dislikes it and draws a new one. The dice then draws 24 shapes and offers one of the
+  best for that taste (curve, make-up of steps / curves / lines, and the Angular / Soft / Chaos it was made with);
+  nothing nearly the same as a disliked shape comes back. Tested: liking straight shapes and disliking curvy ones took
+  the dice's curvy segments from 48% to 6% at Angular 100 / Soft 60. One taste each for LFOs, TIME and VOLUME.
 
 ### 0.9.0 ("Triad v8"): split mode (Triad Split)
 

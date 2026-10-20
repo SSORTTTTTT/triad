@@ -1,5 +1,6 @@
 #pragma once
 #include "Modulation.h"
+#include <functional>
 
 // The shape generator behind the LFO tab's dice: new shapes in the style Triad was tuned on (Thomas's
 // Infiltrator favourites: 846 drawn shapes), never copies of them. Shapes are built from gestures
@@ -28,4 +29,40 @@ Shape generate (const Style&, const GridInfo&, juce::int64 seed);
 
 // The angle of a line on screen, in degrees: 0 flat, 90 vertical.
 float lineAngle (const Point& from, const Point& to, float aspect = plotAspect);
+
+// What you liked and disliked among the dice's shapes (the green check and the red X under NEW SHAPE), so the dice
+// leans towards shapes like the ones you liked and stays away from shapes like the ones you disliked (made with
+// similar Angular / Soft / Chaos settings). One per kind of shape (Triad's LFOs, Triad Time's TIME and VOLUME).
+class Taste
+{
+public:
+    void add (const Shape&, const Style&, bool liked);
+    void clear() { entries.clear(); }
+    int countLiked() const;
+    int countDisliked() const;
+    bool empty() const noexcept { return entries.empty(); }
+    // How alike two shapes are, 0..1 (1: the same): their curve, their make-up (steps, curves, straight lines, how
+    // many points, how much they move) and the Angular / Soft / Chaos they were made with.
+    static float similarity (const Shape&, const Style&, const Shape&, const Style&);
+    // Higher: closer to what you liked, further from what you disliked (0 when nothing is rated yet).
+    float score (const Shape&, const Style&) const;
+    // Too close to a shape you disliked: never offered again.
+    bool rejects (const Shape&, const Style&) const;
+    // The dice with your taste: `candidates` shapes in this style, then one of the best of them (not always the very
+    // best, so it keeps surprising you). Without ratings it is the plain dice.
+    Shape pick (const Style&, const GridInfo&, juce::Random&, const std::function<bool (const Shape&)>& allowed = {}, int candidates = 24) const;
+    juce::String toText() const;                 // one line per rating
+    static Taste fromText (const juce::String&);
+    static constexpr int maxEntries = 400;       // the oldest ratings go first
+private:
+    struct Features
+    {
+        std::array<float, 64> curve {};
+        std::array<float, 5> makeUp {};          // steps, curves, straight lines, points, motion (each 0..1)
+    };
+    static Features featuresOf (const Shape&);
+    static float similarity (const Features&, const Style&, const Features&, const Style&);
+    struct Entry { Shape shape; Style style; bool liked = true; Features features; };
+    std::vector<Entry> entries;
+};
 }

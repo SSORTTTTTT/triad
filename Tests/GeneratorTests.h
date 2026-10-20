@@ -255,5 +255,54 @@ inline void run()
         require (angleClasses.count (30) && angleClasses.count (45) && angleClasses.count (60), "Presets have lines at 30, 45 and 60 degrees");
         std::cout << "LFO presets: " << mod::numPresets() << " shapes in " << mod::numPresetCategories() << " categories: passed" << std::endl;
     }
+    // ---- Training the dice: the green check and the red X ------------------------------------------------------------
+    {
+        const mod::Style mix { 1.0f, 0.6f, 0.4f };   // hard angles into curves: both kinds of shape come up
+        mod::GridInfo grid;
+        auto curvy = [] (const mod::Shape& s)
+        {
+            const auto l = look (s);
+            const int segments = l.steps + l.holds + l.lines + l.curves;
+            return segments > 0 ? (float) l.curves / (float) segments : 0.0f;
+        };
+        // Untrained: how curvy the dice's shapes are in this style.
+        mod::Taste none;
+        juce::Random r1 (11);
+        float before = 0.0f;
+        for (int i = 0; i < 60; ++i) before += curvy (none.pick (mix, grid, r1));
+        before /= 60.0f;
+        // Thomas likes the shapes with few curves and dislikes the curvy ones (40 ratings).
+        mod::Taste taste;
+        juce::Random r2 (12);
+        for (int i = 0; i < 40; ++i)
+        {
+            const auto s = mod::generate (mix, grid, r2);
+            taste.add (s, mix, curvy (s) < 0.15f);
+        }
+        juce::Random r3 (13);
+        float after = 0.0f;
+        for (int i = 0; i < 60; ++i) after += curvy (taste.pick (mix, grid, r3));
+        after /= 60.0f;
+        std::cout << "Generator taste: curves in its shapes " << juce::roundToInt (before * 100.0f) << "% untrained, "
+                  << juce::roundToInt (after * 100.0f) << "% after liking straight ones and disliking curvy ones" << std::endl;
+        require (after < before * 0.75f, "Liked and disliked shapes train the dice (fewer of what you disliked)");
+        // A disliked shape (and anything nearly the same) never comes back.
+        juce::Random r4 (14);
+        const auto disliked = mod::generate (mix, grid, r4);
+        mod::Taste one;
+        one.add (disliked, mix, false);
+        require (one.rejects (disliked, mix) && one.countDisliked() == 1, "A disliked shape is never offered again");
+        require (mod::Taste::similarity (disliked, mix, disliked, mix) > 0.999f, "A shape is the same as itself");
+        require (mod::Taste::similarity (disliked, mix, disliked, mod::Style { 0.0f, 1.0f, 1.0f }) < 0.95f,
+                 "...and less alike made with other Angular / Soft / Chaos settings");
+        // Kept between sessions.
+        const auto restored = mod::Taste::fromText (taste.toText());
+        require (restored.countLiked() == taste.countLiked() && restored.countDisliked() == taste.countDisliked(), "Ratings are saved and read back");
+        mod::Taste many;
+        juce::Random r5 (15);
+        for (int i = 0; i < mod::Taste::maxEntries + 50; ++i) many.add (mod::generate (mix, grid, r5), mix, i % 2 == 0);
+        require (many.countLiked() + many.countDisliked() <= mod::Taste::maxEntries, "Only the newest ratings are kept");
+        std::cout << "Generator taste: passed" << std::endl;
+    }
 }
 }

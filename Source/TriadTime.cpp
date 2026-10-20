@@ -636,6 +636,7 @@ public:
     void showEnvelope (int e)
     {
         envelope = e;
+        generator.setTasteKey (e == TriadTime::timeEnvelope ? "time" : "volume");   // the check and the X train each its own taste
         timeTab.setToggleState (e == TriadTime::timeEnvelope, juce::dontSendNotification);
         volumeTab.setToggleState (e == TriadTime::volumeEnvelope, juce::dontSendNotification);
         for (auto* tab : { &timeTab, &volumeTab })
@@ -693,7 +694,7 @@ public:
         for (auto& b : slots) b->setBounds (slotRow.removeFromLeft (width).withTrimmedRight (4));
         r.removeFromTop (8);
         shapes.setBounds (r.withTrimmedBottom (14));
-        generator.setBounds (right.removeFromBottom (158).withTrimmedBottom (14));
+        generator.setBounds (right.removeFromBottom (GeneratorPanel::preferredHeight + 14).withTrimmedBottom (14));
         right.removeFromBottom (8);
         knobArea = right;
         // Two big knobs (the mixes), then three smaller ones (smoothing, attack, release); a label over each.

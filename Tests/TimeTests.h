@@ -138,6 +138,25 @@ inline void run (const juce::File& screenshotFolder)
             if (std::abs ((out[i] - out[i - 1]) + 1.0e-6f) < 2.0e-7f) ++backwards;
         require (backwards > total * 0.98, "Reverse plays the second half of the bar backwards at normal speed");
     }
+    // ---- The grid as ShaperBox's: a line one grid cell down per cell across holds the sound still ------------------------
+    {
+        TriadTime t;
+        t.prepareToPlay (rate, block);
+        setPlain (t.smoothing, 0.0f);
+        // Thomas's teeth: from 0 down to -1/16 over a 1/16, twice (as drawn in ShaperBox 3).
+        t.setShape (TriadTime::timeEnvelope, 0, { { 0.0f, 1.0f, 0.0f }, { 0.0625f, 0.9375f, 0.0f }, { 0.0625f, 1.0f, 0.0f }, { 0.125f, 0.9375f, 0.0f },
+                                                  { 0.125f, 1.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } }, false);
+        Head head;
+        std::vector<float> ramp (samplesPerBeat * 8);
+        for (size_t i = 0; i < ramp.size(); ++i) ramp[i] = (float) ((double) i * 1.0e-6);
+        const auto out = run (t, head, ramp, block);
+        // Second bar, its first 1/16 (6,000 samples at 120 bpm): the sound stands still at where the 1/16 began.
+        const size_t bar = samplesPerBeat * 4, sixteenth = samplesPerBeat / 4;
+        float moved = 0.0f;
+        for (size_t i = bar + 50; i < bar + sixteenth - 50; ++i) moved = juce::jmax (moved, std::abs (out[i] - out[bar + 50]));
+        require (moved < 1.0e-6f, "One grid cell down per cell across holds the sound still, as in ShaperBox");
+        require (std::abs (out[bar + sixteenth + 3000] - ramp[bar + sixteenth + 3000]) > 1.0e-4f, "...and the second tooth holds it again");
+    }
     // ---- SMOOTHING: repeats do not click ---------------------------------------------------------------------------------
     {
         auto clickiness = [&] (float smoothingMs, int& jumps)
@@ -326,6 +345,18 @@ inline void run (const juce::File& screenshotFolder)
         const auto before = t.getShape (TriadTime::timeEnvelope, 0);
         shapes->getPaletteButton (0)->onClick();
         require (! (t.getShape (TriadTime::timeEnvelope, 0) == before) || shapes->getPaletteButton (0) == nullptr, "A palette shape replaces the TIME pattern");
+        // The green check and the red X under the dice (a test taste, forgotten afterwards).
+        generator->setTasteKey ("test");
+        generator->forgetTaste();
+        generator->rate (true);
+        require (generator->getTaste().countLiked() == 1, "The green check rates the shape on the grid as liked");
+        const auto ratedAway = t.getShape (TriadTime::timeEnvelope, 0);
+        generator->rate (false);
+        require (generator->getTaste().countDisliked() == 1 && ! (t.getShape (TriadTime::timeEnvelope, 0) == ratedAway),
+                 "The red X rates it as disliked and draws a new one");
+        require (generator->getLikeButton().isShowing() || ! editor->isShowing(), "The check and the X are under the dice");
+        generator->forgetTaste();
+        generator->setTasteKey ("time");
         generator->setSeed (5);
         generator->generate();
         const auto generated = t.getShape (TriadTime::timeEnvelope, 0);

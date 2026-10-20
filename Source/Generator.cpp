@@ -909,6 +909,139 @@ Shape generate (const Style& style, const GridInfo& grid, juce::Random& random)
     return Generator (style, grid, random).run();
 }
 
+// ---- Taste: the green check and the red X ---------------------------------------------------------------------------
+Taste::Features Taste::featuresOf (const Shape& s)
+{
+    Features f;
+    for (size_t i = 0; i < f.curve.size(); ++i) f.curve[i] = evaluate (s, ((float) i + 0.5f) / (float) f.curve.size());
+    float steps = 0.0f, curves = 0.0f, lines = 0.0f, motion = 0.0f;
+    for (size_t i = 0; i + 1 < s.size(); ++i)
+    {
+        const auto& a = s[i];
+        const auto& b = s[i + 1];
+        motion += std::abs (b.y - a.y);
+        if (juce::exactlyEqual (a.x, b.x)) steps += 1.0f;
+        else if (std::abs (a.curve) > 0.05f) curves += 1.0f;
+        else if (! juce::exactlyEqual (a.y, b.y)) lines += 1.0f;
+    }
+    const float segments = (float) juce::jmax ((size_t) 1, s.size() - 1);
+    f.makeUp = { steps / segments, curves / segments, lines / segments, juce::jmin (1.0f, (float) s.size() / 40.0f), juce::jmin (1.0f, motion / 12.0f) };
+    return f;
+}
+float Taste::similarity (const Features& a, const Style& sa, const Features& b, const Style& sb)
+{
+    float curve = 0.0f;
+    for (size_t i = 0; i < a.curve.size(); ++i) curve += std::abs (a.curve[i] - b.curve[i]);
+    curve /= (float) a.curve.size();
+    float makeUp = 0.0f;
+    for (size_t i = 0; i < a.makeUp.size(); ++i) makeUp += std::abs (a.makeUp[i] - b.makeUp[i]);
+    makeUp /= (float) a.makeUp.size();
+    const float style = (std::abs (sa.angular - sb.angular) + std::abs (sa.soft - sb.soft) + std::abs (sa.chaos - sb.chaos)) / 3.0f;
+    const float distance = 0.5f * curve + 0.3f * makeUp + 0.2f * style;
+    return std::exp (-distance / 0.12f);
+}
+float Taste::similarity (const Shape& a, const Style& sa, const Shape& b, const Style& sb)
+{
+    return similarity (featuresOf (a), sa, featuresOf (b), sb);
+}
+void Taste::add (const Shape& s, const Style& style, bool liked)
+{
+    if (s.size() < 2) return;
+    // Rating the same shape again changes its rating.
+    entries.erase (std::remove_if (entries.begin(), entries.end(), [&s] (const Entry& e) { return e.shape == s; }), entries.end());
+    entries.push_back ({ s, style, liked, featuresOf (s) });
+    if ((int) entries.size() > maxEntries) entries.erase (entries.begin(), entries.begin() + ((int) entries.size() - maxEntries));
+}
+int Taste::countLiked() const { return (int) std::count_if (entries.begin(), entries.end(), [] (const Entry& e) { return e.liked; }); }
+int Taste::countDisliked() const { return (int) entries.size() - countLiked(); }
+float Taste::score (const Shape& s, const Style& style) const
+{
+    if (entries.empty()) return 0.0f;
+    const auto f = featuresOf (s);
+    // The closest liked and disliked shapes count most; the rest a little (newer ratings a little more).
+    float bestLiked = 0.0f, bestDisliked = 0.0f, sumLiked = 0.0f, sumDisliked = 0.0f, weightLiked = 0.0f, weightDisliked = 0.0f;
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        const auto& e = entries[i];
+        const float sim = similarity (f, style, e.features, e.style);
+        const float recency = 0.5f + 0.5f * (float) (i + 1) / (float) entries.size();
+        if (e.liked) { bestLiked = juce::jmax (bestLiked, sim); sumLiked += sim * recency; weightLiked += recency; }
+        else { bestDisliked = juce::jmax (bestDisliked, sim); sumDisliked += sim * recency; weightDisliked += recency; }
+    }
+    const float liked = weightLiked > 0.0f ? 0.7f * bestLiked + 0.3f * sumLiked / weightLiked : 0.0f;
+    const float disliked = weightDisliked > 0.0f ? 0.7f * bestDisliked + 0.3f * sumDisliked / weightDisliked : 0.0f;
+    // A near copy of a liked shape is no new idea: a little less.
+    const float copy = bestLiked > 0.97f ? 0.3f : 0.0f;
+    return liked - 1.3f * disliked - copy;
+}
+bool Taste::rejects (const Shape& s, const Style& style) const
+{
+    const auto f = featuresOf (s);
+    for (const auto& e : entries)
+        if (! e.liked && similarity (f, style, e.features, e.style) > 0.8f) return true;
+    return false;
+}
+Shape Taste::pick (const Style& style, const GridInfo& grid, juce::Random& random, const std::function<bool (const Shape&)>& allowed, int candidates) const
+{
+    auto ok = [&] (const Shape& s) { return ! allowed || allowed (s); };
+    if (entries.empty())
+    {
+        auto s = generate (style, grid, random);
+        for (int tries = 0; tries < 8 && ! ok (s); ++tries) s = generate (style, grid, random);
+        return s;
+    }
+    std::vector<std::pair<float, Shape>> scored;
+    for (int i = 0; i < juce::jmax (1, candidates); ++i)
+    {
+        auto s = generate (style, grid, random);
+        if (! ok (s) || rejects (s, style)) continue;
+        scored.push_back ({ score (s, style), std::move (s) });
+    }
+    if (scored.empty())   // everything looked like something disliked: the least disliked of a fresh batch
+    {
+        for (int i = 0; i < juce::jmax (1, candidates); ++i)
+        {
+            auto s = generate (style, grid, random);
+            if (ok (s)) scored.push_back ({ score (s, style), std::move (s) });
+        }
+        if (scored.empty()) return generate (style, grid, random);
+    }
+    // One of the best: chances fall off quickly with the score, so better shapes come up far more often.
+    float best = -1.0e9f;
+    for (const auto& c : scored) best = juce::jmax (best, c.first);
+    double total = 0.0;
+    std::vector<double> weights;
+    for (const auto& c : scored) { weights.push_back (std::exp ((c.first - best) / 0.06)); total += weights.back(); }
+    double r = random.nextDouble() * total;
+    for (size_t i = 0; i < scored.size(); ++i)
+        if ((r -= weights[i]) <= 0.0) return scored[i].second;
+    return scored.back().second;
+}
+juce::String Taste::toText() const
+{
+    juce::StringArray lines;
+    for (const auto& e : entries)
+        lines.add (juce::String (e.liked ? "like" : "dislike") + "|" + juce::String (e.style.angular, 3) + "," + juce::String (e.style.soft, 3) + ","
+                   + juce::String (e.style.chaos, 3) + "|" + mod::toText (e.shape));
+    return lines.joinIntoString ("\n");
+}
+Taste Taste::fromText (const juce::String& text)
+{
+    Taste t;
+    for (const auto& line : juce::StringArray::fromLines (text))
+    {
+        const auto parts = juce::StringArray::fromTokens (line, "|", "");
+        if (parts.size() != 3 || (parts[0] != "like" && parts[0] != "dislike")) continue;
+        const auto values = juce::StringArray::fromTokens (parts[1], ",", "");
+        if (values.size() != 3) continue;
+        const Style style { juce::jlimit (0.0f, 1.0f, values[0].getFloatValue()), juce::jlimit (0.0f, 1.0f, values[1].getFloatValue()),
+                            juce::jlimit (0.0f, 1.0f, values[2].getFloatValue()) };
+        const auto shape = mod::fromText (parts[2]);
+        if (shape.size() >= 2) t.add (shape, style, parts[0] == "like");
+    }
+    return t;
+}
+
 Shape generate (const Style& style, const GridInfo& grid, juce::int64 seed)
 {
     juce::Random random (seed);

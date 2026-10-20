@@ -84,6 +84,56 @@ public:
 };
 }
 
+namespace
+{
+// The green check (like) and the red X (dislike) under the dice, with how many shapes you rated so.
+class RateButton final : public juce::Button
+{
+public:
+    explicit RateButton (bool likeIt) : Button (likeIt ? "Like" : "Dislike"), like (likeIt) {}
+    void setCount (int n) { if (n != count) { count = n; repaint(); } }
+    void flash() { lit = juce::Time::getMillisecondCounterHiRes(); repaint(); juce::Timer::callAfterDelay (600, [safe = juce::Component::SafePointer<RateButton> (this)] { if (safe != nullptr) safe->repaint(); }); }
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        const auto colour = like ? juce::Colour (0xff5fd068) : juce::Colour (0xffe8594f);
+        const bool glowing = juce::Time::getMillisecondCounterHiRes() - lit < 550.0;
+        const auto r = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (colour.withAlpha (! isEnabled() ? 0.06f : down || glowing ? 0.5f : over ? 0.28f : 0.16f));
+        g.fillRoundedRectangle (r, 5.0f);
+        g.setColour (colour.withAlpha (isEnabled() ? 0.85f : 0.3f));
+        g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
+        // The mark, drawn (no font needed), then the count.
+        const float size = r.getHeight() * 0.46f;
+        auto content = r.withSizeKeepingCentre (size + (count > 0 ? 30.0f : 0.0f), size);
+        const auto mark = content.removeFromLeft (size);
+        juce::Path p;
+        if (like)
+        {
+            p.startNewSubPath (mark.getX(), mark.getCentreY());
+            p.lineTo (mark.getX() + size * 0.38f, mark.getBottom());
+            p.lineTo (mark.getRight(), mark.getY());
+        }
+        else
+        {
+            p.startNewSubPath (mark.getTopLeft()); p.lineTo (mark.getBottomRight());
+            p.startNewSubPath (mark.getTopRight()); p.lineTo (mark.getBottomLeft());
+        }
+        g.setColour (isEnabled() ? colour : colour.withAlpha (0.35f));
+        g.strokePath (p, juce::PathStrokeType (2.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        if (count > 0)
+        {
+            g.setColour (textColour.withAlpha (isEnabled() ? 0.9f : 0.4f));
+            g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+            g.drawText (juce::String (count), content.withTrimmedLeft (6.0f).expanded (0.0f, 4.0f), juce::Justification::centredLeft);
+        }
+    }
+private:
+    const bool like;
+    int count = 0;
+    double lit = 0.0;
+};
+}
+
 // ---- Shape editor -----------------------------------------------------------------------------------
 void ShapeEditor::setHost (ShapeHost* h)
 {
@@ -981,6 +1031,84 @@ GeneratorPanel::GeneratorPanel()
     generateButton = std::make_unique<GenerateButton>();
     generateButton->onClick = [this] { generate(); };
     addAndMakeVisible (*generateButton);
+    likeButton = std::make_unique<RateButton> (true);
+    dislikeButton = std::make_unique<RateButton> (false);
+    likeButton->setTooltip ("Like: you like the shape on the grid. The dice leans towards shapes like it (right-click: forget)");
+    dislikeButton->setTooltip ("Dislike: you don't like it. The dice draws a new one and stays away from shapes like it, made with "
+                               "similar Angular / Soft / Chaos (right-click: forget)");
+    likeButton->onClick = [this] { rate (true); };
+    dislikeButton->onClick = [this] { rate (false); };
+    for (auto* b : { likeButton.get(), dislikeButton.get() })
+    {
+        b->addMouseListener (this, false);
+        addAndMakeVisible (*b);
+    }
+    updateRatingButtons();
+}
+juce::File GeneratorPanel::tasteFile (const juce::String& key)
+{
+    juce::PropertiesFile::Options o;
+    o.applicationName = "Triad";
+    o.filenameSuffix = ".settings";
+    o.folderName = "Triad";
+    o.osxLibrarySubFolder = "Application Support";
+    return o.getDefaultFile().getParentDirectory().getChildFile ("Generator taste - " + key + ".txt");
+}
+triad::mod::Taste GeneratorPanel::getTaste() const
+{
+    const auto file = tasteFile (tasteKey);
+    return file.existsAsFile() ? triad::mod::Taste::fromText (file.loadFileAsString()) : triad::mod::Taste();
+}
+void GeneratorPanel::setTasteKey (const juce::String& key)
+{
+    if (key == tasteKey) return;
+    tasteKey = key;
+    updateRatingButtons();
+}
+void GeneratorPanel::updateRatingButtons()
+{
+    const auto taste = getTaste();
+    static_cast<RateButton*> (likeButton.get())->setCount (taste.countLiked());
+    static_cast<RateButton*> (dislikeButton.get())->setCount (taste.countDisliked());
+    const bool canRate = target != nullptr;
+    likeButton->setEnabled (canRate);
+    dislikeButton->setEnabled (canRate);
+}
+void GeneratorPanel::rate (bool liked)
+{
+    if (target == nullptr || target->getHost() == nullptr) return;
+    auto taste = getTaste();
+    taste.add (target->getShape(), getStyle(), liked);
+    const auto file = tasteFile (tasteKey);
+    file.getParentDirectory().createDirectory();
+    file.replaceWithText (taste.toText());
+    static_cast<RateButton*> (liked ? likeButton.get() : dislikeButton.get())->flash();
+    if (! liked) generate();
+    updateRatingButtons();
+}
+void GeneratorPanel::forgetTaste()
+{
+    tasteFile (tasteKey).deleteFile();
+    updateRatingButtons();
+}
+void GeneratorPanel::showTasteMenu()
+{
+    const auto taste = getTaste();
+    juce::PopupMenu menu;
+    const auto what = tasteKey == "time" ? juce::String ("Triad Time's TIME shapes") : tasteKey == "volume" ? juce::String ("Triad Time's VOLUME shapes")
+                                                                                     : juce::String ("LFO shapes");
+    menu.addSectionHeader ("YOUR TASTE IN " + what.toUpperCase() + ": " + juce::String (taste.countLiked()) + " LIKED, "
+                           + juce::String (taste.countDisliked()) + " DISLIKED");
+    menu.addItem (1, "Forget what I liked and disliked", ! taste.empty());
+    juce::Component::SafePointer<GeneratorPanel> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (likeButton.get()), [safe] (int choice)
+    {
+        if (safe != nullptr && choice == 1) safe->forgetTaste();
+    });
+}
+void GeneratorPanel::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.mods.isPopupMenu() && (e.eventComponent == likeButton.get() || e.eventComponent == dislikeButton.get())) showTasteMenu();
 }
 triad::mod::Style GeneratorPanel::getStyle() const
 {
@@ -1006,14 +1134,13 @@ void GeneratorPanel::generate()
     grid.columns = target->columns();
     grid.rows = 16;
     grid.aspect = target->plotAspect();
-    // Never the shape that is there already, nor one of the last few the dice drew.
-    auto shape = mod::generate (getStyle(), grid, random);
-    for (int tries = 0; tries < 8; ++tries)
+    // Never the shape that is there already, nor one of the last few the dice drew; with ratings (the check and the X),
+    // one of the best of a batch for your taste.
+    const auto current = target->getShape();
+    const auto shape = getTaste().pick (getStyle(), grid, random, [this, &current] (const mod::Shape& s)
     {
-        const auto text = mod::toText (shape);
-        if (! (shape == target->getShape()) && ! recentShapes.contains (text)) break;
-        shape = mod::generate (getStyle(), grid, random);
-    }
+        return ! (s == current) && ! recentShapes.contains (mod::toText (s));
+    });
     recentShapes.add (mod::toText (shape));
     while (recentShapes.size() > 16) recentShapes.remove (0);
     target->apply ([shape] (const mod::Shape&) { return shape; });
@@ -1033,6 +1160,11 @@ void GeneratorPanel::resized()
         slider->setBounds (gen.removeFromTop (24).withTrimmedLeft (64).withTrimmedRight (40));
     gen.removeFromTop (8);
     if (generateButton != nullptr) generateButton->setBounds (gen.removeFromTop (32));
+    gen.removeFromTop (6);
+    auto rating = gen.removeFromTop (26);
+    const int half = (rating.getWidth() - 6) / 2;
+    if (likeButton != nullptr) likeButton->setBounds (rating.removeFromLeft (half));
+    if (dislikeButton != nullptr) dislikeButton->setBounds (rating.removeFromRight (half));
 }
 void GeneratorPanel::paint (juce::Graphics& g)
 {

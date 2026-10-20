@@ -216,7 +216,7 @@ void LfoPage::resized()
     tabHolder.setSize (juce::jmax (x, tabRow.getWidth()), 38);
     r.removeFromTop (8);
     routingArea = r.removeFromRight (250);
-    generatorArea = routingArea.removeFromBottom (158);
+    generatorArea = routingArea.removeFromBottom (GeneratorPanel::preferredHeight);
     routingArea.removeFromBottom (8);
     generator.setBounds (generatorArea);
     r.removeFromRight (12);
