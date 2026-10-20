@@ -395,13 +395,16 @@ double TriadTime::segmentSpeed (const mod::Point& from, const mod::Point& to)
 }
 juce::String TriadTime::pitchText (double speed)
 {
-    if (std::abs (speed - 1.0) < 1.0e-4) return {};
-    if (std::abs (speed) < 1.0e-4) return "freeze";
-    if (speed < 0.0) return std::abs (speed + 1.0) < 1.0e-3 ? juce::String ("reverse") : "reverse x" + juce::String (-speed, 2);
-    const double semitones = 12.0 * std::log2 (speed);
+    // Which way it plays (FWD / REV) and how far its pitch moves: half speed is -12 st, a quarter -24, double +12.
+    if (std::abs (speed - 1.0) < 1.0e-4) return {};          // live or a steady delay: as recorded
+    if (std::abs (speed) < 1.0e-4) return "FREEZE";
+    const double semitones = 12.0 * std::log2 (std::abs (speed));
     const double whole = std::round (semitones);
-    const auto number = std::abs (semitones - whole) < 0.05 ? juce::String ((int) std::abs (whole)) : juce::String (std::abs (semitones), 1);
-    return juce::String (semitones < 0.0 ? u8 ("\xe2\x88\x92") : "+") + number + " st";
+    const bool round = std::abs (semitones - whole) < 0.05;
+    const double shown = round ? whole : std::round (semitones * 10.0) / 10.0;
+    const auto number = round ? juce::String ((int) std::abs (whole)) : juce::String (std::abs (shown), 1);
+    const juce::String sign = shown < 0.0 ? juce::String::fromUTF8 ("\xe2\x88\x92") : shown > 0.0 ? juce::String ("+") : juce::String();
+    return juce::String (speed < 0.0 ? "REV " : "FWD ") + sign + number + " st";
 }
 
 // ---- Envelopes (message thread) ------------------------------------------------------------------------------
@@ -574,6 +577,8 @@ struct EnvelopeHost final : ShapeHost
         if (envelope != TriadTime::timeEnvelope) return {};
         return TriadTime::pitchText (TriadTime::segmentSpeed (from, to));
     }
+    int segmentLabelMode() const override { return envelope == TriadTime::timeEnvelope ? labelMode : 0; }
+    int labelMode = (int) TriadSettings::PitchLabels::dragging;   // the setting (Triad Time's gear, Triad's gear)
 };
 
 // A pattern slot: its number over a small picture of its shape.
@@ -652,6 +657,9 @@ public:
             attachments.push_back (std::make_unique<juce::SliderParameterAttachment> (*k.parameter, *k.knob));
             addAndMakeVisible (*k.knob);
         }
+        gearButton.onClick = [this] { showGearMenu(); };
+        addAndMakeVisible (gearButton);
+        applyLabelMode (settings->getPitchLabels());
         showEnvelope (TriadTime::timeEnvelope);
         // The grid spans the whole window at ShaperBox's proportions (1 bar across is 3.48 x 1 bar down), so a line drawn at
         // ShaperBox's angle bends the pitch as much (a cut from 0 to -1/16 over 1/8 = an octave down).
@@ -701,7 +709,33 @@ public:
             g.drawText (label, knob->getBounds().withHeight (14).translated (0, -16).expanded (24, 0), juce::Justification::centred);
         g.setFont (juce::FontOptions (10.0f));
         g.drawText (u8 ("Double-click: add point  \xc2\xb7  Drag: move  \xc2\xb7  Double-click a point: delete  \xc2\xb7  Drag the small dot: curve  \xc2\xb7  Right-click: more"),
-                    getLocalBounds().removeFromTop (44).reduced (16, 0).withTrimmedLeft (480), juce::Justification::centredRight);
+                    getLocalBounds().removeFromTop (44).reduced (16, 0).withTrimmedLeft (480).withTrimmedRight (42), juce::Justification::centredRight);
+    }
+    // The pitch labels on the TIME lines: from the settings (shared with Triad's gear menu and every Triad Time).
+    void applyLabelMode (TriadSettings::PitchLabels mode)
+    {
+        if (timeHost.labelMode == (int) mode) return;
+        timeHost.labelMode = (int) mode;
+        shapes.getEditor().repaint();
+    }
+    void showGearMenu()
+    {
+        const auto mode = settings->getPitchLabels();
+        juce::PopupMenu menu;
+        menu.addSectionHeader ("PITCH LABELS (TIME)");
+        menu.addItem (1, "Off", true, mode == TriadSettings::PitchLabels::off);
+        menu.addItem (2, "While dragging a point", true, mode == TriadSettings::PitchLabels::dragging);
+        menu.addItem (3, "Always, on every line", true, mode == TriadSettings::PitchLabels::always);
+        menu.addSeparator();
+        menu.addItem (-1, "FWD / REV: which way it plays; st: semitones up or down", false);
+        juce::Component::SafePointer<TriadTimeEditor> safe (this);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&gearButton), [safe] (int choice)
+        {
+            if (safe == nullptr || choice < 1 || choice > 3) return;
+            const auto next = (TriadSettings::PitchLabels) (choice - 1);
+            safe->settings->setPitchLabels (next);
+            safe->applyLabelMode (next);
+        });
     }
     // Heights of the rows under the header, and the window height that gives the grid ShaperBox's proportions.
     static constexpr int slotRowHeight = 46, bottomRowHeight = GeneratorPanel::preferredHeight;
@@ -716,6 +750,7 @@ public:
         // As ShaperBox: the grid across the whole window, the controls in a row under it.
         auto r = getLocalBounds().reduced (16, 0);
         auto header = r.removeFromTop (44);
+        gearButton.setBounds (header.removeFromRight (30).withSizeKeepingCentre (30, 28));
         header.removeFromLeft (270);   // TRIAD TIME by Thomas Ross
         auto tabs = header.withSizeKeepingCentre (header.getWidth(), 30);
         timeTab.setBounds (tabs.removeFromLeft (92));
@@ -762,7 +797,11 @@ private:
         shown[0] = processor.getSlot (0);
         shown[1] = processor.getSlot (1);
     }
-    void timerCallback() override { shapes.updateToolbar(); }
+    void timerCallback() override
+    {
+        shapes.updateToolbar();
+        if (++settingsTicks >= 15) { settingsTicks = 0; applyLabelMode (settings->getPitchLabels()); }   // changed in Triad's gear menu
+    }
     // Every frame of the screen (up to 120 a second): a pattern switched by automation (or one of Triad's LFOs)
     // shows at once.
     void frame (double time)
@@ -780,6 +819,9 @@ private:
     int shown[2] { -1, -1 };
     EnvelopeHost timeHost { processor, TriadTime::timeEnvelope }, volumeHost { processor, TriadTime::volumeEnvelope };
     juce::TextButton timeTab { "TIME" }, volumeTab { "VOLUME" };
+    triad::ui::IconButton gearButton { triad::ui::IconButton::Icon::gear, "Settings: pitch labels on the TIME lines (FWD / REV and semitones)" };
+    juce::SharedResourcePointer<TriadSettings> settings;
+    int settingsTicks = 0;
     std::vector<std::unique_ptr<SlotButton>> slots;
     ShapePanel shapes;
     GeneratorPanel generator;

@@ -76,8 +76,12 @@ and also installed as a plug-in of its own (**Triad Time**, VST3 and AU) for any
   back) open with the same delays. Triad's own LFO tab grid is unchanged.
   Since 0.11.0 the grid also has ShaperBox's proportions (3.48 times as wide as tall, across the whole window, the knobs
   under it), so a line drawn at ShaperBox's angle bends the pitch as much: from 0 down to -1/16 over 1/8 is an octave
-  down (-12 st). While you drag a TIME point, the lines either side of it show their pitch ("-12 st", "freeze",
-  "reverse"). As in ShaperBox, the triangle under the corner-to-corner diagonal is striped.
+  down (-12 st). As in ShaperBox, the triangle under the corner-to-corner diagonal is striped.
+- **Pitch labels** (new in 0.11.0): each straight TIME line can read which way it plays and how far the pitch moves:
+  "FWD -12 st" (half speed), "FWD -24 st" (a quarter speed), "FWD +12 st" (double), "REV 0 st" (backwards at normal
+  speed), "REV -12 st" (backwards at half speed), "FREEZE" (the diagonal). The gear at the top right of Triad Time's
+  window (or Triad's gear menu, under TRIAD TIME) sets when they show: Off, While dragging a point (the default), or
+  Always, on every line. The setting is shared by every Triad and Triad Time on the computer.
 - **VOLUME** (orange): the gate. Top = 100%, bottom = silence.
 - **12 patterns each** (the numbered buttons): TIME starts with Off, Half speed, tape stops, 1/16, 1/8 and beat repeats,
   reverses, a scratch and a 1/32 roll; VOLUME with gates (1/8, 1/16, triplet, trance), a 1/4 pump, off-beats, fades and

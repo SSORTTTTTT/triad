@@ -34,8 +34,10 @@ struct ShapeHost
     virtual bool shadeBelowDiagonal() const { return false; }
     // The proportions ShaperBox draws its grid with (width / height of the plot, 1 bar across and 1 bar down).
     static constexpr float shaperBoxAspect = 3.48f;
-    // Shown by a straight line while one of its points is dragged (Triad Time's TIME: the pitch it plays, "-12 st").
+    // A label on a straight line (Triad Time's TIME: what it plays, "FWD -12 st", "REV 0 st", "FREEZE"), and when the
+    // labels show: 0 never, 1 on the lines either side of a point being dragged, 2 on every line (that has room).
     virtual juce::String segmentLabel (const triad::mod::Point& from, const triad::mod::Point& to) const { juce::ignoreUnused (from, to); return {}; }
+    virtual int segmentLabelMode() const { return 0; }
     virtual void setStatus (const juce::String&) {}
 };
 
@@ -82,6 +84,7 @@ public:
     static triad::mod::Shape clipboard;
 private:
     void paintLayer (juce::Graphics&);
+    bool drawSegmentLabel (juce::Graphics&, int segment, bool onlyIfRoom) const;
     int hitPoint (juce::Point<float>) const;
     int hitCurve (juce::Point<float>) const;
     juce::Point<float> curveHandle (int segment) const;

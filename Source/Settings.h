@@ -24,6 +24,12 @@ public:
     int getPaletteCategory() const;
     void setPaletteCategory (int);
 
+    // Triad Time's pitch labels on the TIME grid's straight lines ("FWD -12 st", "REV 0 st", "FREEZE"): off, while a
+    // point is dragged (the default), or always.
+    enum class PitchLabels { off = 0, dragging = 1, always = 2 };
+    PitchLabels getPitchLabels() const;
+    void setPitchLabels (PitchLabels);
+
     // The preset every new Triad opens with: "" = Init (an empty Triad), a saved preset's name, or
     // currentSettings (the settings saved with "Use the current settings as the startup preset").
     static constexpr const char* currentSettings = "*current*";

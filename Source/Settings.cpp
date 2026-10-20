@@ -108,6 +108,18 @@ void TriadSettings::setPaletteCategory (int category)
     file->saveIfNeeded();
     loadedModification = options().getDefaultFile().getLastModificationTime();
 }
+TriadSettings::PitchLabels TriadSettings::getPitchLabels() const
+{
+    reload();
+    return (PitchLabels) juce::jlimit (0, 2, file->getIntValue ("timePitchLabels", (int) PitchLabels::dragging));
+}
+void TriadSettings::setPitchLabels (PitchLabels mode)
+{
+    reload();
+    file->setValue ("timePitchLabels", (int) mode);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
 juce::String TriadSettings::favouriteKey (const juce::String& format, const juce::String& name)
 {
     return (format == "AudioUnit" ? juce::String ("AU") : format) + "|" + name.trim().toLowerCase();

@@ -172,13 +172,19 @@ inline void run (const juce::File& screenshotFolder)
         require (std::abs (f - 220.0) < 2.0, "A cut from 0 down to -1/16 over 1/8 plays a 440 Hz tone at 220 Hz: an octave down, as in ShaperBox");
         const double after = frequency (out, bar + eighth + 2000, bar + samplesPerBeat * 2, rate);
         require (std::abs (after - 440.0) < 2.0, "...and back at the top it plays live again");
+        const auto minus = juce::String::fromUTF8 ("\xe2\x88\x92");
+        const auto label = [] (float x0, float y0, float x1, float y1) { return TriadTime::pitchText (TriadTime::segmentSpeed ({ x0, y0, 0.0f }, { x1, y1, 0.0f })); };
         const auto cut = TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.125f, 0.9375f, 0.0f });
-        require (std::abs (cut - 0.5) < 1.0e-9 && TriadTime::pitchText (cut) == juce::String::fromUTF8 ("\xe2\x88\x92" "12 st"),
-                 "Dragging that point reads -12 st");
-        require (TriadTime::pitchText (TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.25f, 0.9375f, 0.0f })) == juce::String::fromUTF8 ("\xe2\x88\x92" "5 st")
-                 && TriadTime::pitchText (TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.0625f, 0.9375f, 0.0f })) == "freeze"
-                 && TriadTime::pitchText (TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.25f, 0.5f, 0.0f })) == "reverse",
-                 "Half as steep reads -5 st; one cell down per cell across freezes; twice as steep as that reverses");
+        require (std::abs (cut - 0.5) < 1.0e-9 && TriadTime::pitchText (cut) == "FWD " + minus + "12 st", "That cut's label reads FWD -12 st");
+        require (label (0.0f, 1.0f, 0.25f, 0.9375f) == "FWD " + minus + "5 st", "Half as steep: FWD -5 st");
+        require (label (0.0f, 1.0f, 0.25f, 0.8125f) == "FWD " + minus + "24 st", "A quarter speed (3/16 down over 1/4): FWD -24 st");
+        require (label (0.0f, 0.25f, 0.25f, 1.0f) == "FWD +24 st" && label (0.0f, 0.5f, 0.25f, 0.75f) == "FWD +12 st", "Rising lines play faster: FWD +12 st, FWD +24 st");
+        require (label (0.0f, 1.0f, 0.0625f, 0.9375f) == "FREEZE", "One cell down per cell across: FREEZE");
+        require (label (0.0f, 1.0f, 0.25f, 0.5f) == "REV 0 st", "Twice as steep: REV 0 st (backwards at normal pitch)");
+        require (label (0.0f, 1.0f, 0.25f, 0.625f) == "REV " + minus + "12 st" && label (0.0f, 1.0f, 0.125f, 0.625f) == "REV +12 st",
+                 "Reversed and pitched: REV -12 st, REV +12 st");
+        require (label (0.0f, 0.75f, 0.5f, 0.75f).isEmpty(), "A flat line (live or a steady delay) has no label");
+        require (std::abs (TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.25f, 0.625f, 0.0f }) + 0.5) < 1.0e-9, "...REV -12 st is backwards at half speed");
     }
     // ---- SMOOTHING: repeats do not click ---------------------------------------------------------------------------------
     {
@@ -396,6 +402,21 @@ inline void run (const juce::File& screenshotFolder)
                                                   { 0.75f, 0.875f, 0.0f }, { 1.0f, 1.0f, 0.0f } }, false);
         auto& grid = shapes->getEditor();
         grid.reload();
+        {
+            // The pitch labels setting (Triad Time's gear and Triad's gear share it): while dragging by default; Off; Always.
+            juce::SharedResourcePointer<TriadSettings> settings;
+            const auto before = settings->getPitchLabels();
+            settings->setPitchLabels (TriadSettings::PitchLabels::dragging);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1300);
+            require (grid.getHost()->segmentLabelMode() == 1, "TIME labels show while dragging a point (the default)");
+            settings->setPitchLabels (TriadSettings::PitchLabels::off);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1300);
+            require (grid.getHost()->segmentLabelMode() == 0, "...the setting turns them off (picked up by an open window)");
+            settings->setPitchLabels (TriadSettings::PitchLabels::always);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (1300);
+            require (grid.getHost()->segmentLabelMode() == 2, "...or shows them on every line");
+            juce::ignoreUnused (before);
+        }
         const auto held = grid.toScreen (grid.getShape()[1]);
         const auto now = juce::Time::getCurrentTime();
         const juce::MouseEvent press (juce::Desktop::getInstance().getMainMouseSource(), held, {}, juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -418,6 +439,7 @@ inline void run (const juce::File& screenshotFolder)
             }
         }
         grid.mouseUp (press);
+        juce::SharedResourcePointer<TriadSettings>()->setPitchLabels (TriadSettings::PitchLabels::dragging);
     }
     // ---- Triad's band MUTE --------------------------------------------------------------------------------------------------
     {

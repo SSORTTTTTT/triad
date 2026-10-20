@@ -780,7 +780,8 @@ void TriadEditor::addPluginFolder()
 void TriadEditor::showGearMenu()
 {
     enum { sortCompany = 1, sortAZ, autoCheck, refreshList, rescanAll, addFolder, presetsFolder, chainsFolder,
-           startupUseCurrent, startupInit, startupCurrentSettings, scaleBase = 100, removeFolderBase = 200, startupBase = 1000 };
+           startupUseCurrent, startupInit, startupCurrentSettings, scaleBase = 100, removeFolderBase = 200, startupBase = 1000,
+           pitchLabelsBase = 900000 };
     const auto folders = settings->getFolders();
     juce::PopupMenu menu, removeMenu;
     menu.addSectionHeader ("EFFECT LIST");
@@ -796,6 +797,15 @@ void TriadEditor::showGearMenu()
     menu.addSectionHeader ("WINDOW SIZE");
     for (int percent : { 75, 90, 100, 125, 150 })
         menu.addItem (scaleBase + percent, juce::String (percent) + "%", true, juce::roundToInt (scale * 100.0) == percent);
+    menu.addSectionHeader ("TRIAD TIME");
+    {
+        juce::PopupMenu labels;
+        const auto mode = settings->getPitchLabels();
+        labels.addItem (pitchLabelsBase + 0, "Off", true, mode == TriadSettings::PitchLabels::off);
+        labels.addItem (pitchLabelsBase + 1, "While dragging a point", true, mode == TriadSettings::PitchLabels::dragging);
+        labels.addItem (pitchLabelsBase + 2, "Always, on every line", true, mode == TriadSettings::PitchLabels::always);
+        menu.addSubMenu ("Pitch labels on the TIME lines (FWD / REV, semitones)", labels);
+    }
     menu.addSectionHeader ("PRESETS");
     const auto presetFiles = filesIn (TriadSettings::presetFolder(), "*.triadpreset");
     const auto startup = settings->getStartupPreset();
@@ -827,6 +837,7 @@ void TriadEditor::showGearMenu()
             return;
         }
         if (choice == startupUseCurrent) { self.useCurrentSettingsAtStartup(); return; }
+        if (choice >= pitchLabelsBase && choice <= pitchLabelsBase + 2) { s.setPitchLabels ((TriadSettings::PitchLabels) (choice - pitchLabelsBase)); return; }
         if (choice == sortCompany) s.setSort (TriadSettings::Sort::company);
         else if (choice == sortAZ) s.setSort (TriadSettings::Sort::alphabetical);
         else if (choice == autoCheck)

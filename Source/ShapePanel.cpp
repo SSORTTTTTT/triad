@@ -272,6 +272,9 @@ void ShapeEditor::paint (juce::Graphics& g)
     auto mix = [&key] (int v) { key = key * 1099511628211ull + (juce::uint64) (juce::uint32) v; };
     for (const auto& p : shape) { mix (juce::roundToInt (p.x * 1.0e6f)); mix (juce::roundToInt (p.y * 1.0e6f)); mix (juce::roundToInt (p.curve * 1.0e4f)); }
     for (bool b : selected) mix (b ? 7 : 3);
+    const int labelMode = host != nullptr ? host->segmentLabelMode() : 0;
+    mix (labelMode);
+    if (labelMode == 2) { mix (drag == Drag::points ? dragIndex : -2); }
     if ((juce::int64) key != layerKey || ! layer.isValid())
     {
         layerKey = (juce::int64) key;
@@ -290,25 +293,9 @@ void ShapeEditor::paint (juce::Graphics& g)
         g.setColour (colour.withAlpha (0.7f)); g.drawRect (selection, 1.0f);
     }
     // While a point is dragged: what the straight lines either side of it do (Triad Time's TIME: their pitch).
-    if (drag == Drag::points && host != nullptr && dragIndex >= 0 && dragIndex < (int) shape.size())
-    {
-        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    if (drag == Drag::points && host != nullptr && host->segmentLabelMode() > 0 && dragIndex >= 0 && dragIndex < (int) shape.size())
         for (int i : { dragIndex - 1, dragIndex })
-        {
-            if (i < 0 || i + 1 >= (int) shape.size() || ! juce::exactlyEqual (shape[(size_t) i].curve, 0.0f)) continue;
-            const auto text = host->segmentLabel (shape[(size_t) i], shape[(size_t) i + 1]);
-            if (text.isEmpty()) continue;
-            const auto a = toScreen (shape[(size_t) i]), b = toScreen (shape[(size_t) i + 1]);
-            const float w = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 12.0f;
-            auto box = juce::Rectangle<float> (w, 18.0f).withCentre ((a + b) * 0.5f).translated (0.0f, -16.0f);
-            box = box.constrainedWithin (plot());
-            g.setColour (gridBackground.withAlpha (0.88f));
-            g.fillRoundedRectangle (box, 4.0f);
-            g.setColour (colour);
-            g.drawRoundedRectangle (box.reduced (0.5f), 4.0f, 1.0f);
-            g.drawText (text, box, juce::Justification::centred);
-        }
-    }
+            drawSegmentLabel (g, i, false);
     // Playing position.
     if (phase >= 0.0f)
     {
@@ -430,6 +417,11 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
     }
     g.setColour (colour);
     g.strokePath (line, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    // Labels on every line that has room for one (the lines either side of a point being dragged get theirs on top).
+    if (host != nullptr && host->segmentLabelMode() == 2)
+        for (int i = 0; i + 1 < (int) shape.size(); ++i)
+            if (drag != Drag::points || (i != dragIndex - 1 && i != dragIndex))
+                drawSegmentLabel (g, i, true);
     // Curve handles and points.
     for (size_t i = 0; i + 1 < shape.size(); ++i)
     {
@@ -449,6 +441,29 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (p));
         if (sel) { g.setColour (juce::Colours::white); g.drawEllipse (juce::Rectangle<float> (radius * 2.0f + 3.0f, radius * 2.0f + 3.0f).withCentre (p), 1.2f); }
     }
+}
+
+bool ShapeEditor::drawSegmentLabel (juce::Graphics& g, int i, bool onlyIfRoom) const
+{
+    if (host == nullptr || i < 0 || i + 1 >= (int) shape.size() || ! juce::exactlyEqual (shape[(size_t) i].curve, 0.0f)) return false;
+    const auto text = host->segmentLabel (shape[(size_t) i], shape[(size_t) i + 1]);
+    if (text.isEmpty()) return false;
+    const auto r = plot();
+    const auto a = toScreen (shape[(size_t) i]), b = toScreen (shape[(size_t) i + 1]);
+    g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+    const float w = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 10.0f;
+    if (onlyIfRoom && b.x - a.x < w + 6.0f) return false;
+    // Above the middle of the line, or under it when the line runs along the top.
+    const auto middle = (a + b) * 0.5f;
+    const bool above = middle.y - 24.0f >= r.getY();
+    const auto box = juce::Rectangle<float> (w, 17.0f).withCentre (middle.translated (0.0f, above ? -14.0f : 14.0f)).constrainedWithin (r);
+    const auto colour = shapeColour();
+    g.setColour (gridBackground.withAlpha (0.9f));
+    g.fillRoundedRectangle (box, 4.0f);
+    g.setColour (colour);
+    g.drawRoundedRectangle (box.reduced (0.5f), 4.0f, 1.0f);
+    g.drawText (text, box, juce::Justification::centred);
+    return true;
 }
 
 void ShapeEditor::mouseMove (const juce::MouseEvent& e)

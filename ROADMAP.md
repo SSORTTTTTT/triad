@@ -17,7 +17,12 @@ pitching system as shaperbox":
   now the same pitch, and Thomas's ShaperBox pattern sits on the same grid lines point for point.
 - ShaperBox's Time view: labels 0, 1/4 ... 4/4 across and 0, -2/4, -4/4 down; bright quarters both ways; broad faint
   stripes in the triangle under the corner-to-corner diagonal instead of a fill under the line.
-- While a TIME point is dragged, the straight lines either side of it show their pitch ("-12 st", "freeze", "reverse").
+- **Pitch labels on the TIME lines** (Thomas: "say how many semitones it's moving it up or down, or if it's reversing ...
+  FWD or REV ... in the settings"): each straight line reads which way it plays and how far the pitch moves:
+  "FWD -12 st" (half speed), "FWD -24 st" (a quarter), "FWD +12 st" (double), "REV 0 st" (backwards at normal speed),
+  "REV -12 st" (backwards at half speed), "FREEZE". A setting, **Pitch labels**: Off, While dragging a point (the
+  default) or Always, on every line; in Triad Time's new gear (top right of its window) and in Triad's gear menu
+  (TRIAD TIME), shared by every Triad and Triad Time on the computer.
 - Tested: that cut plays a 440 Hz tone at 220.0 Hz (-12 st). Triad's LFO tab is unchanged.
 
 ### 0.10.0 ("Triad v9"): Triad Time's grid as in ShaperBox
