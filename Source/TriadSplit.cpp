@@ -837,6 +837,7 @@ public:
 private:
     void timerCallback() override
     {
+        display.refreshIfChanged();   // (also every frame; this covers a window the screen does not draw frames for)
         display.setLatency (0, split.getSampleRateForDisplay(), {});
         refresh();
     }
