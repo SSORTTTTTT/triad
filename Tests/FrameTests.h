@@ -14,12 +14,15 @@ inline void run()
     {
         triad::PhaseClock clock;
         require (clock.now() < 0.0f, "Not playing yet: no position");
+        // (Timed from both sides, so a test computer that pauses this thread for a moment cannot fail it.)
+        const auto before = juce::Time::getMillisecondCounterHiRes();
         clock.set (0.25f, 2.0);   // two cycles a second
-        const auto start = juce::Time::getMillisecondCounterHiRes();
         juce::Thread::sleep (30);
-        const double elapsed = (juce::Time::getMillisecondCounterHiRes() - start) * 0.001;
-        const float expected = 0.25f + 2.0f * (float) elapsed;
-        require (std::abs (clock.now() - expected) < 0.02f, "Between audio blocks the position carries on at its speed");
+        const auto shortest = (juce::Time::getMillisecondCounterHiRes() - before) * 0.001;
+        const float position = clock.now();
+        const auto longest = (juce::Time::getMillisecondCounterHiRes() - before) * 0.001;
+        const float low = 0.25f + 2.0f * (float) juce::jmin (0.1, shortest) - 0.01f, high = 0.25f + 2.0f * (float) juce::jmin (0.1, longest) + 0.01f;
+        require (position > 0.3f && position >= low && position <= high, "Between audio blocks the position carries on at its speed");
         require (std::abs (clock.last() - 0.25f) < 1.0e-6f, "...from where the audio left it");
         juce::Thread::sleep (250);
         require (std::abs (clock.now() - 0.45f) < 0.01f, "...for at most 0.1 s (a DAW that stopped sending audio leaves it standing)");
