@@ -289,6 +289,26 @@ void ShapeEditor::paint (juce::Graphics& g)
         g.setColour (colour.withAlpha (0.12f)); g.fillRect (selection);
         g.setColour (colour.withAlpha (0.7f)); g.drawRect (selection, 1.0f);
     }
+    // While a point is dragged: what the straight lines either side of it do (Triad Time's TIME: their pitch).
+    if (drag == Drag::points && host != nullptr && dragIndex >= 0 && dragIndex < (int) shape.size())
+    {
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        for (int i : { dragIndex - 1, dragIndex })
+        {
+            if (i < 0 || i + 1 >= (int) shape.size() || ! juce::exactlyEqual (shape[(size_t) i].curve, 0.0f)) continue;
+            const auto text = host->segmentLabel (shape[(size_t) i], shape[(size_t) i + 1]);
+            if (text.isEmpty()) continue;
+            const auto a = toScreen (shape[(size_t) i]), b = toScreen (shape[(size_t) i + 1]);
+            const float w = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 12.0f;
+            auto box = juce::Rectangle<float> (w, 18.0f).withCentre ((a + b) * 0.5f).translated (0.0f, -16.0f);
+            box = box.constrainedWithin (plot());
+            g.setColour (gridBackground.withAlpha (0.88f));
+            g.fillRoundedRectangle (box, 4.0f);
+            g.setColour (colour);
+            g.drawRoundedRectangle (box.reduced (0.5f), 4.0f, 1.0f);
+            g.drawText (text, box, juce::Justification::centred);
+        }
+    }
     // Playing position.
     if (phase >= 0.0f)
     {
@@ -320,7 +340,7 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         }
         for (int row = 0; row <= 16; ++row)
         {
-            g.setColour (juce::Colour (0xffcfd5cc).withAlpha (row % 4 == 0 ? 0.30f : 0.10f));
+            g.setColour (juce::Colour (0xffcfd5cc).withAlpha (row % 4 == 0 ? 0.40f : 0.13f));
             g.drawHorizontalLine (juce::roundToInt (r.getY() + r.getHeight() * (float) row / 16.0f), r.getX(), r.getRight());
         }
     }
@@ -341,13 +361,27 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         }
     g.setFont (juce::FontOptions (10.0f));
     g.setColour (dimTextColour);
-    for (int q = 1; q < 4; ++q)
-        g.drawText (juce::String (q) + "/4", juce::Rectangle<float> (r.getX() + r.getWidth() * (float) q / 4.0f - 20.0f, 2.0f, 40.0f, 16.0f),
-                    juce::Justification::centred);
-    for (int v : { 100, 75, 50, 25, 0 })
-        g.drawText (host != nullptr ? host->valueLabel (v) : juce::String (v) + "%", juce::Rectangle<float> (0.0f, r.getBottom() - r.getHeight() * (float) v / 100.0f - 8.0f, 34.0f, 16.0f),
-                    juce::Justification::centredRight);
-    // The shape: hatched fill under a solid line.
+    if (isSquareGrid())
+    {
+        // As ShaperBox: 0, 1/4 ... 4/4 across the top; 0, -2/4 and -4/4 down the side.
+        for (int q = 0; q <= 4; ++q)
+            g.drawText (juce::String (q) + (q == 0 ? "" : "/4"),
+                        juce::Rectangle<float> (r.getX() + r.getWidth() * (float) q / 4.0f - (q == 0 ? 0.0f : q == 4 ? 40.0f : 20.0f), 2.0f, 40.0f, 16.0f),
+                        q == 0 ? juce::Justification::centredLeft : q == 4 ? juce::Justification::centredRight : juce::Justification::centred);
+        for (int v : { 100, 50, 0 })
+            g.drawText (host->valueLabel (v), juce::Rectangle<float> (0.0f, r.getBottom() - r.getHeight() * (float) v / 100.0f - 8.0f, 34.0f, 16.0f),
+                        juce::Justification::centredRight);
+    }
+    else
+    {
+        for (int q = 1; q < 4; ++q)
+            g.drawText (juce::String (q) + "/4", juce::Rectangle<float> (r.getX() + r.getWidth() * (float) q / 4.0f - 20.0f, 2.0f, 40.0f, 16.0f),
+                        juce::Justification::centred);
+        for (int v : { 100, 75, 50, 25, 0 })
+            g.drawText (host != nullptr ? host->valueLabel (v) : juce::String (v) + "%", juce::Rectangle<float> (0.0f, r.getBottom() - r.getHeight() * (float) v / 100.0f - 8.0f, 34.0f, 16.0f),
+                        juce::Justification::centredRight);
+    }
+    // The shape: hatched fill under a solid line (Triad Time's TIME: the triangle below the diagonal, as ShaperBox).
     juce::Path line, fill;
     fill.startNewSubPath (r.getX(), r.getBottom());
     const int steps = juce::jmax (64, (int) r.getWidth());
@@ -367,14 +401,32 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         }
     fill.lineTo (r.getRight(), r.getBottom());
     fill.closeSubPath();
-    g.setColour (colour.withAlpha (0.12f));
-    g.fillPath (fill);
+    if (host != nullptr && host->shadeBelowDiagonal())
     {
+        // ShaperBox's Time view: broad faint stripes in the triangle under the corner-to-corner diagonal (further back than
+        // the cycle has played), its edge drawn faintly; nothing under the line itself.
+        fill.clear();
+        fill.addTriangle (r.getTopLeft(), r.getBottomRight(), r.getBottomLeft());
+        juce::Graphics::ScopedSaveState state (g);
+        g.reduceClipRegion (fill);
+        g.setColour (juce::Colour (0xffcfd5cc).withAlpha (0.045f));
+        for (float x = r.getX() - r.getHeight(); x < r.getRight(); x += 8.0f)
+            g.drawLine (x, r.getBottom(), x + r.getHeight(), r.getY(), 3.5f);
+    }
+    else
+    {
+        g.setColour (colour.withAlpha (0.12f));
+        g.fillPath (fill);
         juce::Graphics::ScopedSaveState state (g);
         g.reduceClipRegion (fill);
         g.setColour (colour.withAlpha (0.1f));
         for (float x = r.getX() - r.getHeight(); x < r.getRight(); x += 9.0f)
             g.drawLine (x, r.getBottom(), x + r.getHeight(), r.getY(), 1.0f);
+    }
+    if (host != nullptr && host->shadeBelowDiagonal())
+    {
+        g.setColour (juce::Colour (0xffcfd5cc).withAlpha (0.12f));
+        g.drawLine ({ r.getTopLeft(), r.getBottomRight() }, 1.2f);
     }
     g.setColour (colour);
     g.strokePath (line, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));

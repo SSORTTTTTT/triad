@@ -29,6 +29,13 @@ struct ShapeHost
     // those in 4 again (faint: 64 columns at GRID 1/64 for a 1-bar pattern); down, every quarter in 4 (16 rows), and
     // points snap to all of them. Triad's LFOs keep their own grid (false).
     virtual bool squareGrid() const { return false; }
+    // Triad Time's TIME: shaded below the corner-to-corner diagonal (where it reaches back before the cycle began), as
+    // ShaperBox's Time view, instead of under the line.
+    virtual bool shadeBelowDiagonal() const { return false; }
+    // The proportions ShaperBox draws its grid with (width / height of the plot, 1 bar across and 1 bar down).
+    static constexpr float shaperBoxAspect = 3.48f;
+    // Shown by a straight line while one of its points is dragged (Triad Time's TIME: the pitch it plays, "-12 st").
+    virtual juce::String segmentLabel (const triad::mod::Point& from, const triad::mod::Point& to) const { juce::ignoreUnused (from, to); return {}; }
     virtual void setStatus (const juce::String&) {}
 };
 

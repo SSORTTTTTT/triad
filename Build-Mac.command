@@ -2,22 +2,22 @@
 # Triad — build the AU and VST3 for Apple Silicon and wrap them in an installer package.
 # Double-click in Finder, or run:  bash Build-Mac.command
 #
-# Output: Installer/Triad-v9-<version>-macOS-AppleSilicon.pkg, Installer/Triad-Time-<version>-macOS-AppleSilicon.pkg
+# Output: Installer/Triad-v10-<version>-macOS-AppleSilicon.pkg, Installer/Triad-Time-<version>-macOS-AppleSilicon.pkg
 # and Installer/Triad-Split-<version>-macOS-AppleSilicon.pkg
 # A full log is written to build-mac.log next to this script.
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$PWD"
 
-VERSION="0.10.0"
-PRODUCT="Triad v9"                 # bundle and display name (plug-in IDs unchanged from Triad 0.1)
+VERSION="0.11.0"
+PRODUCT="Triad v10"                 # bundle and display name (plug-in IDs unchanged from Triad 0.1)
 JUCE_COMMIT="29396c22c93392d6738e021b83196283d6e4d850"   # JUCE 8.0.12
 CMAKE_FALLBACK_VERSION="3.31.9"
 CMAKE_FALLBACK_SHA256="eb9d0b2b6a5b900e2f5811326a86ea393a146e4cb2384d15512c226e9c98f8bf"
 BUILD_DIR="$ROOT/build-mac"
 DEPS_DIR="$ROOT/deps"
 OUT_DIR="$ROOT/Installer"
-PKG_NAME="Triad-v9-$VERSION-macOS-AppleSilicon.pkg"
+PKG_NAME="Triad-v10-$VERSION-macOS-AppleSilicon.pkg"
 TIME_PRODUCT="Triad Time"            # Triad's time / volume gate as a plug-in of its own (its own installer)
 TIME_PKG_PATH="$OUT_DIR/Triad-Time-$VERSION-macOS-AppleSilicon.pkg"
 SPLIT_PRODUCT="Triad Split"          # split mode: one band per track or mixer insert (its own installer)
@@ -195,7 +195,7 @@ component_plist()   # root plist
 component_plist "$VST3_ROOT" "$PKG_WORK/vst3-components.plist"
 component_plist "$AU_ROOT"   "$PKG_WORK/au-components.plist"
 
-# Triad v9 replaces the earlier "Triad", "Triad v2" ... "Triad v8" bundles (same plug-in IDs): remove them first
+# Triad v10 replaces the earlier "Triad", "Triad v2" ... "Triad v9" bundles (same plug-in IDs): remove them first
 # so a host never finds two copies of the same plug-in. Only bundles with Triad's identifier are touched.
 mkdir -p "$PKG_WORK/scripts-vst3"
 write_preinstall()   # script-dir old-bundle-paths-relative-to-volume...
@@ -216,8 +216,8 @@ EOF
     } > "$dir/preinstall"
     chmod 755 "$dir/preinstall"
 }
-write_preinstall "$PKG_WORK/scripts-vst3" "Library/Audio/Plug-Ins/VST3/Triad.vst3" "Library/Audio/Plug-Ins/VST3/Triad v2.vst3" "Library/Audio/Plug-Ins/VST3/Triad v3.vst3" "Library/Audio/Plug-Ins/VST3/Triad v4.vst3" "Library/Audio/Plug-Ins/VST3/Triad v5.vst3" "Library/Audio/Plug-Ins/VST3/Triad v6.vst3" "Library/Audio/Plug-Ins/VST3/Triad v7.vst3" "Library/Audio/Plug-Ins/VST3/Triad v8.vst3"
-write_preinstall "$PKG_WORK/scripts-au" "Library/Audio/Plug-Ins/Components/Triad.component" "Library/Audio/Plug-Ins/Components/Triad v2.component" "Library/Audio/Plug-Ins/Components/Triad v3.component" "Library/Audio/Plug-Ins/Components/Triad v4.component" "Library/Audio/Plug-Ins/Components/Triad v5.component" "Library/Audio/Plug-Ins/Components/Triad v6.component" "Library/Audio/Plug-Ins/Components/Triad v7.component" "Library/Audio/Plug-Ins/Components/Triad v8.component"
+write_preinstall "$PKG_WORK/scripts-vst3" "Library/Audio/Plug-Ins/VST3/Triad.vst3" "Library/Audio/Plug-Ins/VST3/Triad v2.vst3" "Library/Audio/Plug-Ins/VST3/Triad v3.vst3" "Library/Audio/Plug-Ins/VST3/Triad v4.vst3" "Library/Audio/Plug-Ins/VST3/Triad v5.vst3" "Library/Audio/Plug-Ins/VST3/Triad v6.vst3" "Library/Audio/Plug-Ins/VST3/Triad v7.vst3" "Library/Audio/Plug-Ins/VST3/Triad v8.vst3" "Library/Audio/Plug-Ins/VST3/Triad v9.vst3"
+write_preinstall "$PKG_WORK/scripts-au" "Library/Audio/Plug-Ins/Components/Triad.component" "Library/Audio/Plug-Ins/Components/Triad v2.component" "Library/Audio/Plug-Ins/Components/Triad v3.component" "Library/Audio/Plug-Ins/Components/Triad v4.component" "Library/Audio/Plug-Ins/Components/Triad v5.component" "Library/Audio/Plug-Ins/Components/Triad v6.component" "Library/Audio/Plug-Ins/Components/Triad v7.component" "Library/Audio/Plug-Ins/Components/Triad v8.component" "Library/Audio/Plug-Ins/Components/Triad v9.component"
 cat > "$PKG_WORK/scripts-au/postinstall" <<'EOF'
 #!/bin/sh
 # Ask macOS to refresh its Audio Unit registry so hosts see Triad on their next scan.

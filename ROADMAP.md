@@ -4,7 +4,23 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.10.0 ("Triad v9"): Triad Time's grid as in ShaperBox
+## Current testing version — 0.11.0 ("Triad v10"): Triad Time's grid with ShaperBox's proportions
+
+0.11.0 (2026-10-20), Thomas: "when I'm doing the little triangular cut, it's not pitching things down the same ... only
+by five semitones or seven semitones not the full 12 ... I need the triad time grid to have the same point and same
+pitching system as shaperbox":
+- The cause: v9 already had ShaperBox's grid lines and pitch maths (a cut from 0 to -1/16 over 1/8 plays at half speed),
+  but its grid was 1.7 times as wide as tall where ShaperBox's is 3.48 times. The same angle on screen was half the
+  slope, so cuts drawn by eye came out at -5 st (and -7) instead of -12.
+- **Triad Time's window laid out as ShaperBox's**: the grid across the whole window at ShaperBox's proportions
+  (3.48 : 1, 1020 x 293), the knobs and the dice in a row under it, TIME / VOLUME next to the title. The same angle is
+  now the same pitch, and Thomas's ShaperBox pattern sits on the same grid lines point for point.
+- ShaperBox's Time view: labels 0, 1/4 ... 4/4 across and 0, -2/4, -4/4 down; bright quarters both ways; broad faint
+  stripes in the triangle under the corner-to-corner diagonal instead of a fill under the line.
+- While a TIME point is dragged, the straight lines either side of it show their pitch ("-12 st", "freeze", "reverse").
+- Tested: that cut plays a 440 Hz tone at 220.0 Hz (-12 st). Triad's LFO tab is unchanged.
+
+### 0.10.0 ("Triad v9"): Triad Time's grid as in ShaperBox
 
 0.10.0 (2026-10-20), Thomas, comparing Triad Time with ShaperBox 3 side by side: "make the grid ... exactly the same as a
 shaper box ... a 4x4 square ... so there's more small points ... keep the LFO tab on Triad exactly the same":

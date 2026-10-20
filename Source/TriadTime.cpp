@@ -386,6 +386,24 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
     for (int c = channels; c < audio.getNumChannels(); ++c) audio.clear (c, 0, n);
 }
 
+double TriadTime::segmentSpeed (const mod::Point& from, const mod::Point& to)
+{
+    // How far back = (1 - y) x one length; time passes at one length per x. Speed = 1 - (change in delay / time).
+    const double dx = (double) to.x - (double) from.x;
+    if (dx <= 1.0e-9) return 1.0;
+    return 1.0 + ((double) to.y - (double) from.y) / dx;
+}
+juce::String TriadTime::pitchText (double speed)
+{
+    if (std::abs (speed - 1.0) < 1.0e-4) return {};
+    if (std::abs (speed) < 1.0e-4) return "freeze";
+    if (speed < 0.0) return std::abs (speed + 1.0) < 1.0e-3 ? juce::String ("reverse") : "reverse x" + juce::String (-speed, 2);
+    const double semitones = 12.0 * std::log2 (speed);
+    const double whole = std::round (semitones);
+    const auto number = std::abs (semitones - whole) < 0.05 ? juce::String ((int) std::abs (whole)) : juce::String (std::abs (semitones), 1);
+    return juce::String (semitones < 0.0 ? u8 ("\xe2\x88\x92") : "+") + number + " st";
+}
+
 // ---- Envelopes (message thread) ------------------------------------------------------------------------------
 mod::Shape TriadTime::getShape (int envelope, int slot) const
 {
@@ -550,6 +568,12 @@ struct EnvelopeHost final : ShapeHost
         return quarters == 0 ? juce::String ("0") : "-" + juce::String (quarters) + "/4";
     }
     bool squareGrid() const override { return true; }
+    bool shadeBelowDiagonal() const override { return envelope == TriadTime::timeEnvelope; }
+    juce::String segmentLabel (const mod::Point& from, const mod::Point& to) const override
+    {
+        if (envelope != TriadTime::timeEnvelope) return {};
+        return TriadTime::pitchText (TriadTime::segmentSpeed (from, to));
+    }
 };
 
 // A pattern slot: its number over a small picture of its shape.
@@ -629,7 +653,9 @@ public:
             addAndMakeVisible (*k.knob);
         }
         showEnvelope (TriadTime::timeEnvelope);
-        setSize (1000, 640);
+        // The grid spans the whole window at ShaperBox's proportions (1 bar across is 3.48 x 1 bar down), so a line drawn at
+        // ShaperBox's angle bends the pitch as much (a cut from 0 to -1/16 over 1/8 = an octave down).
+        setSize (1100, windowHeightFor (1100));
         startTimerHz (15);
     }
     ~TriadTimeEditor() override { setLookAndFeel (nullptr); }
@@ -673,42 +699,51 @@ public:
         for (const auto& [knob, label] : { std::pair<juce::Slider*, const char*> { &timeMixKnob, "TIME MIX" }, { &volumeMixKnob, "VOLUME MIX" },
                                            { &smoothingKnob, "SMOOTHING" }, { &attackKnob, "ATTACK" }, { &releaseKnob, "RELEASE" } })
             g.drawText (label, knob->getBounds().withHeight (14).translated (0, -16).expanded (24, 0), juce::Justification::centred);
-        g.setFont (juce::FontOptions (10.5f));
+        g.setFont (juce::FontOptions (10.0f));
         g.drawText (u8 ("Double-click: add point  \xc2\xb7  Drag: move  \xc2\xb7  Double-click a point: delete  \xc2\xb7  Drag the small dot: curve  \xc2\xb7  Right-click: more"),
-                    getLocalBounds().removeFromTop (44).reduced (16, 0).withTrimmedLeft (430), juce::Justification::centredRight);
+                    getLocalBounds().removeFromTop (44).reduced (16, 0).withTrimmedLeft (480), juce::Justification::centredRight);
     }
+    // Heights of the rows under the header, and the window height that gives the grid ShaperBox's proportions.
+    static constexpr int slotRowHeight = 46, bottomRowHeight = GeneratorPanel::preferredHeight;
+    static int shapesHeightFor (int shapesWidth)
+    {
+        // ShapePanel: the grid's editor, then 72 for the toolbar and the palette; the editor trims 48 across and 30 down.
+        return juce::roundToInt ((float) (shapesWidth - 48) / ShapeHost::shaperBoxAspect) + 30 + 72;
+    }
+    static int windowHeightFor (int width) { return 44 + slotRowHeight + 8 + shapesHeightFor (width - 32) + 10 + bottomRowHeight + 14; }
     void resized() override
     {
+        // As ShaperBox: the grid across the whole window, the controls in a row under it.
         auto r = getLocalBounds().reduced (16, 0);
         auto header = r.removeFromTop (44);
-        juce::ignoreUnused (header);
-        auto tabs = r.removeFromTop (30);
-        timeTab.setBounds (tabs.removeFromLeft (110));
+        header.removeFromLeft (270);   // TRIAD TIME by Thomas Ross
+        auto tabs = header.withSizeKeepingCentre (header.getWidth(), 30);
+        timeTab.setBounds (tabs.removeFromLeft (92));
         tabs.removeFromLeft (6);
-        volumeTab.setBounds (tabs.removeFromLeft (110));
-        r.removeFromTop (8);
-        auto right = r.removeFromRight (250);
-        r.removeFromRight (12);
-        auto slotRow = r.removeFromTop (46);
+        volumeTab.setBounds (tabs.removeFromLeft (92));
+        auto slotRow = r.removeFromTop (slotRowHeight);
         const int width = slotRow.getWidth() / TriadTime::numSlots;
         for (auto& b : slots) b->setBounds (slotRow.removeFromLeft (width).withTrimmedRight (4));
         r.removeFromTop (8);
-        shapes.setBounds (r.withTrimmedBottom (14));
-        generator.setBounds (right.removeFromBottom (GeneratorPanel::preferredHeight + 14).withTrimmedBottom (14));
-        right.removeFromBottom (8);
-        knobArea = right;
-        // Two big knobs (the mixes), then three smaller ones (smoothing, attack, release); a label over each.
-        auto knobs = right.reduced (10, 10).withTrimmedTop (40);
-        auto row1 = knobs.removeFromTop (juce::jmin (124, knobs.getHeight() / 2)).withTrimmedTop (16);
-        knobs.removeFromTop (10);
-        auto row2 = knobs.removeFromTop (juce::jmin (100, knobs.getHeight())).withTrimmedTop (16);
-        const int big = juce::jmin (100, row1.getHeight());
-        timeMixKnob.setBounds (row1.removeFromLeft (row1.getWidth() / 2).withSizeKeepingCentre (big, big));
-        volumeMixKnob.setBounds (row1.withSizeKeepingCentre (big, big));
-        const int third = row2.getWidth() / 3, small = juce::jmin (72, row2.getHeight());
-        smoothingKnob.setBounds (row2.removeFromLeft (third).withSizeKeepingCentre (small, small));
-        attackKnob.setBounds (row2.removeFromLeft (third).withSizeKeepingCentre (small, small));
-        releaseKnob.setBounds (row2.withSizeKeepingCentre (small, small));
+        shapes.setBounds (r.removeFromTop (shapesHeightFor (r.getWidth())));
+        r.removeFromTop (10);
+        auto bottom = r.removeFromTop (bottomRowHeight);
+        generator.setBounds (bottom.removeFromRight (270));
+        bottom.removeFromRight (12);
+        knobArea = bottom;
+        // The two mixes (big), then smoothing, attack and release; a label over each.
+        auto knobs = bottom.reduced (12, 10).withTrimmedTop (30 + 16);
+        const int fifth = knobs.getWidth() / 5, big = juce::jmin (100, knobs.getHeight()), small = juce::jmin (76, knobs.getHeight());
+        const auto place = [&] (juce::Slider& knob, int size)
+        {
+            auto cell = knobs.removeFromLeft (fifth);
+            knob.setBounds (cell.withSizeKeepingCentre (size, size).withY (cell.getY() + (big - size) / 2));
+        };
+        place (timeMixKnob, big);
+        place (volumeMixKnob, big);
+        place (smoothingKnob, small);
+        place (attackKnob, small);
+        place (releaseKnob, small);
     }
     ShapePanel& getShapePanel() noexcept { return shapes; }
 private:

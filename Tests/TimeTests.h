@@ -157,6 +157,29 @@ inline void run (const juce::File& screenshotFolder)
         require (moved < 1.0e-6f, "One grid cell down per cell across holds the sound still, as in ShaperBox");
         require (std::abs (out[bar + sixteenth + 3000] - ramp[bar + sixteenth + 3000]) > 1.0e-4f, "...and the second tooth holds it again");
     }
+    // ---- ShaperBox's octave cut: from 0 down to -1/16 over 1/8 is an octave down (-12 semitones) ---------------------------
+    {
+        TriadTime t;
+        t.prepareToPlay (rate, block);
+        // As Thomas drew it in ShaperBox 3 (1 bar, As LFO Length): the first cut of his pattern.
+        t.setShape (TriadTime::timeEnvelope, 0, { { 0.0f, 1.0f, 0.0f }, { 0.125f, 0.9375f, 0.0f }, { 0.125f, 1.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } }, false);
+        Head head;
+        const auto in = sine (samplesPerBeat * 8, 440.0, rate);
+        const auto out = run (t, head, in, block);
+        const size_t bar = samplesPerBeat * 4, eighth = samplesPerBeat / 2;
+        const double f = frequency (out, bar + 1000, bar + eighth - 1000, rate);
+        std::cout << "Triad Time octave cut (0 to -1/16 over 1/8): 440 Hz in, " << f << " Hz out" << std::endl;
+        require (std::abs (f - 220.0) < 2.0, "A cut from 0 down to -1/16 over 1/8 plays a 440 Hz tone at 220 Hz: an octave down, as in ShaperBox");
+        const double after = frequency (out, bar + eighth + 2000, bar + samplesPerBeat * 2, rate);
+        require (std::abs (after - 440.0) < 2.0, "...and back at the top it plays live again");
+        const auto cut = TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.125f, 0.9375f, 0.0f });
+        require (std::abs (cut - 0.5) < 1.0e-9 && TriadTime::pitchText (cut) == juce::String::fromUTF8 ("\xe2\x88\x92" "12 st"),
+                 "Dragging that point reads -12 st");
+        require (TriadTime::pitchText (TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.25f, 0.9375f, 0.0f })) == juce::String::fromUTF8 ("\xe2\x88\x92" "5 st")
+                 && TriadTime::pitchText (TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.0625f, 0.9375f, 0.0f })) == "freeze"
+                 && TriadTime::pitchText (TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.25f, 0.5f, 0.0f })) == "reverse",
+                 "Half as steep reads -5 st; one cell down per cell across freezes; twice as steep as that reverses");
+    }
     // ---- SMOOTHING: repeats do not click ---------------------------------------------------------------------------------
     {
         auto clickiness = [&] (float smoothingMs, int& jumps)
@@ -339,6 +362,11 @@ inline void run (const juce::File& screenshotFolder)
             require (grid.columns() == 16 && grid.rows() == 16, "...and the GRID button still sets the columns");
             grid.gridDivision = 64;
             require (std::abs (TriadTime::timeDepthInBeats (4.0) - 4.0) < 1.0e-9, "The TIME grid reaches one pattern length back (ShaperBox's \"As LFO Length\")");
+            // ShaperBox's proportions: the same angle on screen is the same pitch (a cut drawn as in ShaperBox is an octave down).
+            std::cout << "Triad Time grid: " << grid.plot().getWidth() << " x " << grid.plot().getHeight() << " (aspect " << grid.plotAspect()
+                      << ", ShaperBox " << ShapeHost::shaperBoxAspect << "), window " << editor->getWidth() << " x " << editor->getHeight() << std::endl;
+            require (std::abs (grid.plotAspect() - ShapeHost::shaperBoxAspect) < 0.03f, "Triad Time's grid has ShaperBox's proportions (3.48 : 1)");
+            require (grid.plot().getWidth() > 0.9f * (float) editor->getWidth(), "...across the whole window, as ShaperBox's");
         }
         shapes->setPaletteCategory (1);
         require (shapes->getNumPaletteButtons() > 0, "The preset palette shows Triad's shapes");
@@ -362,10 +390,20 @@ inline void run (const juce::File& screenshotFolder)
         const auto generated = t.getShape (TriadTime::timeEnvelope, 0);
         require (generated.size() >= 2, "The dice draws a new TIME pattern");
         require (t.canUndo (TriadTime::timeEnvelope), "...as an undo step");
-        // The picture: two 1/16 repeats at the start, each one 1/16 wide and 1/16 back (as drawn in ShaperBox).
-        t.setShape (TriadTime::timeEnvelope, 0, { { 0.0f, 1.0f, 0.0f }, { 0.0625f, 0.9375f, 0.0f }, { 0.0625f, 1.0f, 0.0f }, { 0.125f, 0.9375f, 0.0f },
-                                                  { 0.125f, 1.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } }, false);
-        shapes->getEditor().reload();
+        // The picture: Thomas's ShaperBox 3 pattern, point for point, with the first point held as if being dragged.
+        t.setShape (TriadTime::timeEnvelope, 0, { { 0.0f, 1.0f, 0.0f }, { 0.125f, 0.9375f, 0.0f }, { 0.125f, 1.0f, 0.0f }, { 0.25f, 0.9375f, 0.0f },
+                                                  { 0.375f, 0.75f, 0.0f }, { 0.375f, 1.0f, 0.0f }, { 0.625f, 1.0f, 0.0f }, { 0.75f, 0.75f, 0.0f },
+                                                  { 0.75f, 0.875f, 0.0f }, { 1.0f, 1.0f, 0.0f } }, false);
+        auto& grid = shapes->getEditor();
+        grid.reload();
+        const auto held = grid.toScreen (grid.getShape()[1]);
+        const auto now = juce::Time::getCurrentTime();
+        const juce::MouseEvent press (juce::Desktop::getInstance().getMainMouseSource(), held, {}, juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f,
+                                      &grid, &grid, now, held, now, 1, false);
+        grid.mouseDown (press);
+        grid.mouseDrag (press);
+        require (std::abs (grid.getShape()[1].x - 0.125f) < 1.0e-6f && std::abs (grid.getShape()[1].y - 0.9375f) < 1.0e-6f,
+                 "A point snaps to ShaperBox's 1/8 across and -1/16 down");
         if (screenshotFolder != juce::File())
         {
             const auto file = screenshotFolder.getChildFile ("Triad-Time-preview.png");
@@ -375,10 +413,11 @@ inline void run (const juce::File& screenshotFolder)
                 stream.setPosition (0);
                 stream.truncate();
                 juce::PNGImageFormat png;
-                png.writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f), stream);
+                png.writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), stream);
                 std::cout << "Screenshot: " << file.getFullPathName() << std::endl;
             }
         }
+        grid.mouseUp (press);
     }
     // ---- Triad's band MUTE --------------------------------------------------------------------------------------------------
     {

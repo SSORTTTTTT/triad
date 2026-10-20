@@ -29,6 +29,10 @@ public:
     // ShaperBox ("As LFO Length") and Gross Beat: a line from the top-left corner to the bottom-right corner holds the
     // sound still, a line half as steep plays it at half speed, one twice as steep plays it backwards.
     static double timeDepthInBeats (double lengthBeats) { return lengthBeats; }
+    // The playing speed along a straight line of the TIME envelope (1: normal, 0.5: an octave down, 0: frozen, < 0:
+    // backwards), and how it reads ("-12 st", "freeze", "reverse"): the same for any length, as the depth is one length.
+    static double segmentSpeed (const triad::mod::Point& from, const triad::mod::Point& to);
+    static juce::String pitchText (double speed);
     static bool isTimeLength (int lengthIndex);                // the TIME envelope: synced lengths up to 2 bars
     static bool isVolumeLength (int lengthIndex);              // the VOLUME envelope: any synced length
 
