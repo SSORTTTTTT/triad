@@ -19,6 +19,7 @@ void require (bool b, const char* message) { if (! b) throw std::runtime_error (
 #include "CrossoverTests.h"
 #include "GeneratorTests.h"
 #include "TimeTests.h"
+#include "SplitTests.h"
 
 namespace
 {
@@ -358,18 +359,22 @@ int main (int argc, char** argv)
     try
     {
       {   // every Triad and effect made by the tests lives in this scope
-        require (argc >= 5, "Usage: TriadTests <Test Effect.vst3> <Test Synth.vst3> <Crash Fixture.vst3> <Triad Scanner> [screenshot.png] [Triad.vst3]");
+        require (argc >= 5, "Usage: TriadTests <Test Effect.vst3> <Test Synth.vst3> <Crash Fixture.vst3> <Triad Scanner> [screenshot.png] [Triad.vst3] [Triad Split.vst3]");
         const juce::File effect (juce::String::fromUTF8 (argv[1]));
         const juce::File synth (juce::String::fromUTF8 (argv[2]));
         const juce::File crashFixture (juce::String::fromUTF8 (argv[3]));
         const juce::File scannerHelper (juce::String::fromUTF8 (argv[4]));
         const juce::File screenshotFile = argc >= 6 ? juce::File (juce::String::fromUTF8 (argv[5])) : juce::File();
         const juce::File triadVst3 = argc >= 7 ? juce::File (juce::String::fromUTF8 (argv[6])) : juce::File();
+        const juce::File splitVst3 = argc >= 8 ? juce::File (juce::String::fromUTF8 (argv[7])) : juce::File();
         require (crashFixture.exists() && scannerHelper.existsAsFile(), "Crash fixture and scanner helper are built");
         runCrossoverTests();
         generatorTests::run();
         testStage = "Triad Time and band mute";
         timeTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
+        testStage = "Triad Split";
+        splitTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
+        if (splitVst3.exists()) splitTests::runHosted (splitVst3);
         testStage = "running the tests";
 
         // ---- Built-in Linkwitz-Riley filter equals JUCE's -----------------------------------

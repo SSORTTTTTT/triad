@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.8.0 LANGUAGES C CXX)
-# Installed as "Triad v7.vst3" / "Triad v7.component"; the plug-in IDs are unchanged from Triad 0.1,
-# so projects made with the earlier "Triad", "Triad v2" ... "Triad v6" open with Triad v7.
-# Each new release gets the next name (v7, v8, ...) and replaces the earlier ones when installed.
-set(TRIAD_PRODUCT_NAME "Triad v7")
+project(Triad VERSION 0.9.0 LANGUAGES C CXX)
+# Installed as "Triad v8.vst3" / "Triad v8.component"; the plug-in IDs are unchanged from Triad 0.1,
+# so projects made with the earlier "Triad", "Triad v2" ... "Triad v7" open with Triad v8.
+# Each new release gets the next name (v8, v9, ...) and replaces the earlier ones when installed.
+set(TRIAD_PRODUCT_NAME "Triad v8")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(TRIAD_BUILD_TESTS "Build integration tests and a test effect" ON)
@@ -75,6 +75,24 @@ target_compile_definitions(TriadTime PUBLIC
     JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0 TRIAD_TIME_PLUGIN=1
     TRIAD_VERSION="${PROJECT_VERSION}")
 target_link_libraries(TriadTime PRIVATE juce::juce_audio_processors PUBLIC juce::juce_recommended_warning_flags)
+# "Triad Split": Triad's band split as a plug-in of its own (split mode): one band per track or mixer insert,
+# with linked dividers, and every band on its own output.
+juce_add_plugin(TriadSplit
+    COMPANY_NAME "Thomas Ross" BUNDLE_ID "audio.thomasross.triadsplit"
+    PLUGIN_MANUFACTURER_CODE Tsrt PLUGIN_CODE TrSp
+    PRODUCT_NAME "Triad Split" FORMATS ${TRIAD_TIME_FORMATS}
+    IS_SYNTH FALSE NEEDS_MIDI_INPUT FALSE NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD FALSE VST3_CATEGORIES Fx Tools)
+target_sources(TriadSplit PRIVATE Source/TriadSplit.cpp Source/SplitLink.cpp Source/CrossoverDisplay.cpp Source/Look.cpp)
+if(APPLE)
+    target_sources(TriadSplit PRIVATE Source/SplitLinkMac.mm)
+endif()
+target_compile_definitions(TriadSplit PUBLIC
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=0 JUCE_PLUGINHOST_AU=0 JUCE_PLUGINHOST_VST=0
+    JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0 TRIAD_SPLIT_PLUGIN=1
+    TRIAD_VERSION="${PROJECT_VERSION}")
+target_link_libraries(TriadSplit PRIVATE juce::juce_audio_processors PUBLIC juce::juce_recommended_warning_flags)
 # "Triad Scanner": a small helper that opens a plug-in in its own process when Triad cannot tell
 # from disk whether it is an effect, so a plug-in that crashes while being checked cannot take
 # the DAW down. It is copied into every plug-in bundle as Contents/Helpers/Triad Scanner.
@@ -84,7 +102,7 @@ target_compile_definitions(TriadScanner PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_AU=0 JUCE_PLUGINHOST_VST=0
     JUCE_PLUGINHOST_LADSPA=0 JUCE_PLUGINHOST_LV2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
 target_link_libraries(TriadScanner PRIVATE juce::juce_audio_processors_headless PUBLIC juce::juce_recommended_warning_flags)
-foreach(target IN ITEMS Triad TriadTime TriadScanner)
+foreach(target IN ITEMS Triad TriadTime TriadSplit TriadScanner)
     if(TRIAD_SIZE_OPTIMISED AND NOT MSVC)
         # Framework and UI code optimised for size; the audio path (PluginProcessor.cpp,
         # which inlines the crossover and delay lines) keeps full -O3 speed.
@@ -101,13 +119,15 @@ if(APPLE)
     # Drop unreferenced code at link time.
     target_link_options(Triad INTERFACE $<$<CONFIG:Release>:LINKER:-dead_strip>)
     target_link_options(TriadTime INTERFACE $<$<CONFIG:Release>:LINKER:-dead_strip>)
+    target_link_options(TriadSplit INTERFACE $<$<CONFIG:Release>:LINKER:-dead_strip>)
     target_link_options(TriadScanner PRIVATE $<$<CONFIG:Release>:LINKER:-dead_strip>)
 elseif(NOT MSVC)
-    foreach(target IN ITEMS Triad TriadTime TriadScanner)
+    foreach(target IN ITEMS Triad TriadTime TriadSplit TriadScanner)
         target_compile_options(${target} PUBLIC $<$<CONFIG:Release>:-ffunction-sections -fdata-sections>)
     endforeach()
     target_link_options(Triad INTERFACE $<$<CONFIG:Release>:LINKER:--gc-sections>)
     target_link_options(TriadTime INTERFACE $<$<CONFIG:Release>:LINKER:--gc-sections>)
+    target_link_options(TriadSplit INTERFACE $<$<CONFIG:Release>:LINKER:--gc-sections>)
     target_link_options(TriadScanner PRIVATE $<$<CONFIG:Release>:LINKER:--gc-sections>)
 endif()
 foreach(format IN ITEMS VST3 AU)
@@ -146,7 +166,10 @@ if(TRIAD_BUILD_TESTS)
             LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures/Triad Crash Fixture.vst3/Contents/${CMAKE_SYSTEM_PROCESSOR}-linux>")
     endif()
     juce_add_console_app(TriadTests PRODUCT_NAME "Triad Tests")
-    target_sources(TriadTests PRIVATE Tests/Tests.cpp)
+    target_sources(TriadTests PRIVATE Tests/Tests.cpp Source/TriadSplit.cpp Source/SplitLink.cpp)
+    if(APPLE)
+        target_sources(TriadTests PRIVATE Source/SplitLinkMac.mm)
+    endif()
     target_compile_definitions(TriadTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(TriadTests PRIVATE Triad juce::juce_audio_utils juce::juce_dsp)
     add_dependencies(TriadTests TriadScanner TriadCrashFixture)

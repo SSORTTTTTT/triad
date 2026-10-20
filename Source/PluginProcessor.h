@@ -76,8 +76,8 @@ public:
     int getCrossoverSlope (int index) const;                // order 1-16
     void setCrossoverSlope (int index, int order);          // as one undoable, automatable gesture
     void setAllCrossoverSlopes (int order);                 // every divider at once (e.g. all hard wall, 96 dB/oct)
-    static juce::String slopeText (int order) { return juce::String (triad::CrossoverFilter::dbPerOctave (order)) + " dB/oct"; }
-    static float defaultCrossover (int index, int bandCount);
+    static juce::String slopeText (int order) { return triad::slopeText (order); }
+    static float defaultCrossover (int index, int bandCount) { return triad::defaultCrossover (index, bandCount); }
     // Adds a band by splitting the band containing `hz` there (or the widest band if hz <= 0).
     bool addBand (float hz = -1.0f);
     bool removeBand (int band);

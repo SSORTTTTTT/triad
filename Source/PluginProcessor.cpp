@@ -296,16 +296,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout TriadProcessor::makeParamete
     return p;
 }
 
-float TriadProcessor::defaultCrossover (int index, int count)
-{
-    static const std::vector<std::vector<float>> table { {}, {}, { 1000.0f }, { 250.0f, 2500.0f },
-                                                          { 200.0f, 1000.0f, 5000.0f }, { 120.0f, 500.0f, 2000.0f, 7000.0f } };
-    if (count < (int) table.size() && index < (int) table[(size_t) count].size())
-        return table[(size_t) count][(size_t) index];
-    const auto t = (float) index / (float) juce::jmax (1, count - 2);
-    return 80.0f * std::pow (12000.0f / 80.0f, t);
-}
-
 // ---- Band structure ---------------------------------------------------------------------------
 namespace
 {

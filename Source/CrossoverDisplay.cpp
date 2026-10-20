@@ -2,12 +2,16 @@
 
 using namespace triad::ui;
 
-CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p)
+CrossoverDisplay::CrossoverDisplay (std::unique_ptr<CrossoverHost> owned) : CrossoverDisplay (*owned)
+{
+    ownedHost = std::move (owned);
+}
+CrossoverDisplay::CrossoverDisplay (CrossoverHost& h) : host (h)
 {
     setComponentID ("frequencyDisplay");
     setTitle ("Band crossover display");
     addButton.setTooltip ("Add a band (up to 10). Tip: double-click the display to split a band right there.");
-    addButton.onClick = [this] { processor.addBand(); refresh(); };
+    addButton.onClick = [this] { host.addBand(); refresh(); };
     addAndMakeVisible (addButton);
     preButton.setClickingTogglesState (false);
     preButton.setTooltip ("PRE: effects on the full sound before it is split into bands (Auto-Tune, a de-esser, a gate...). "
@@ -15,19 +19,22 @@ CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p)
     preButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffd9dcd6));
     preButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
     preButton.onClick = [this] { if (onTogglePre) onTogglePre(); };
-    addAndMakeVisible (preButton);
+    addChildComponent (preButton);
+    preButton.setVisible (host.hasChains());
     postButton.setTooltip ("POST: effects on the whole sound after the bands come back together (a limiter, glue compression, a final EQ...). "
                            "Click to show or hide its strip.");
     postButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffc3cde0));
     postButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
     postButton.onClick = [this] { if (onTogglePost) onTogglePost(); };
-    addAndMakeVisible (postButton);
+    addChildComponent (postButton);
+    postButton.setVisible (host.hasChains());
     liveButton.setClickingTogglesState (true);
     liveButton.setTooltip ("LIVE, for recording through Triad: effects that add latency are passed by, so Triad adds none. "
                            "Switch it off again for mixing.");
     liveButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffc0392b));
-    liveButton.onClick = [this] { processor.setLiveMode (liveButton.getToggleState()); };
-    addAndMakeVisible (liveButton);
+    liveButton.onClick = [this] { host.setLiveMode (liveButton.getToggleState()); };
+    addChildComponent (liveButton);
+    liveButton.setVisible (host.hasLiveMode());
     meterTip.setInterceptsMouseClicks (true, false);
     addAndMakeVisible (meterTip);
     samples.resize ((size_t) fftSize);
@@ -40,12 +47,12 @@ CrossoverDisplay::CrossoverDisplay (TriadProcessor& p) : processor (p)
         window[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / (float) (fftSize - 1));
         windowSum += window[(size_t) i];
     }
-    processor.spectrum.active.store (true);
+    host.getSpectrum().active.store (true);
     refresh();
 }
 CrossoverDisplay::~CrossoverDisplay()
 {
-    processor.spectrum.active.store (false);
+    host.getSpectrum().active.store (false);
     endCrossoverGesture();
     endSlopeGesture();
 }
@@ -60,20 +67,20 @@ juce::Rectangle<float> CrossoverDisplay::plotBounds() const
 float CrossoverDisplay::xForFrequency (float frequency) const
 {
     const auto plot = plotBounds();
-    const auto maximum = processor.nyquistFrequency();
+    const auto maximum = host.nyquistFrequency();
     return plot.getX() + plot.getWidth() * std::log (juce::jlimit (20.0f, maximum, frequency) / 20.0f) / std::log (maximum / 20.0f);
 }
 float CrossoverDisplay::frequencyForX (float x) const
 {
     const auto plot = plotBounds();
     const auto fraction = juce::jlimit (0.0f, 1.0f, (x - plot.getX()) / plot.getWidth());
-    return 20.0f * std::pow (processor.nyquistFrequency() / 20.0f, fraction);
+    return 20.0f * std::pow (host.nyquistFrequency() / 20.0f, fraction);
 }
 float CrossoverDisplay::constrainValue (int index, float f) const
 {
-    const auto current = processor.effectiveCrossovers();
+    const auto current = host.effectiveCrossovers();
     if (index < 0 || index >= (int) current.size()) return f;
-    const auto ceiling = juce::jmin (20000.0f, processor.nyquistFrequency() * 0.9f);
+    const auto ceiling = juce::jmin (20000.0f, host.nyquistFrequency() * 0.9f);
     const auto lower = index == 0 ? 20.0f : current[(size_t) index - 1] * triad::minCrossoverRatio;
     const auto upper = index == (int) current.size() - 1 ? ceiling : current[(size_t) index + 1] / triad::minCrossoverRatio;
     return juce::jlimit (juce::jmin (lower, upper), upper, f);
@@ -83,13 +90,13 @@ void CrossoverDisplay::beginCrossoverGesture (int index)
     if (index < 0 || index >= (int) handles.size()) return;
     endCrossoverGesture();
     activeHandle = index;
-    if (auto* p = processor.crossoverParameter (index)) p->beginChangeGesture();
+    if (auto* p = host.crossoverParameter (index)) p->beginChangeGesture();
     repaint();
 }
 void CrossoverDisplay::dragCrossoverTo (float x)
 {
     if (activeHandle < 0) return;
-    if (auto* parameter = processor.crossoverParameter (activeHandle))
+    if (auto* parameter = host.crossoverParameter (activeHandle))
         parameter->setValueNotifyingHost (parameter->convertTo0to1 (constrainValue (activeHandle, frequencyForX (x))));
     refresh();
 }
@@ -98,14 +105,14 @@ void CrossoverDisplay::endCrossoverGesture()
     if (activeHandle < 0) return;
     const auto ended = activeHandle;
     activeHandle = -1;
-    if (auto* p = processor.crossoverParameter (ended)) p->endChangeGesture();
+    if (auto* p = host.crossoverParameter (ended)) p->endChangeGesture();
     repaint();
 }
 void CrossoverDisplay::setCrossoverValue (int index, float frequency)
 {
-    if (index < 0 || index >= processor.getBandCount() - 1) return;
+    if (index < 0 || index >= host.getBandCount() - 1) return;
     beginCrossoverGesture (index);
-    if (auto* parameter = processor.crossoverParameter (index))
+    if (auto* parameter = host.crossoverParameter (index))
         parameter->setValueNotifyingHost (parameter->convertTo0to1 (constrainValue (index, frequency)));
     refresh();
     endCrossoverGesture();
@@ -130,22 +137,22 @@ void CrossoverDisplay::beginSlopeGesture (int index)
     endSlopeGesture();
     if (index < 0 || index >= (int) handles.size()) return;
     activeSlope = index;
-    if (auto* p = processor.slopeParameter (index)) p->beginChangeGesture();
+    if (auto* p = host.slopeParameter (index)) p->beginChangeGesture();
     repaint();
 }
 void CrossoverDisplay::dragSlopeTo (int order)
 {
     if (activeSlope < 0) return;
     order = juce::jlimit (triad::CrossoverFilter::minOrder, triad::CrossoverFilter::maxOrder, order);
-    if (auto* p = processor.slopeParameter (activeSlope))
-        if (order != processor.getCrossoverSlope (activeSlope))
+    if (auto* p = host.slopeParameter (activeSlope))
+        if (order != host.getCrossoverSlope (activeSlope))
             p->setValueNotifyingHost (p->convertTo0to1 ((float) order));
     repaint();
 }
 void CrossoverDisplay::endSlopeGesture()
 {
     if (activeSlope < 0) return;
-    if (auto* p = processor.slopeParameter (activeSlope)) p->endChangeGesture();
+    if (auto* p = host.slopeParameter (activeSlope)) p->endChangeGesture();
     activeSlope = -1;
     repaint();
 }
@@ -160,13 +167,13 @@ void CrossoverDisplay::showSlopeMenu (int index)
     if (index < 0 || index >= (int) cuts.size()) return;
     juce::PopupMenu menu;
     menu.addSectionHeader ("CROSSOVER " + juce::String (index + 1) + " SLOPE");
-    addSlopeItems (menu, processor.getCrossoverSlope (index), 0, cuts[(size_t) index], processor.getSampleRateForDisplay());
+    addSlopeItems (menu, host.getCrossoverSlope (index), 0, cuts[(size_t) index], host.getSampleRateForDisplay());
     addAllDividerItems (menu, allDividersBase);
     juce::Component::SafePointer<CrossoverDisplay> safe (this);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, index] (int choice)
     {
         if (safe == nullptr || choice <= 0) return;
-        if (choice > allDividersBase) { safe->processor.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); }
+        if (choice > allDividersBase) { safe->host.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); }
         else safe->setSlope (index, choice);
     });
 }
@@ -179,7 +186,7 @@ void CrossoverDisplay::addSlopeItems (juce::PopupMenu& menu, int current, int id
     for (int order = triad::CrossoverFilter::minOrder; order <= triad::CrossoverFilter::maxOrder; ++order)
     {
         if (order == triad::CrossoverFilter::steepestClassic + 1) menu.addSectionHeader ("HARDER CUTS (NEAR BRICKWALL)");
-        juce::PopupMenu::Item item (TriadProcessor::slopeText (order) + (order == 1 ? "  (softest)" : order == triad::CrossoverFilter::defaultOrder ? "  (default)"
+        juce::PopupMenu::Item item (triad::slopeText (order) + (order == 1 ? "  (softest)" : order == triad::CrossoverFilter::defaultOrder ? "  (default)"
                                                                        : order == triad::CrossoverFilter::maxOrder ? "  (hardest)" : ""));
         item.itemID = idBase + order;
         item.isTicked = order == current;
@@ -190,9 +197,9 @@ void CrossoverDisplay::addSlopeItems (juce::PopupMenu& menu, int current, int id
 void CrossoverDisplay::addAllDividerItems (juce::PopupMenu& menu, int idBase)
 {
     menu.addSectionHeader ("ALL DIVIDERS");
-    menu.addItem (idBase + triad::CrossoverFilter::maxOrder, "All dividers: hard wall (" + TriadProcessor::slopeText (triad::CrossoverFilter::maxOrder) + ")");
-    menu.addItem (idBase + triad::CrossoverFilter::defaultOrder, "All dividers: default (" + TriadProcessor::slopeText (triad::CrossoverFilter::defaultOrder) + ")");
-    menu.addItem (idBase + triad::CrossoverFilter::minOrder, "All dividers: soft (" + TriadProcessor::slopeText (triad::CrossoverFilter::minOrder) + ")");
+    menu.addItem (idBase + triad::CrossoverFilter::maxOrder, "All dividers: hard wall (" + triad::slopeText (triad::CrossoverFilter::maxOrder) + ")");
+    menu.addItem (idBase + triad::CrossoverFilter::defaultOrder, "All dividers: default (" + triad::slopeText (triad::CrossoverFilter::defaultOrder) + ")");
+    menu.addItem (idBase + triad::CrossoverFilter::minOrder, "All dividers: soft (" + triad::slopeText (triad::CrossoverFilter::minOrder) + ")");
 }
 void CrossoverDisplay::setChainState (juce::TextButton& button, const juce::String& name, bool shown, int effects)
 {
@@ -207,7 +214,7 @@ juce::Rectangle<float> CrossoverDisplay::readoutBoundsFor (int index, const std:
     const auto plot = plotBounds();
     constexpr float full = 70.0f, compact = 38.0f, height = 18.0f;
     const float line = xForFrequency (cuts[(size_t) index]);
-    const float y = slopeY (processor.getCrossoverSlope (index)) - height * 0.5f;
+    const float y = slopeY (host.getCrossoverSlope (index)) - height * 0.5f;
     // Besides the pills and earlier readouts, keep clear of the other dividers' lines and slope dots.
     auto obstacles = taken;
     for (int j = 0; j < (int) cuts.size(); ++j)
@@ -215,7 +222,7 @@ juce::Rectangle<float> CrossoverDisplay::readoutBoundsFor (int index, const std:
         {
             const float x = xForFrequency (cuts[(size_t) j]);
             obstacles.push_back ({ x - 1.5f, plot.getY(), 3.0f, plot.getHeight() });
-            obstacles.push_back (juce::Rectangle<float> (20.0f, 20.0f).withCentre ({ x, slopeY (processor.getCrossoverSlope (j)) }));
+            obstacles.push_back (juce::Rectangle<float> (20.0f, 20.0f).withCentre ({ x, slopeY (host.getCrossoverSlope (j)) }));
         }
     auto fits = [&] (juce::Rectangle<float> r)
     {
@@ -253,8 +260,8 @@ void CrossoverDisplay::paintSlopeReadouts (juce::Graphics& g)
         if (active) { g.setColour (bandColour (i).withAlpha (0.8f)); g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f); }
         g.setColour (active ? bandColour (i) : juce::Colour (0xffd5dad3));
         g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-        const int order = processor.getCrossoverSlope (i);
-        g.drawText (r.getWidth() < 60.0f ? juce::String (triad::CrossoverFilter::dbPerOctave (order)) : TriadProcessor::slopeText (order),
+        const int order = host.getCrossoverSlope (i);
+        g.drawText (r.getWidth() < 60.0f ? juce::String (triad::CrossoverFilter::dbPerOctave (order)) : triad::slopeText (order),
                     r.withTrimmedRight (12.0f), juce::Justification::centred);
         // A small chevron: click for the list of slopes.
         juce::Path chevron;
@@ -267,10 +274,10 @@ void CrossoverDisplay::paintSlopeReadouts (juce::Graphics& g)
 void CrossoverDisplay::paintBandCurves (juce::Graphics& g)
 {
     const auto plot = plotBounds();
-    const int count = processor.getBandCount();
-    const double sr = processor.getSampleRateForDisplay();
+    const int count = host.getBandCount();
+    const double sr = host.getSampleRateForDisplay();
     std::vector<int> slopes;
-    for (int j = 0; j + 1 < count; ++j) slopes.push_back (processor.getCrossoverSlope (j));
+    for (int j = 0; j + 1 < count; ++j) slopes.push_back (host.getCrossoverSlope (j));
     std::vector<float> key { (float) count, plot.getWidth(), plot.getHeight(), (float) sr, (float) activeSlope };
     key.insert (key.end(), cuts.begin(), cuts.end());
     for (auto o : slopes) key.push_back ((float) o);
@@ -321,7 +328,7 @@ void CrossoverDisplay::mouseDoubleClick (const juce::MouseEvent& e)
     for (int i = 0; i < (int) cuts.size(); ++i)
         if (slopeReadoutBounds (i).contains (e.position)) return;
     if (! plotBounds().contains (e.position) || e.mods.isPopupMenu()) return;
-    processor.addBand (frequencyForX (e.position.x));
+    host.addBand (frequencyForX (e.position.x));
     refresh();
 }
 int CrossoverDisplay::bandAt (float x) const
@@ -341,17 +348,20 @@ void CrossoverDisplay::mouseDown (const juce::MouseEvent& e)
 void CrossoverDisplay::showBandMenu (int band, float hz)
 {
     enum { removeId = 1, addId, lfoId, copyId, pasteId };
-    const int count = processor.getBandCount();
+    const int count = host.getBandCount();
     juce::PopupMenu menu;
     menu.addSectionHeader ("BAND " + juce::String (band + 1));
-    menu.addItem (copyId, "Copy band state");
-    menu.addItem (pasteId, TriadProcessor::hasCopiedBand() ? "Paste band state (" + TriadProcessor::copiedBandDescription() + ")"
-                                                           : juce::String ("Paste band state"),
-                  TriadProcessor::hasCopiedBand());
-    menu.addSeparator();
+    if (host.hasBandState())
+    {
+        menu.addItem (copyId, "Copy band state");
+        menu.addItem (pasteId, host.canPasteBandState() ? "Paste band state (" + host.pasteBandDescription() + ")"
+                                                         : juce::String ("Paste band state"),
+                      host.canPasteBandState());
+        menu.addSeparator();
+    }
     menu.addItem (removeId, "Remove band " + juce::String (band + 1), count > 1);
     menu.addItem (addId, "Add a band here (" + formatHz (hz) + ")", count < triad::maxBands);
-    menu.addItem (lfoId, "Edit LFO for band " + juce::String (band + 1) + " mix...");
+    if (host.hasBandState()) menu.addItem (lfoId, "Edit LFO for band " + juce::String (band + 1) + " mix...");
     if (count > 1)
     {
         menu.addSeparator();
@@ -361,11 +371,11 @@ void CrossoverDisplay::showBandMenu (int band, float hz)
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, band, hz] (int choice)
     {
         if (safe == nullptr) return;
-        if (choice > allDividersBase) { safe->processor.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
-        if (choice == copyId) { safe->processor.copyBandState (band); return; }
-        if (choice == pasteId) safe->processor.pasteBandState (band);
-        else if (choice == removeId) safe->processor.removeBand (band);
-        else if (choice == addId) safe->processor.addBand (hz);
+        if (choice > allDividersBase) { safe->host.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
+        if (choice == copyId) { safe->host.copyBandState (band); return; }
+        if (choice == pasteId) safe->host.pasteBandState (band);
+        else if (choice == removeId) safe->host.removeBand (band);
+        else if (choice == addId) safe->host.addBand (hz);
         else if (choice == lfoId) { if (safe->onEditBandLfo) safe->onEditBandLfo (band); return; }
         safe->refresh();
     });
@@ -376,9 +386,9 @@ void CrossoverDisplay::showCrossoverMenu (int index)
     juce::PopupMenu menu;
     menu.addSectionHeader ("CROSSOVER " + juce::String (index + 1) + "  " + (index < (int) cuts.size() ? formatHz (cuts[(size_t) index]) : juce::String()));
     juce::PopupMenu slopes;
-    const int current = processor.getCrossoverSlope (index);
-    addSlopeItems (slopes, current, slopeBase, index < (int) cuts.size() ? cuts[(size_t) index] : 0.0f, processor.getSampleRateForDisplay());
-    menu.addSubMenu ("Slope: " + TriadProcessor::slopeText (current), slopes);
+    const int current = host.getCrossoverSlope (index);
+    addSlopeItems (slopes, current, slopeBase, index < (int) cuts.size() ? cuts[(size_t) index] : 0.0f, host.getSampleRateForDisplay());
+    menu.addSubMenu ("Slope: " + triad::slopeText (current), slopes);
     addAllDividerItems (menu, allDividersBase);
     menu.addSeparator();
     menu.addItem (removeBelow, "Remove band " + juce::String (index + 1) + " (below)");
@@ -388,13 +398,13 @@ void CrossoverDisplay::showCrossoverMenu (int index)
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, index] (int choice)
     {
         if (safe == nullptr) return;
-        if (choice > allDividersBase) { safe->processor.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
+        if (choice > allDividersBase) { safe->host.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
         if (choice > slopeBase) { safe->setSlope (index, choice - slopeBase); return; }
-        if (choice == removeBelow) safe->processor.removeBand (index);
-        else if (choice == removeAbove) safe->processor.removeBand (index + 1);
+        if (choice == removeBelow) safe->host.removeBand (index);
+        else if (choice == removeAbove) safe->host.removeBand (index + 1);
         else if (choice == resetId)
         {
-            safe->setCrossoverValue (index, TriadProcessor::defaultCrossover (index, safe->processor.getBandCount()));
+            safe->setCrossoverValue (index, triad::defaultCrossover (index, safe->host.getBandCount()));
             safe->setSlope (index, triad::CrossoverFilter::defaultOrder);
         }
         safe->refresh();
@@ -414,16 +424,17 @@ void CrossoverDisplay::setMeters (float input, float output, float cpu, double d
     // The CPU reading glides (rises within about 0.1 s, falls over about half a second).
     const float k = (float) (1.0 - std::exp (-dt / (cpu > cpuShown ? 0.08 : 0.4)));
     cpuShown += k * (cpu - cpuShown);
-    liveButton.setToggleState (processor.isLiveMode(), juce::dontSendNotification);
+    if (host.hasLiveMode()) liveButton.setToggleState (host.isLiveMode(), juce::dontSendNotification);
 }
 void CrossoverDisplay::setLatency (int latency, double sampleRate, const juce::String& breakdown)
 {
     if (latency != latencySamples || ! juce::exactlyEqual (sampleRate, latencyRate)) repaint (getWidth() - (int) meterWidth - 24, 0, (int) meterWidth + 24, getHeight());
     latencySamples = latency;
     latencyRate = sampleRate > 0.0 ? sampleRate : 48000.0;
-    meterTip.setTooltip ("Latency: " + getLatencyText() + (latency == 0 ? juce::String (" - Triad adds none, safe to sing or play through.")
-                                                                         : " (" + juce::String (latency) + " samples) - the effects' own latency; Triad adds none.\n" + breakdown)
-                         + "\nCPU: the share of each audio buffer's time Triad needs (" + juce::String (juce::roundToInt (cpuShown * 100.0f)) + "% now).");
+    const auto name = host.getProductName();
+    meterTip.setTooltip ("Latency: " + getLatencyText() + (latency == 0 ? " - " + name + " adds none, safe to sing or play through."
+                                                                         : " (" + juce::String (latency) + " samples) - the effects' own latency; " + name + " adds none.\n" + breakdown)
+                         + "\nCPU: the share of each audio buffer's time " + name + " needs (" + juce::String (juce::roundToInt (cpuShown * 100.0f)) + "% now).");
 }
 juce::String CrossoverDisplay::getLatencyText() const
 {
@@ -506,16 +517,16 @@ void CrossoverDisplay::paintMeters (juce::Graphics& g)
 }
 void CrossoverDisplay::refreshIfChanged()
 {
-    std::vector<float> key { (float) processor.getBandCount(), processor.nyquistFrequency() };
-    for (auto c : processor.effectiveCrossovers()) key.push_back (c);
-    for (int j = 0; j + 1 < processor.getBandCount(); ++j) key.push_back ((float) processor.getCrossoverSlope (j));
+    std::vector<float> key { (float) host.getBandCount(), host.nyquistFrequency() };
+    for (auto c : host.effectiveCrossovers()) key.push_back (c);
+    for (int j = 0; j + 1 < host.getBandCount(); ++j) key.push_back ((float) host.getCrossoverSlope (j));
     if (key == refreshKey) return;
     refreshKey = key;
     refresh();
 }
 void CrossoverDisplay::refresh()
 {
-    const int wanted = juce::jmax (0, processor.getBandCount() - 1);
+    const int wanted = juce::jmax (0, host.getBandCount() - 1);
     if ((int) handles.size() != wanted)
     {
         endCrossoverGesture();
@@ -527,7 +538,7 @@ void CrossoverDisplay::refresh()
             addAndMakeVisible (*handles.back());
         }
     }
-    addButton.setEnabled (processor.getBandCount() < triad::maxBands);
+    addButton.setEnabled (host.getBandCount() < triad::maxBands);
     resized();
     repaint();
 }
@@ -562,7 +573,7 @@ void CrossoverDisplay::resized()
         const auto plot = plotBounds();
         meterTip.setBounds (x0 + 46, (int) plot.getY() - 12, 56, (int) plot.getHeight() + 40);
     }
-    cuts = processor.effectiveCrossovers();
+    cuts = host.effectiveCrossovers();
     layoutPills();
     const auto plot = plotBounds();
     for (size_t i = 0; i < handles.size() && i < cuts.size(); ++i)
@@ -570,7 +581,7 @@ void CrossoverDisplay::resized()
         const auto f = cuts[i];
         handles[i]->setBounds (juce::roundToInt (xForFrequency (f)) - 12, juce::roundToInt (plot.getY()), 24, juce::roundToInt (plot.getHeight()) + 10);
         handles[i]->setDescription ("Crossover " + juce::String ((int) i + 1) + ": " + formatHz (f) + ", slope "
-                                    + TriadProcessor::slopeText (processor.getCrossoverSlope ((int) i))
+                                    + triad::slopeText (host.getCrossoverSlope ((int) i))
                                     + ". Drag left or right; left/right arrows adjust (Shift: finer). Drag the upper dot, or up/down arrows, for the slope.");
     }
     // The selected handle stays reachable even when two boundaries are close.
@@ -590,12 +601,12 @@ void CrossoverDisplay::frame (double time)
 void CrossoverDisplay::updateSpectrum (double dt)
 {
     const float decayPerFrame = (float) (36.0 * dt);   // dB: -36 dB a second
-    const auto writeIndex = processor.spectrum.getWriteIndex();
+    const auto writeIndex = host.getSpectrum().getWriteIndex();
     const bool fresh = writeIndex != lastWriteIndex;
     lastWriteIndex = writeIndex;
-    const auto sampleRate = (float) processor.getSampleRateForDisplay();
+    const auto sampleRate = (float) host.getSampleRateForDisplay();
     const auto binHz = sampleRate / (float) fftSize;
-    if (fresh && processor.spectrum.read (samples.data(), fftSize))
+    if (fresh && host.getSpectrum().read (samples.data(), fftSize))
     {
         for (size_t i = 0; i < (size_t) fftSize; ++i) bins[i] = { samples[i] * window[i], 0.0f };
         triad::fft (bins);
@@ -648,7 +659,7 @@ void CrossoverDisplay::updateSpectrum (double dt)
 void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
 {
     const auto plot = plotBounds();
-    const int count = processor.getBandCount();
+    const int count = host.getBandCount();
     std::vector<float> xs { plot.getX() };
     for (auto c : cuts) xs.push_back (xForFrequency (c));
     xs.push_back (plot.getRight());
@@ -675,24 +686,24 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
     }
     g.setColour (juce::Colour (0xff929991).withAlpha (0.12f));
     for (float f : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
-        if (f < processor.nyquistFrequency()) g.drawVerticalLine (juce::roundToInt (xForFrequency (f)), plot.getY() + 29.0f, plot.getBottom());
+        if (f < host.nyquistFrequency()) g.drawVerticalLine (juce::roundToInt (xForFrequency (f)), plot.getY() + 29.0f, plot.getBottom());
     for (int row = 1; row <= 3; ++row)
         g.drawHorizontalLine (juce::roundToInt (plot.getY() + plot.getHeight() * (float) row / 4.0f), plot.getX(), plot.getRight());
     g.setFont (juce::FontOptions (10.0f)); g.setColour (juce::Colour (0xff969e98));
     for (float f : { 100.0f, 1000.0f, 10000.0f })
-        if (f < processor.nyquistFrequency() * 0.8f)
+        if (f < host.nyquistFrequency() * 0.8f)
             g.drawText (formatHz (f), juce::Rectangle<float> (xForFrequency (f) - 35, plot.getBottom() + 12, 70, 16), juce::Justification::centred);
     g.drawText ("20 Hz", juce::Rectangle<float> (plot.getX(), plot.getBottom() + 12, 65, 16), juce::Justification::centredLeft);
-    g.drawText (formatHz (processor.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 12, 90, 16), juce::Justification::centredRight);
+    g.drawText (formatHz (host.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 12, 90, 16), juce::Justification::centredRight);
 }
 void CrossoverDisplay::paint (juce::Graphics& g)
 {
     const auto plot = plotBounds();
     const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
-    std::vector<float> key { (float) getWidth(), (float) getHeight(), scale, (float) processor.getBandCount(), (float) activeSlope,
-                             processor.nyquistFrequency(), (float) processor.getSampleRateForDisplay() };
+    std::vector<float> key { (float) getWidth(), (float) getHeight(), scale, (float) host.getBandCount(), (float) activeSlope,
+                             host.nyquistFrequency(), (float) host.getSampleRateForDisplay() };
     key.insert (key.end(), cuts.begin(), cuts.end());
-    for (int j = 0; j + 1 < processor.getBandCount(); ++j) key.push_back ((float) processor.getCrossoverSlope (j));
+    for (int j = 0; j + 1 < host.getBandCount(); ++j) key.push_back ((float) host.getCrossoverSlope (j));
     if (key != staticKey || ! staticLayer.isValid())
     {
         staticKey = key;
@@ -776,7 +787,7 @@ void CrossoverDisplay::Handle::paint (juce::Graphics& g)
     g.fillEllipse (centre - 5.5f, bottom - 5.5f, 11, 11);
     if (hasKeyboardFocus (false)) g.drawEllipse (centre - 9, bottom - 9, 18, 18, 1.0f);
     // The slope dot: a ring, up for soft, down for hard.
-    const float slope = owner.slopeY (owner.processor.getCrossoverSlope (index)) - (float) getY();
+    const float slope = owner.slopeY (owner.host.getCrossoverSlope (index)) - (float) getY();
     const bool slopeActive = owner.activeSlope == index || draggingSlope;
     g.setColour (juce::Colour (0xff111413)); g.fillEllipse (centre - 8, slope - 8, 16, 16);
     g.setColour (slopeActive || highlighted ? colour : juce::Colour (0xffe3e8df));
@@ -785,7 +796,7 @@ void CrossoverDisplay::Handle::paint (juce::Graphics& g)
 }
 bool CrossoverDisplay::Handle::isOverSlopeDot (juce::Point<float> local) const
 {
-    const float slope = owner.slopeY (owner.processor.getCrossoverSlope (index)) - (float) getY();
+    const float slope = owner.slopeY (owner.host.getCrossoverSlope (index)) - (float) getY();
     return local.getDistanceFrom ({ (float) getWidth() * 0.5f, slope }) < 10.0f;
 }
 void CrossoverDisplay::Handle::mouseMove (const juce::MouseEvent& event)
@@ -814,11 +825,11 @@ void CrossoverDisplay::Handle::mouseDown (const juce::MouseEvent& event)
     {
         draggingSlope = true;
         slopeGrabY = event.getEventRelativeTo (&owner).position.y;
-        slopeGrabOrder = owner.processor.getCrossoverSlope (index);
+        slopeGrabOrder = owner.host.getCrossoverSlope (index);
         owner.beginSlopeGesture (index);
         return;
     }
-    const auto current = owner.processor.effectiveCrossovers();
+    const auto current = owner.host.effectiveCrossovers();
     if (index >= (int) current.size()) return;
     grabOffset = owner.xForFrequency (current[(size_t) index]) - event.getEventRelativeTo (&owner).position.x;
     owner.beginCrossoverGesture (index);
@@ -844,19 +855,19 @@ void CrossoverDisplay::Handle::mouseDoubleClick (const juce::MouseEvent& event)
 {
     if (! event.mods.isLeftButtonDown()) return;
     if (isOverSlopeDot (event.position)) owner.setSlope (index, triad::CrossoverFilter::defaultOrder);   // back to 24 dB/oct
-    else owner.setCrossoverValue (index, TriadProcessor::defaultCrossover (index, owner.processor.getBandCount()));
+    else owner.setCrossoverValue (index, triad::defaultCrossover (index, owner.host.getBandCount()));
 }
 bool CrossoverDisplay::Handle::keyPressed (const juce::KeyPress& key)
 {
     // Up / down: softer / harder slope.
     if (key.getKeyCode() == juce::KeyPress::upKey || key.getKeyCode() == juce::KeyPress::downKey)
     {
-        owner.setSlope (index, owner.processor.getCrossoverSlope (index) + (key.getKeyCode() == juce::KeyPress::upKey ? -1 : 1));
+        owner.setSlope (index, owner.host.getCrossoverSlope (index) + (key.getKeyCode() == juce::KeyPress::upKey ? -1 : 1));
         return true;
     }
     const bool left = key.getKeyCode() == juce::KeyPress::leftKey;
     if (! left && key.getKeyCode() != juce::KeyPress::rightKey) return false;
-    const auto current = owner.processor.effectiveCrossovers();
+    const auto current = owner.host.effectiveCrossovers();
     if (index >= (int) current.size()) return false;
     const float step = (key.getModifiers().isShiftDown() ? 1.0f / 120.0f : 1.0f / 12.0f) * (left ? -1.0f : 1.0f);
     owner.setCrossoverValue (index, current[(size_t) index] * std::pow (2.0f, step));

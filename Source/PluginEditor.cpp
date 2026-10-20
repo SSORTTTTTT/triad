@@ -16,6 +16,39 @@ juce::Array<juce::File> filesIn (const juce::File& folder, const juce::String& p
 }
 }
 
+// ---- Triad's bands, for the frequency panel -------------------------------------------------------
+namespace
+{
+class TriadCrossoverHost final : public CrossoverHost
+{
+public:
+    explicit TriadCrossoverHost (TriadProcessor& p) : processor (p) {}
+    juce::String getProductName() const override { return "Triad"; }
+    int getBandCount() const override { return processor.getBandCount(); }
+    std::vector<float> effectiveCrossovers() const override { return processor.effectiveCrossovers(); }
+    int getCrossoverSlope (int index) const override { return processor.getCrossoverSlope (index); }
+    juce::RangedAudioParameter* crossoverParameter (int index) const override { return processor.crossoverParameter (index); }
+    juce::RangedAudioParameter* slopeParameter (int index) const override { return processor.slopeParameter (index); }
+    double getSampleRateForDisplay() const override { return processor.getSampleRateForDisplay(); }
+    void setAllCrossoverSlopes (int order) override { processor.setAllCrossoverSlopes (order); }
+    bool addBand (float hz) override { return processor.addBand (hz); }
+    bool removeBand (int band) override { return processor.removeBand (band); }
+    triad::SpectrumTap& getSpectrum() override { return processor.spectrum; }
+    bool hasChains() const override { return true; }
+    bool hasLiveMode() const override { return true; }
+    bool isLiveMode() const override { return processor.isLiveMode(); }
+    void setLiveMode (bool on) override { processor.setLiveMode (on); }
+    bool hasBandState() const override { return true; }
+    void copyBandState (int band) override { processor.copyBandState (band); }
+    void pasteBandState (int band) override { processor.pasteBandState (band); }
+    bool canPasteBandState() const override { return TriadProcessor::hasCopiedBand(); }
+    juce::String pasteBandDescription() const override { return TriadProcessor::copiedBandDescription(); }
+private:
+    TriadProcessor& processor;
+};
+}
+std::unique_ptr<CrossoverHost> makeCrossoverHost (TriadProcessor& p) { return std::make_unique<TriadCrossoverHost> (p); }
+
 // ---- Name prompt ----------------------------------------------------------------------------------
 NamePrompt::NamePrompt()
 {
@@ -99,7 +132,7 @@ void TriadEditor::PresetButton::paintButton (juce::Graphics& g, bool over, bool)
 
 // ---- Editor -----------------------------------------------------------------------------------------
 TriadEditor::TriadEditor (TriadProcessor& p)
-    : AudioProcessorEditor (p), processor (p), frequencyDisplay (p), lfoPage (p), matrixPage (p)
+    : AudioProcessorEditor (p), processor (p), frequencyDisplay (makeCrossoverHost (p)), lfoPage (p), matrixPage (p)
 {
     setLookAndFeel (&look);
     addAndMakeVisible (content);

@@ -4,7 +4,32 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.8.0 ("Triad v7"): Triad Time and band MUTE
+## Current testing version — 0.9.0 ("Triad v8"): split mode (Triad Split)
+
+0.9.0 (2026-10-19), Thomas: "work on the split mode now ... another VST or tool that allows for that signal to be split
+between each band and put onto a new insert or mixer effect":
+- **Triad Split** by Thomas Ross, a plug-in of its own with its own installer (Triad-Split-0.9.0-macOS-AppleSilicon.pkg,
+  VST3 + AU): Triad's band split, playing one band (**PLAY**: ALL, 1 ... 10, NONE), so each band can go to its own FL mixer
+  insert or Ableton rack chain and the DAW's own plug-ins (Gross Beat, Fruity plug-ins, Saturator...) work on one band.
+  Same display as Triad (the frequency panel is now one shared part), same crossovers and slopes, up to 10 bands; the band
+  tracks add back up exactly to the original (tested: three Triad Splits playing bands 1, 2, 3 sum to ALL, and ALL equals
+  Triad with empty bands, bit for bit).
+- **LINK groups A to H**: every Triad Split in a group shares band count, dividers and slopes, live (a divider dragged on
+  one moves every other within a block of audio; the windows follow 30 times a second). The VST3 and AU builds find the
+  same groups (one shared block per DAW process). Adding or removing a band moves every linked track's PLAY with its band;
+  the window warns when a band is on no track or on two.
+- **Band outputs**: every band on its own output (Band 1 = outputs 3-4 ...), for FL's Patcher or routing plug-in outputs to
+  mixer inserts (FL's wrapper: Processing > Connections). PLAY NONE silences the main output.
+
+Next:
+- Thomas tests Triad Split in FL (sends to inserts; Patcher) and Ableton (rack chains).
+- **A routing helper** per DAW, as an add-on: an FL Patcher preset (and an FL Python script that names and routes the band
+  inserts), an Ableton rack preset or Max for Live device that builds the band tracks.
+- Possibly: Triad itself joining a LINK group (its dividers driving the Triad Splits) and band outputs on Triad.
+- **Pro Tools (AAX) version** of Triad, Triad Time and Triad Split (needs Avid's developer program and signing).
+- **Final name: BANDS** (all caps). Triad stays the name while testing; the rename comes last.
+
+### 0.8.0 ("Triad v7"): Triad Time and band MUTE
 
 0.8.0 (2026-10-19), from Thomas's notes after v6 ("I've had friends use it and they love it"):
 - **Triad Time** by Thomas Ross: a Gross Beat-style time and volume gate, Triad's only built-in effect (BUILT IN at the top of

@@ -1,8 +1,8 @@
 # Triad — multiband effects host
 
-Version 0.8.0 ("Triad v7") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
+Version 0.9.0 ("Triad v8") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
 
-**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v7-0.8.0-macOS-AppleSilicon.pkg`), and **Triad Time** (its time / volume gate) as a plug-in of its own (`Installer/Triad-Time-0.8.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
+**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v8-0.9.0-macOS-AppleSilicon.pkg`), **Triad Time** (its time / volume gate) as a plug-in of its own (`Installer/Triad-Time-0.9.0-macOS-AppleSilicon.pkg`), and **Triad Split** (split mode: one band per mixer insert or track) as a plug-in of its own (`Installer/Triad-Split-0.9.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
 
 ## What it does
 
@@ -33,6 +33,32 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
   - **Each slot's knob** is that effect's dry/wet mix (double-click: 100%). The small **~** opens its LFO; it lights up while an LFO is moving the knob, and a white dot rides round the knob.
   - **The green light** bypasses the slot. **The ▸ arrow (or right-click)**: open, replace, edit LFO, add to favourites, copy / paste plugin state, move, bypass, remove. Drag a slot up or down to move it.
 - **Band Mix** blends the dry band with its whole chain; **Volume** (−36 to +12 dB) sets the band's level, with a level meter. Both are DAW-automatable.
+
+### Triad Split: split mode (new in 0.9.0)
+
+Triad's band split as a plug-in of its own, by Thomas Ross, so each band can go to its own mixer insert or track and your
+DAW's own plug-ins can work on one band: Gross Beat or a Fruity plug-in on the highs in FL Studio, Saturator or EQ Eight on
+the mids in Ableton. Installed with its own installer (**Triad Split**, VST3 and AU).
+
+- **The same split as Triad**: the same display (live spectrum, draggable dividers, slope dots, double-click or **+ BAND** to
+  add a band, right-click to remove one), the same crossovers (6 to 96 dB/oct), up to 10 bands. With nothing after them,
+  the band tracks add back up exactly to the original sound (the same flat all-pass sum as Triad's).
+- **PLAY**: which band this track hears: **ALL**, **1**, **2**, **3** ... or **NONE**. Automatable ("Play").
+- **LINK** (A to H, top right): every Triad Split in the same group shares its bands. Drag a divider (or add a band) on any of
+  them and every other one follows, on every track, live. A new Triad Split joins group A and takes that group's bands.
+  The VST3 and the AU link with each other too. **OFF**: this one keeps its own bands.
+  Adding or removing a band moves every linked track's PLAY along with it (the track playing the highs keeps playing the highs).
+  The small number on a PLAY button shows how many other linked tracks play that band, and the text underneath says if a band
+  is on no track yet, or on two (it would be louder in the sum).
+- **Band outputs**: every band also comes out on its own output (Band 1 = outputs 3-4, Band 2 = 5-6 ...), whatever PLAY is,
+  for FL Studio's Patcher or for sending a plug-in's outputs to mixer inserts. With PLAY on **NONE** the main output is silent.
+- No latency; mono or stereo.
+
+**FL Studio (mixer):** route the sound's insert (say insert 3) with sends to three new inserts (4, 5, 6) instead of the master;
+put a Triad Split on each (PLAY 1, 2, 3; all in LINK A) and any FL plug-ins after it; route 4, 5 and 6 to the master or a bus.
+**FL Studio (Patcher):** one Triad Split in Patcher, its Band 1 / Band 2 / Band 3 outputs wired to FL effects and back out.
+**Ableton Live:** an Audio Effect Rack with one chain per band, each starting with a Triad Split (PLAY 1, 2, 3; LINK A),
+then any Live devices; the rack adds the chains back up. Save it as a rack preset to reuse it.
 
 ### Triad Time (new in 0.8.0)
 
@@ -81,7 +107,7 @@ and also installed as a plug-in of its own (**Triad Time**, VST3 and AU) for any
 - **Startup preset** (new in 0.5.0): gear menu → **Change startup preset** chooses what every new Triad opens with: Init (an empty Triad), any saved preset, or your own settings saved with **Use the current settings as the startup preset**. Projects that already have Triad keep their own settings. The PRESET menu's **Initialize** turns the current Triad back into an empty one.
 - **Presets:** the **PRESET** menu saves and loads the whole Triad (`~/Music/Triad/Presets`). Each band's **...** menu saves or loads a **chain preset** (that band's effects with their settings, LFOs, mix and volume; `~/Music/Triad/Chains`).
 - **Settings (gear):** sort the effect list by company or A-Z, look for new plug-ins each time Triad opens (or only when you press Rescan), add your own plug-in folders, window size (75-150%).
-- Hosts **VST3 and Audio Unit** effects. Triad installs as AU and VST3, named **Triad v7**; projects made with Triad, Triad v2 ... v6 open in it. Each new release gets the next name (v7, v8, ...) and replaces the earlier ones.
+- Hosts **VST3 and Audio Unit** effects. Triad installs as AU and VST3, named **Triad v8**; projects made with Triad, Triad v2 ... v7 open in it. Each new release gets the next name (v8, v9, ...) and replaces the earlier ones.
 - Compensates each effect's latency, aligns all bands to the slowest chain, and reports the total to the DAW.
 - **Recording vocals through Triad:** Triad itself adds no latency (0 samples at every slope and band count), so it
   is safe to monitor through while recording; put a pitch corrector in **PRE** (once, on the whole voice) in its low-latency mode, not in each band.
@@ -103,18 +129,18 @@ and also installed as a plug-in of its own (**Triad Time**, VST3 and AU) for any
    - **CMake 3.22+**: uses one from Homebrew or `/Applications/CMake.app` if present; otherwise it downloads the official CMake 3.31.9 into `deps/` (checksum-verified) for this build only.
    - **JUCE 8.0.12**: downloaded into `deps/JUCE` at the pinned commit on the first run.
    - An internet connection is needed for the first run. A full log is written to `build-mac.log`.
-4. When it finishes, Finder shows `Installer/Triad-v7-0.8.0-macOS-AppleSilicon.pkg` (and `Installer/Triad-Time-0.8.0-macOS-AppleSilicon.pkg`, Triad Time on its own). Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
-   - `/Library/Audio/Plug-Ins/Components/Triad v7.component` (AU)
-   - `/Library/Audio/Plug-Ins/VST3/Triad v7.vst3` (VST3)
+4. When it finishes, Finder shows `Installer/Triad-v8-0.9.0-macOS-AppleSilicon.pkg` (and `Installer/Triad-Time-0.9.0-macOS-AppleSilicon.pkg` and `Installer/Triad-Split-0.9.0-macOS-AppleSilicon.pkg`, Triad Time and Triad Split on their own). Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
+   - `/Library/Audio/Plug-Ins/Components/Triad v8.component` (AU)
+   - `/Library/Audio/Plug-Ins/VST3/Triad v8.vst3` (VST3)
 
-   It shows up in your DAW as **Triad v7**. It replaces an earlier "Triad", "Triad v2" ... "Triad v6" (the installer removes those bundles first, so hosts never see two copies of the same plug-in), and projects made with them open in Triad v7. The Triad Time package installs `Triad Time.component` and `Triad Time.vst3` the same way. Quit your DAW completely before installing: macOS keeps an already-loaded plug-in running until the app quits.
+   It shows up in your DAW as **Triad v8**. It replaces an earlier "Triad", "Triad v2" ... "Triad v7" (the installer removes those bundles first, so hosts never see two copies of the same plug-in), and projects made with them open in Triad v8. The Triad Time and Triad Split packages install `Triad Time.component` / `Triad Time.vst3` and `Triad Split.component` / `Triad Split.vst3` the same way. Quit your DAW completely before installing: macOS keeps an already-loaded plug-in running until the app quits.
 
    Use **Customize** in the installer to install only one format.
 
    **Size.** Triad is built to stay small: it links only the JUCE modules it uses (plugin hosting and UI; no audio-device or audio-file-codec code), uses its own compact Linkwitz–Riley crossover instead of the `juce_dsp` module, compiles framework/UI code for size with link-time optimisation while the audio path stays at full `-O3` speed, and dead-strips and symbol-strips the shipped binaries. `cmake -DTRIAD_SIZE_OPTIMISED=OFF` restores a plain `-O3` build.
 
    After building, the `build-mac` and `deps` folders (roughly 1 GB) can be deleted to free space; they are recreated by the next build.
-5. Reopen your DAW and rescan plugins. Load **Triad v7** on a stereo track or mixer insert.
+5. Reopen your DAW and rescan plugins. Load **Triad v8** on a stereo track or mixer insert.
 
 `Install-Mac.command` is still included as an alternative: it copies the built bundles into your *user* plugin folders (`~/Library/Audio/Plug-Ins/...`) without an installer, backing up any previous copy to `~/Library/Application Support/Triad/Backups/`. Use one method or the other so your DAW does not find two copies of Triad.
 
@@ -122,7 +148,7 @@ If macOS refuses to launch a `.command` file or the ZIP extractor loses its exec
 
 The package and plugins are signed ad hoc on the Mac that built them (no Apple Developer ID, no notarization). That is fine on your own Mac. A copy downloaded onto another Mac will be blocked by Gatekeeper until it is allowed under System Settings > Privacy & Security > Open Anyway, or until it is signed with a Developer ID Installer certificate (`productsign`) and notarized.
 
-To uninstall, quit your DAWs and delete the two Triad v7 bundles listed above, then run `sudo pkgutil --forget audio.thomasross.triad.au` and `sudo pkgutil --forget audio.thomasross.triad.vst3` in Terminal.
+To uninstall, quit your DAWs and delete the two Triad v8 bundles listed above, then run `sudo pkgutil --forget audio.thomasross.triad.au` and `sudo pkgutil --forget audio.thomasross.triad.vst3` in Terminal.
 
 Your hosted effects must have native Apple Silicon VST3 versions installed. Triad does not bridge Intel-only binaries. Their existing licenses/authorizations still apply.
 
@@ -132,7 +158,7 @@ If you would rather not install Apple's developer tools, push this folder to a G
 
 ## Use
 
-1. Load **Triad v7** on a stereo track or mixer insert. It starts with 3 bands.
+1. Load **Triad v8** on a stereo track or mixer insert. It starts with 3 bands.
 2. Drag the dividers to set the band edges, or click a strip's start/end frequency to type one. Need another band? Double-click the display where you want the split, or press **+ BAND**.
 3. Click **Slot 1** in a band and choose an effect. Its window opens straight away. Click **+ ADD SLOT** to add more effects; they run top to bottom. The arrow on a slot moves, bypasses or removes it.
 4. Use each slot's knob for that effect's dry/wet, the green light to bypass it, **Band Mix** and **Volume** for the whole band.
@@ -191,7 +217,8 @@ build/TriadTests_artefacts/Release/TriadTests \
   "$PWD/build/fixtures/Triad Crash Fixture.vst3" \
   "$PWD/build/TriadScanner_artefacts/Release/TriadScanner" \
   "$PWD/Triad-preview.png" \
-  "$PWD/build/Triad_artefacts/Release/VST3/Triad v7.vst3"
+  "$PWD/build/Triad_artefacts/Release/VST3/Triad v8.vst3" \
+  "/Library/Audio/Plug-Ins/VST3/Triad Split.vst3"
 build/TriadStress_artefacts/Release/TriadStress \
   "$PWD/build/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
   "$PWD/build/fixtures/Triad Crash Fixture.vst3" \
@@ -205,7 +232,9 @@ The fixtures are development-only and are not installed. See `VALIDATION.md` for
 - `Source/AudioEngine.h`: N-band crossover, phase compensation, delay lines, spectrum tap, FFT.
 - `Source/PluginProcessor.*`: bands, slot chains, mixing, latency, VST3/AU hosting, state and recall.
 - `Source/PluginCatalog.*`, `Source/AudioUnitList.*`: the effects-only plug-in list and its cache.
-- `Source/CrossoverDisplay.*`: live spectrum, draggable dividers, adding bands, host gestures and keyboard control.
+- `Source/CrossoverDisplay.*`: live spectrum, draggable dividers, adding bands, host gestures and keyboard control (shared by Triad and Triad Split).
+- `Source/TriadSplit.*`, `Source/SplitLink.*`: Triad Split (split mode) and its link groups.
+- `Source/TriadTime.*`: Triad Time (built in, and its own plug-in).
 - `Source/BandStrip.*`: FL-style band strips, slot rows and the + ADD SLOT row.
 - `Source/PluginCatalog.*`, `Source/Scanner.cpp`: the effects-only list and the Triad Scanner helper.
 - `Source/PluginEditor.*`: main window, knob style, effect chooser.

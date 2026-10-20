@@ -1,7 +1,37 @@
 #pragma once
-#include "PluginProcessor.h"
+#include <juce_audio_processors/juce_audio_processors.h>
+#include "AudioEngine.h"
 #include "UiCommon.h"
 #include <complex>
+
+// What the frequency panel shows and edits: Triad's bands, or Triad Split's. (No Triad code here, so Triad
+// Split draws its bands with exactly the same panel.)
+struct CrossoverHost
+{
+    virtual ~CrossoverHost() = default;
+    virtual juce::String getProductName() const = 0;              // "Triad", "Triad Split" (in tooltips)
+    virtual int getBandCount() const = 0;
+    virtual std::vector<float> effectiveCrossovers() const = 0;   // one per divider, in order, as heard
+    virtual int getCrossoverSlope (int index) const = 0;          // slope order (x 6 dB/oct)
+    virtual juce::RangedAudioParameter* crossoverParameter (int index) const = 0;
+    virtual juce::RangedAudioParameter* slopeParameter (int index) const = 0;
+    virtual double getSampleRateForDisplay() const = 0;
+    float nyquistFrequency() const { return (float) getSampleRateForDisplay() * 0.5f; }
+    virtual void setAllCrossoverSlopes (int order) = 0;
+    virtual bool addBand (float hz = -1.0f) = 0;                  // split the band at hz (<= 0: the widest band)
+    virtual bool removeBand (int band) = 0;
+    virtual triad::SpectrumTap& getSpectrum() = 0;
+    // Triad only: the PRE / POST buttons, LIVE, and the band menu's copy / paste / LFO items.
+    virtual bool hasChains() const { return false; }
+    virtual bool hasLiveMode() const { return false; }
+    virtual bool isLiveMode() const { return false; }
+    virtual void setLiveMode (bool) {}
+    virtual bool hasBandState() const { return false; }
+    virtual void copyBandState (int) {}
+    virtual void pasteBandState (int) {}
+    virtual bool canPasteBandState() const { return false; }
+    virtual juce::String pasteBandDescription() const { return {}; }
+};
 
 // The frequency panel: a live spectrum of the incoming audio, the bands, and one draggable divider
 // per crossover. Every gesture edits the same crossover parameters as automation and recall.
@@ -12,7 +42,8 @@
 class CrossoverDisplay final : public juce::Component
 {
 public:
-    explicit CrossoverDisplay (TriadProcessor&);
+    explicit CrossoverDisplay (CrossoverHost&);
+    explicit CrossoverDisplay (std::unique_ptr<CrossoverHost> owned);   // keeps the host
     ~CrossoverDisplay() override;
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -102,7 +133,8 @@ private:
     float pillTop (int index) const;
     void layoutPills();
 
-    TriadProcessor& processor;
+    std::unique_ptr<CrossoverHost> ownedHost;
+    CrossoverHost& host;
     std::vector<std::unique_ptr<Handle>> handles;
     juce::TextButton addButton { "+ BAND" }, preButton { "PRE" }, postButton { "POST" };
     static void setChainState (juce::TextButton&, const juce::String& name, bool shown, int effects);

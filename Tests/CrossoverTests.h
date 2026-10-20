@@ -1,5 +1,5 @@
 #pragma once
-#include "../Source/CrossoverDisplay.h"
+#include "../Source/PluginEditor.h"
 
 struct GestureProbe final : juce::AudioProcessorParameter::Listener
 {
@@ -31,7 +31,7 @@ inline void runCrossoverTests()
     GestureProbe lowProbe, highProbe;
     lo->addListener (&lowProbe); hi->addListener (&highProbe);
     {
-        CrossoverDisplay display (processor);
+        CrossoverDisplay display (makeCrossoverHost (processor));
         display.setBounds (0, 0, 952, 204);
         display.refresh();
         require (display.getNumHandles() == 2, "Three bands have two crossover handles");

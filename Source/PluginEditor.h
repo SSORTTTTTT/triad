@@ -8,6 +8,9 @@
 
 using TriadLook = triad::ui::TriadLook;
 
+// The frequency panel's view of Triad (its bands, PRE / POST, LIVE, band copy / paste).
+std::unique_ptr<CrossoverHost> makeCrossoverHost (TriadProcessor&);
+
 // A small "Save as" panel shown inside Triad's own window (typing works in every DAW).
 class NamePrompt final : public juce::Component
 {

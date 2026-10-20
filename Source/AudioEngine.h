@@ -253,6 +253,20 @@ inline double crossoverGroupDelayMs (int order, float hz, double sampleRate)
     return std::abs (sum) > 1.0e-12 ? (weighted / sum).real() / sampleRate * 1000.0 : 0.0;
 }
 
+// "24 dB/oct" for a slope order (shared by Triad and Triad Split).
+inline juce::String slopeText (int order) { return juce::String (CrossoverFilter::dbPerOctave (order)) + " dB/oct"; }
+
+// Where the dividers start for a number of bands (Triad's defaults: 3 bands at 250 Hz and 2.5 kHz).
+inline float defaultCrossover (int index, int count)
+{
+    static const std::vector<std::vector<float>> table { {}, {}, { 1000.0f }, { 250.0f, 2500.0f },
+                                                          { 200.0f, 1000.0f, 5000.0f }, { 120.0f, 500.0f, 2000.0f, 7000.0f } };
+    if (count < (int) table.size() && index < (int) table[(size_t) count].size())
+        return table[(size_t) count][(size_t) index];
+    const auto t = (float) index / (float) juce::jmax (1, count - 2);
+    return 80.0f * std::pow (12000.0f / 80.0f, t);
+}
+
 // N-band crossover (1 to 10 bands) with a slope per crossover. Band b is the low-pass at crossover b
 // of what remains above crossover b-1, followed by the all-pass of every higher crossover, so the
 // bands sum to the cascade of all-passes: flat magnitude, phase-rotated.
