@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "TriadTime.h"
 
 using namespace triad::ui;
 
@@ -426,7 +427,21 @@ void TriadEditor::setFavourite (const juce::String& format, const juce::String& 
 }
 void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
 {
-    auto list = std::make_shared<std::vector<EffectEntry>> (catalog->getEffects());
+    // Triad's built-in effect first (Triad Time), then everything installed (an installed Triad Time is the same
+    // effect: only the built-in one is listed).
+    auto list = std::make_shared<std::vector<EffectEntry>>();
+    for (const auto& d : TriadBuiltInFormat::effects())
+    {
+        EffectEntry e;
+        e.description = d;
+        e.name = d.name;
+        e.manufacturer = d.manufacturerName;
+        e.format = TriadTime::formatName;
+        list->push_back (e);
+    }
+    const int builtIns = (int) list->size();
+    for (auto& e : catalog->getEffects())
+        if (! (e.name == "Triad Time" && e.manufacturer == "Thomas Ross")) list->push_back (std::move (e));
     const bool newSlot = slot >= processor.getSlotCount (band);
     const bool alphabetical = settings->getSort() == TriadSettings::Sort::alphabetical;
     juce::PopupMenu menu;
@@ -444,6 +459,10 @@ void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
         for (int i : favouriteItems) menu.addItem (i + 1, (*list)[(size_t) i].name + "  (" + (*list)[(size_t) i].format + ")");
         menu.addSeparator();
     }
+    menu.addSectionHeader ("BUILT IN");
+    for (int i = 0; i < builtIns; ++i)
+        menu.addItem (i + 1, (*list)[(size_t) i].name + "  -  " + (*list)[(size_t) i].manufacturer + "  (time and volume gate)");
+    menu.addSeparator();
     for (const juce::String format : { "VST3", "AU" })
     {
         juce::PopupMenu formatMenu;

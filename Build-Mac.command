@@ -2,21 +2,23 @@
 # Triad — build the AU and VST3 for Apple Silicon and wrap them in an installer package.
 # Double-click in Finder, or run:  bash Build-Mac.command
 #
-# Output: Installer/Triad-<version>-macOS-AppleSilicon.pkg
+# Output: Installer/Triad-v7-<version>-macOS-AppleSilicon.pkg and Installer/Triad-Time-<version>-macOS-AppleSilicon.pkg
 # A full log is written to build-mac.log next to this script.
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$PWD"
 
-VERSION="0.7.0"
-PRODUCT="Triad v6"                 # bundle and display name (plug-in IDs unchanged from Triad 0.1)
+VERSION="0.8.0"
+PRODUCT="Triad v7"                 # bundle and display name (plug-in IDs unchanged from Triad 0.1)
 JUCE_COMMIT="29396c22c93392d6738e021b83196283d6e4d850"   # JUCE 8.0.12
 CMAKE_FALLBACK_VERSION="3.31.9"
 CMAKE_FALLBACK_SHA256="eb9d0b2b6a5b900e2f5811326a86ea393a146e4cb2384d15512c226e9c98f8bf"
 BUILD_DIR="$ROOT/build-mac"
 DEPS_DIR="$ROOT/deps"
 OUT_DIR="$ROOT/Installer"
-PKG_NAME="Triad-v6-$VERSION-macOS-AppleSilicon.pkg"
+PKG_NAME="Triad-v7-$VERSION-macOS-AppleSilicon.pkg"
+TIME_PRODUCT="Triad Time"            # Triad's time / volume gate as a plug-in of its own (its own installer)
+TIME_PKG_PATH="$OUT_DIR/Triad-Time-$VERSION-macOS-AppleSilicon.pkg"
 PKG_PATH="$OUT_DIR/$PKG_NAME"
 LOG="$ROOT/build-mac.log"
 STATUS="$ROOT/build-mac.status"
@@ -129,8 +131,8 @@ step "Configuring (Release, arm64, macOS 12.0+)"
     -DTRIAD_BUILD_TESTS=OFF \
     "${JUCE_ARGS[@]+"${JUCE_ARGS[@]}"}"
 
-step "Building Triad AU and VST3"
-"$CMAKE" --build "$BUILD_DIR" --config Release --target Triad_VST3 Triad_AU --parallel "$(sysctl -n hw.ncpu)"
+step "Building Triad and Triad Time (AU and VST3)"
+"$CMAKE" --build "$BUILD_DIR" --config Release --target Triad_VST3 Triad_AU TriadTime_VST3 TriadTime_AU --parallel "$(sysctl -n hw.ncpu)"
 
 # ---------------------------------------------------------------------------
 step "Preparing the plugin bundles"
@@ -189,7 +191,7 @@ component_plist()   # root plist
 component_plist "$VST3_ROOT" "$PKG_WORK/vst3-components.plist"
 component_plist "$AU_ROOT"   "$PKG_WORK/au-components.plist"
 
-# Triad v6 replaces the earlier "Triad", "Triad v2" ... "Triad v5" bundles (same plug-in IDs): remove them first
+# Triad v7 replaces the earlier "Triad", "Triad v2" ... "Triad v6" bundles (same plug-in IDs): remove them first
 # so a host never finds two copies of the same plug-in. Only bundles with Triad's identifier are touched.
 mkdir -p "$PKG_WORK/scripts-vst3"
 write_preinstall()   # script-dir old-bundle-paths-relative-to-volume...
@@ -210,8 +212,8 @@ EOF
     } > "$dir/preinstall"
     chmod 755 "$dir/preinstall"
 }
-write_preinstall "$PKG_WORK/scripts-vst3" "Library/Audio/Plug-Ins/VST3/Triad.vst3" "Library/Audio/Plug-Ins/VST3/Triad v2.vst3" "Library/Audio/Plug-Ins/VST3/Triad v3.vst3" "Library/Audio/Plug-Ins/VST3/Triad v4.vst3" "Library/Audio/Plug-Ins/VST3/Triad v5.vst3"
-write_preinstall "$PKG_WORK/scripts-au" "Library/Audio/Plug-Ins/Components/Triad.component" "Library/Audio/Plug-Ins/Components/Triad v2.component" "Library/Audio/Plug-Ins/Components/Triad v3.component" "Library/Audio/Plug-Ins/Components/Triad v4.component" "Library/Audio/Plug-Ins/Components/Triad v5.component"
+write_preinstall "$PKG_WORK/scripts-vst3" "Library/Audio/Plug-Ins/VST3/Triad.vst3" "Library/Audio/Plug-Ins/VST3/Triad v2.vst3" "Library/Audio/Plug-Ins/VST3/Triad v3.vst3" "Library/Audio/Plug-Ins/VST3/Triad v4.vst3" "Library/Audio/Plug-Ins/VST3/Triad v5.vst3" "Library/Audio/Plug-Ins/VST3/Triad v6.vst3"
+write_preinstall "$PKG_WORK/scripts-au" "Library/Audio/Plug-Ins/Components/Triad.component" "Library/Audio/Plug-Ins/Components/Triad v2.component" "Library/Audio/Plug-Ins/Components/Triad v3.component" "Library/Audio/Plug-Ins/Components/Triad v4.component" "Library/Audio/Plug-Ins/Components/Triad v5.component" "Library/Audio/Plug-Ins/Components/Triad v6.component"
 cat > "$PKG_WORK/scripts-au/postinstall" <<'EOF'
 #!/bin/sh
 # Ask macOS to refresh its Audio Unit registry so hosts see Triad on their next scan.
@@ -305,9 +307,102 @@ pkg_bytes=$(stat -f %z "$PKG_PATH")
 echo "  size: $((pkg_bytes / 1024)) KB   sha256: $(shasum -a 256 "$PKG_PATH" | awk '{print $1}')"
 rm -rf "$VERIFY"
 
+# ---------------------------------------------------------------------------
+step "Triad Time: its own installer"
+TIME_WORK="$BUILD_DIR/pkg-time"
+rm -rf "$TIME_WORK"
+TIME_VST3_ROOT="$TIME_WORK/vst3-root"
+TIME_AU_ROOT="$TIME_WORK/au-root"
+mkdir -p "$TIME_VST3_ROOT/Library/Audio/Plug-Ins/VST3" "$TIME_AU_ROOT/Library/Audio/Plug-Ins/Components" \
+         "$TIME_WORK/components" "$TIME_WORK/scripts-au" "$TIME_WORK/resources"
+stage_time()   # source destination
+{
+    [ -d "$1" ] || fail "Expected build output is missing: $1"
+    ditto --norsrc --noextattr --noqtn --noacl "$1" "$2"
+    xattr -cr "$2" 2>/dev/null || true
+    local binary="$2/Contents/MacOS/$TIME_PRODUCT"
+    [ -f "$binary" ] || fail "Plugin binary missing: $binary"
+    local archs; archs=$(lipo -archs "$binary")
+    [[ " $archs " == *" arm64 "* ]] || fail "$binary is not an Apple Silicon binary (found: $archs)"
+    xcrun strip -x "$binary"
+    codesign --force --deep --sign - "$2"
+    codesign --verify --deep --strict "$2"
+    echo "  $(basename "$2"): $archs, $(du -sh "$2" | awk '{print $1}'), ad-hoc signed, id $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$2/Contents/Info.plist")"
+}
+stage_time "$BUILD_DIR/TriadTime_artefacts/Release/VST3/$TIME_PRODUCT.vst3" "$TIME_VST3_ROOT/Library/Audio/Plug-Ins/VST3/$TIME_PRODUCT.vst3"
+stage_time "$BUILD_DIR/TriadTime_artefacts/Release/AU/$TIME_PRODUCT.component" "$TIME_AU_ROOT/Library/Audio/Plug-Ins/Components/$TIME_PRODUCT.component"
+component_plist "$TIME_VST3_ROOT" "$TIME_WORK/vst3-components.plist"
+component_plist "$TIME_AU_ROOT"   "$TIME_WORK/au-components.plist"
+printf '#!/bin/sh\n/usr/bin/killall -9 AudioComponentRegistrar >/dev/null 2>&1 || true\nexit 0\n' > "$TIME_WORK/scripts-au/postinstall"
+chmod 755 "$TIME_WORK/scripts-au/postinstall"
+pkgbuild --quiet --root "$TIME_VST3_ROOT" --component-plist "$TIME_WORK/vst3-components.plist" \
+    --identifier audio.thomasross.triadtime.vst3 --version "$VERSION" --install-location / \
+    "$TIME_WORK/components/TriadTime-VST3.pkg"
+pkgbuild --quiet --root "$TIME_AU_ROOT" --component-plist "$TIME_WORK/au-components.plist" \
+    --scripts "$TIME_WORK/scripts-au" \
+    --identifier audio.thomasross.triadtime.au --version "$VERSION" --install-location / \
+    "$TIME_WORK/components/TriadTime-AU.pkg"
+cat > "$TIME_WORK/resources/welcome.html" <<HTML
+<html><body style="font-family: -apple-system, Helvetica; font-size: 13px;">
+<h2>$TIME_PRODUCT ($VERSION) by Thomas Ross</h2>
+<p>A time and volume gate: draw how far back it plays (repeats, half speed, tape stops, reverse) and a gate,
+with Triad's LFO shapes, USER folder and shape generator. Synced to your song's tempo.</p>
+<p>It is also built into Triad v7. This installer adds it as a plug-in of its own, for any track in any DAW:</p>
+<ul>
+<li><b>Audio Unit</b> &rarr; /Library/Audio/Plug-Ins/Components/$TIME_PRODUCT.component</li>
+<li><b>VST3</b> &rarr; /Library/Audio/Plug-Ins/VST3/$TIME_PRODUCT.vst3</li>
+</ul>
+<p>Built natively for Apple Silicon (macOS 12 or later). Quit your DAWs before installing.</p>
+</body></html>
+HTML
+cat > "$TIME_WORK/distribution.xml" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>$TIME_PRODUCT ($VERSION)</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <options customize="allow" require-scripts="false" hostArchitectures="arm64"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <volume-check>
+        <allowed-os-versions><os-version min="12.0"/></allowed-os-versions>
+    </volume-check>
+    <choices-outline>
+        <line choice="au"/>
+        <line choice="vst3"/>
+    </choices-outline>
+    <choice id="au" title="$TIME_PRODUCT Audio Unit (AU)" description="Installs $TIME_PRODUCT.component in /Library/Audio/Plug-Ins/Components.">
+        <pkg-ref id="audio.thomasross.triadtime.au"/>
+    </choice>
+    <choice id="vst3" title="$TIME_PRODUCT VST3" description="Installs $TIME_PRODUCT.vst3 in /Library/Audio/Plug-Ins/VST3.">
+        <pkg-ref id="audio.thomasross.triadtime.vst3"/>
+    </choice>
+    <pkg-ref id="audio.thomasross.triadtime.au" version="$VERSION" onConclusion="none">TriadTime-AU.pkg</pkg-ref>
+    <pkg-ref id="audio.thomasross.triadtime.vst3" version="$VERSION" onConclusion="none">TriadTime-VST3.pkg</pkg-ref>
+</installer-gui-script>
+XML
+rm -f "$TIME_PKG_PATH"
+productbuild --quiet --distribution "$TIME_WORK/distribution.xml" \
+    --package-path "$TIME_WORK/components" --resources "$TIME_WORK/resources" "$TIME_PKG_PATH"
+VERIFY="$TIME_WORK/verify"
+rm -rf "$VERIFY"
+pkgutil --expand-full "$TIME_PKG_PATH" "$VERIFY"
+for entry in "TriadTime-VST3.pkg:Library/Audio/Plug-Ins/VST3/$TIME_PRODUCT.vst3" \
+             "TriadTime-AU.pkg:Library/Audio/Plug-Ins/Components/$TIME_PRODUCT.component"; do
+    component="${entry%%:*}"; relative="${entry#*:}"
+    bundle="$VERIFY/$component/Payload/$relative"
+    [ -f "$bundle/Contents/MacOS/$TIME_PRODUCT" ] || fail "$component does not contain $relative"
+    codesign --verify --deep --strict "$bundle" || fail "Signature check failed inside $component"
+    if grep -q "<relocate>" "$VERIFY/$component/PackageInfo" 2>/dev/null; then
+        fail "$component is relocatable; Installer could put the plugin somewhere other than /Library"
+    fi
+    echo "  $component -> /$relative ($(lipo -archs "$bundle/Contents/MacOS/$TIME_PRODUCT"), signature OK)"
+done
+echo "  size: $(( $(stat -f %z "$TIME_PKG_PATH") / 1024 )) KB   sha256: $(shasum -a 256 "$TIME_PKG_PATH" | awk '{print $1}')"
+rm -rf "$VERIFY"
+
 echo
-echo "Installer ready:"
+echo "Installers ready:"
 echo "  $PKG_PATH"
+echo "  $TIME_PKG_PATH"
 echo
 echo "Double-click it to install the AU and VST3 for all users (asks for your Mac password)."
 echo "It is signed only locally, so share it with other Macs only for testing (see README)."

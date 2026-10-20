@@ -45,6 +45,9 @@ public:
     static juce::String crossoverID (int index);           // "lowCut", "highCut", "cross3".."cross9"
     static juce::String bandMixID (int band);              // "mix0".."mix9"
     static juce::String bandGainID (int band);             // "gain0".."gain9" (dB)
+    static juce::String bandMuteID (int band);             // "mute0".."mute9" (0.8.0)
+    bool isBandMuted (int band) const;
+    void setBandMuted (int band, bool);                    // as a gesture: an undo step, automation follows
     static juce::String slopeID (int index);               // "slope0".."slope8": crossover slope order 1-16 (x 6 dB/oct)
     static constexpr float minGainDb = -36.0f, maxGainDb = 12.0f;
 
@@ -357,6 +360,16 @@ private:
     struct PendingLoad { int slot; const juce::XmlElement* node; };
 
     juce::AudioPluginFormatManager formats;
+    // The playhead Triad's effects see: the DAW's, moved on to the piece of the block they are playing.
+    struct ChunkPlayHead final : juce::AudioPlayHead
+    {
+        juce::AudioPlayHead* host = nullptr;
+        int offset = 0;
+        double rate = 48000.0;
+        juce::Optional<PositionInfo> getPosition() const override;
+    };
+    ChunkPlayHead chunkHead;
+    int chunkBase = 0;
     std::array<std::unique_ptr<Band>, triad::maxBands + 2> bands;   // the bands, then PRE at [preBand] and POST at [postBand]
     int chainAt (int k) const noexcept { return k == 0 ? preBand : k <= numBands ? k - 1 : postBand; }   // k < numBands + 2: PRE, bands, POST
     // Removed effects and closed effect windows (also those of a closed Triad) are deleted a moment
@@ -400,7 +413,7 @@ private:
     bool prepared = false;
     juce::String status, presetName;
     std::array<std::atomic<float>*, triad::maxCrossovers> crossoverValues {}, slopeValues {};
-    std::array<std::atomic<float>*, triad::maxBands> bandMixValues {}, bandGainValues {};
+    std::array<std::atomic<float>*, triad::maxBands> bandMixValues {}, bandGainValues {}, bandMuteValues {};
     // Song position for the LFOs, read at the start of each block (audio thread).
     double blockPpq = 0.0, blockBpm = 120.0, blockBeatsPerBar = 4.0;
     bool blockPlaying = false;

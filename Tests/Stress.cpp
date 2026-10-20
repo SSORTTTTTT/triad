@@ -14,6 +14,7 @@
 #include "../Source/PluginCatalog.h"
 #include "../Source/PluginEditor.h"
 #include "../Source/Generator.h"
+#include "../Source/TriadTime.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -462,6 +463,9 @@ Pool buildRealPool (const juce::File& scanner)
         if (slot < probe.getSlotCount (0)) probe.removeSlot (0, slot);
     }
     for (const auto& r : rejected) say ("  NOT LOADED  " + r);
+    // Triad's built-in effect too (the installed Triad Time plug-in, when there is one, is listed above as any other).
+    pool.effects.push_back (TriadTime::makeDescription());
+    pool.names.add ("Triad Time (built in)");
     require (! pool.effects.empty(), "At least one effect installed");
     say ("Effect pool: " + juce::String ((int) pool.effects.size()) + " effects from this computer");
     return pool;
@@ -504,6 +508,8 @@ Pool buildPool (const juce::File& effectFile, const juce::File& scanner)
    #else
     juce::ignoreUnused (scanner);
    #endif
+    pool.effects.push_back (TriadTime::makeDescription());   // Triad's built-in effect
+    pool.names.add ("Triad Time (built in)");
     say ("Effect pool: " + juce::String ((int) pool.effects.size()) + " different effects: " + pool.names.joinIntoString (", "));
     return pool;
 }

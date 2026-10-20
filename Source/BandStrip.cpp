@@ -291,6 +291,17 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
     volume.setTooltip ("Band volume. Double-click for 0 dB.");
     addAndMakeVisible (volume);
     volumeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.parameters, TriadProcessor::bandGainID (band), volume);
+    if (! isExtra())
+    {
+        // MUTE: hear only the bands you want (the band's effects keep playing, so unmuting is instant).
+        muteButton.setClickingTogglesState (true);
+        muteButton.setTooltip ("Mute this band: you hear only the other bands. Its effects keep running, so unmuting is instant.");
+        muteButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffe8705c));
+        muteButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
+        muteButton.onStateChange = [this] { repaint(); };
+        addAndMakeVisible (muteButton);
+        muteAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.parameters, TriadProcessor::bandMuteID (band), muteButton);
+    }
     volume.setDoubleClickReturnValue (true, 0.0);
     volume.onValueChange = [this] { repaint (0, getHeight() - footerHeight, getWidth(), footerHeight); };
 }
@@ -441,6 +452,7 @@ void BandStrip::resized()
     const int footerTop = getHeight() - footerHeight;
     mix.setBounds (w - 76, footerTop + 8, 62, 62);
     volume.setBounds (10, footerTop + 26, w - 96, 18);
+    muteButton.setBounds (12, footerTop + 62, 50, 22);
 }
 void BandStrip::paint (juce::Graphics& g)
 {
@@ -505,15 +517,24 @@ void BandStrip::paint (juce::Graphics& g)
     }
     g.setColour (dimTextColour); g.setFont (juce::FontOptions (10.0f));
     g.drawText (formatDb (peakHold), peakTextArea(), juce::Justification::centredRight);
+    // Under the meter: MUTE (a button), then the slot count and the band's latency beside it.
     const int n = (int) rows.size();
-    g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), left, footerTop + 62, 80, 16, juce::Justification::centredLeft);
+    const int info = left + 56;
+    g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), info, footerTop + 61, 80, 13, juce::Justification::centredLeft);
     if (chainLatency > 0)
     {
         // The band's latency (its effects added up); the slowest band sets Triad's total.
         const double ms = 1000.0 * chainLatency / juce::jmax (1.0, processor.getSampleRateForDisplay());
         g.setColour (ms >= 10.0 ? juce::Colour (0xffe8705c) : juce::Colour (0xffe8b35c));
         g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-        g.drawText (formatMs (ms) + " latency", left, footerTop + 74, 90, 14, juce::Justification::centredLeft);
+        g.drawText (formatMs (ms) + " latency", info, footerTop + 74, 90, 14, juce::Justification::centredLeft);
+    }
+    if (muteButton.getToggleState())
+    {
+        // A muted band: its title says so.
+        g.setColour (juce::Colour (0xffe8705c));
+        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        g.drawText ("MUTED", getWidth() - 110, 8, 46, 24, juce::Justification::centredRight);
     }
     g.setColour (juce::Colour (0xffa5afa2)); g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
     g.drawText ("BAND MIX", getWidth() - 80, footerTop + 70, 70, 16, juce::Justification::centred);

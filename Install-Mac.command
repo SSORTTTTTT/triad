@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 finish() { code=$?; if [ "$code" -ne 0 ]; then echo "Installation stopped. Copy the error above into our chat."; fi; read -r -p "Press Return to close..." _; }
 trap finish EXIT
 stamp=$(date +%Y%m%d-%H%M%S)
-product="Triad v6"
+product="Triad v7"
 for format in VST3 AU; do
     if [ "$format" = VST3 ]; then extension=vst3; folder=VST3; else extension=component; folder=Components; fi
     source_path="build-mac/Triad_artefacts/Release/$format/$product.$extension"
@@ -23,4 +23,4 @@ for format in VST3 AU; do
     codesign --force --deep --sign - "$destination/$product.$extension"
     echo "Installed $destination/$product.$extension"
 done
-echo "Quit and reopen Ableton or FL Studio, then rescan plugins. Add Triad v6 to a stereo audio track."
+echo "Quit and reopen Ableton or FL Studio, then rescan plugins. Add Triad v7 to a stereo audio track."

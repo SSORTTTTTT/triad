@@ -18,6 +18,7 @@
 void require (bool b, const char* message) { if (! b) throw std::runtime_error (message); }
 #include "CrossoverTests.h"
 #include "GeneratorTests.h"
+#include "TimeTests.h"
 
 namespace
 {
@@ -367,6 +368,9 @@ int main (int argc, char** argv)
         require (crashFixture.exists() && scannerHelper.existsAsFile(), "Crash fixture and scanner helper are built");
         runCrossoverTests();
         generatorTests::run();
+        testStage = "Triad Time and band mute";
+        timeTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
+        testStage = "running the tests";
 
         // ---- Built-in Linkwitz-Riley filter equals JUCE's -----------------------------------
         for (double sr : { 44100.0, 48000.0, 96000.0 })
@@ -691,7 +695,7 @@ int main (int argc, char** argv)
 
         // ---- Per-slot mix (FL-style slot knobs) ----------------------------------------------
         for (int b = 0; b < 3; ++b) p.setSlotMix (b, 0, 50);
-        require (p.getParameters().size() == 2 * triad::maxCrossovers + 2 * triad::maxBands, "Slot mixes are not DAW parameters (band volumes and slopes are)");
+        require (p.getParameters().size() == 2 * triad::maxCrossovers + 3 * triad::maxBands, "Slot mixes are not DAW parameters (band volumes, mutes and slopes are)");
         runAudioCase (p, 48000, { .625f, .625f, .625f }, 73, "50 percent slot mix");
         bandMix (p, 50);
         runAudioCase (p, 48000, { .8125f, .8125f, .8125f }, 73, "Slot mix and band mix together");
@@ -2074,16 +2078,17 @@ int main (int argc, char** argv)
                 for (int c = 0; c < mod::numPresetCategories(); ++c)
                     if (mod::isGeneratedCategory (c)) { page.setPaletteCategory (c); break; }
                 {
+                    auto& shapesPanel = page.getShapePanel();   // the palette lives in the shape panel (shared with Triad Time)
                     auto* first = page.getPaletteButton (0);
                     juce::MouseWheelDetails wheel {};
                     wheel.deltaY = -0.2f;
                     const auto at = first->getBounds().getCentre().toFloat();
                     const juce::MouseEvent event (juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                                                  &page, &page, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 0, false);
-                    page.mouseWheelMove (event, wheel);
+                                                  &shapesPanel, &shapesPanel, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 0, false);
+                    shapesPanel.mouseWheelMove (event, wheel);
                     require (page.getPalettePage() == 1, "Mouse wheel down: next page");
                     wheel.deltaY = 0.2f;
-                    page.mouseWheelMove (event, wheel);
+                    shapesPanel.mouseWheelMove (event, wheel);
                     require (page.getPalettePage() == 0, "Mouse wheel up: previous page");
                 }
                 // The screenshot shows a generated folder's second page.

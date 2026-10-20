@@ -1,0 +1,353 @@
+#pragma once
+#include "../Source/TriadTime.h"
+#include "../Source/ShapePanel.h"
+#include <cmath>
+#include <iostream>
+
+// Triad Time: the time / volume gate (built into Triad, and a plug-in of its own), and Triad's band MUTE.
+namespace timeTests
+{
+namespace mod = triad::mod;
+
+// A DAW transport: tempo, position, playing.
+struct Head final : juce::AudioPlayHead
+{
+    double bpm = 120.0, ppq = 0.0, rate = 48000.0;
+    bool playing = true;
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setBpm (bpm);
+        info.setTimeSignature (TimeSignature { 4, 4 });
+        info.setIsPlaying (playing);
+        info.setPpqPosition (ppq);
+        info.setTimeInSamples ((juce::int64) std::llround (ppq * 60.0 / bpm * rate));
+        info.setTimeInSeconds (ppq * 60.0 / bpm);
+        return info;
+    }
+    void advance (int samples) { if (playing) ppq += samples / rate * bpm / 60.0; }
+};
+
+// Plays `input` (stereo, same on both channels) through `p` in blocks of `block`; returns the left output.
+inline std::vector<float> run (juce::AudioProcessor& p, Head& head, const std::vector<float>& input, int block)
+{
+    std::vector<float> out (input.size());
+    juce::AudioBuffer<float> audio (2, block);
+    juce::MidiBuffer midi;
+    p.setPlayHead (&head);
+    for (size_t start = 0; start < input.size(); start += (size_t) block)
+    {
+        const int n = (int) juce::jmin ((size_t) block, input.size() - start);
+        audio.setSize (2, n, false, false, true);
+        for (int c = 0; c < 2; ++c)
+            for (int s = 0; s < n; ++s) audio.setSample (c, s, input[start + (size_t) s]);
+        p.processBlock (audio, midi);
+        for (int s = 0; s < n; ++s) out[start + (size_t) s] = audio.getSample (0, s);
+        head.advance (n);
+    }
+    p.setPlayHead (nullptr);
+    return out;
+}
+inline std::vector<float> noise (size_t n, int seed = 7)
+{
+    juce::Random r (seed);
+    std::vector<float> v (n);
+    for (auto& x : v) x = (r.nextFloat() * 2.0f - 1.0f) * 0.4f;
+    return v;
+}
+inline std::vector<float> sine (size_t n, double hz, double rate, float level = 0.5f)
+{
+    std::vector<float> v (n);
+    for (size_t i = 0; i < n; ++i) v[i] = level * (float) std::sin (2.0 * juce::MathConstants<double>::pi * hz * (double) i / rate);
+    return v;
+}
+// Frequency from upward zero crossings in [from, to).
+inline double frequency (const std::vector<float>& v, size_t from, size_t to, double rate)
+{
+    int crossings = 0;
+    size_t first = 0, last = 0;
+    for (size_t i = from + 1; i < to; ++i)
+        if (v[i - 1] < 0.0f && v[i] >= 0.0f) { if (crossings == 0) first = i; last = i; ++crossings; }
+    return crossings > 1 ? (crossings - 1) * rate / (double) (last - first) : 0.0;
+}
+inline float biggestStep (const std::vector<float>& v, size_t from, size_t to)
+{
+    float m = 0.0f;
+    for (size_t i = juce::jmax ((size_t) 1, from); i < to; ++i) m = juce::jmax (m, std::abs (v[i] - v[i - 1]));
+    return m;
+}
+inline void setPlain (juce::RangedAudioParameter* p, float plain) { p->setValueNotifyingHost (p->convertTo0to1 (plain)); }
+
+inline void run (const juce::File& screenshotFolder)
+{
+    constexpr double rate = 48000.0;
+    constexpr int block = 512;
+    const size_t samplesPerBeat = 24000;   // 120 bpm
+    // ---- Untouched: the sound passes exactly ------------------------------------------------------------------
+    {
+        TriadTime t;
+        t.prepareToPlay (rate, block);
+        Head head;
+        const auto in = noise (96000);
+        const auto out = run (t, head, in, block);
+        float worst = 0.0f;
+        for (size_t i = 0; i < in.size(); ++i) worst = juce::jmax (worst, std::abs (out[i] - in[i]));
+        require (worst < 1.0e-6f && t.getLatencySamples() == 0, "Triad Time with pattern 1 (live, full volume) passes the sound exactly, no latency");
+        require (t.getJumpCount() == 0, "No time jumps while live");
+    }
+    // ---- TIME: one beat back is exactly one beat late -----------------------------------------------------------
+    {
+        TriadTime t;
+        t.prepareToPlay (rate, block);
+        t.setShape (TriadTime::timeEnvelope, 0, mod::flat (1.0f - 1.0f / 8.0f), false);   // 1 bar pattern: the bottom is 8 beats back
+        Head head;
+        const auto in = noise (samplesPerBeat * 3);
+        const auto out = run (t, head, in, block);
+        float worst = 0.0f;
+        for (size_t i = samplesPerBeat; i < in.size(); ++i) worst = juce::jmax (worst, std::abs (out[i] - in[i - samplesPerBeat]));
+        require (worst < 1.0e-5f, "A flat TIME line one beat down plays the sound exactly one beat (24000 samples at 120 bpm) late");
+        float first = 0.0f;
+        for (size_t i = 0; i < samplesPerBeat; ++i) first = juce::jmax (first, std::abs (out[i]));
+        require (first < 1.0e-6f, "Before there is a beat of history, it is silent (nothing to play yet)");
+    }
+    // ---- TIME: half speed is an octave down; reverse plays backwards ---------------------------------------------
+    {
+        TriadTime t;
+        t.prepareToPlay (rate, block);
+        setPlain (t.timeSlot, 2);   // "Half speed"
+        require (TriadTime::slotName (TriadTime::timeEnvelope, 1) == "Half speed", "Pattern 2 of TIME is Half speed");
+        Head head;
+        const auto in = sine (samplesPerBeat * 8, 440.0, rate);
+        const auto out = run (t, head, in, block);
+        const double f = frequency (out, samplesPerBeat * 5, samplesPerBeat * 7, rate);
+        std::cout << "Triad Time half speed: 440 Hz in, " << f << " Hz out" << std::endl;
+        require (std::abs (f - 220.0) < 3.0, "Half speed plays a 440 Hz tone at 220 Hz");
+    }
+    {
+        TriadTime t;
+        t.prepareToPlay (rate, block);
+        setPlain (t.timeSlot, 10);   // "Reverse, 2nd half"
+        setPlain (t.smoothing, 0.0f);
+        Head head;
+        std::vector<float> ramp (samplesPerBeat * 8);
+        for (size_t i = 0; i < ramp.size(); ++i) ramp[i] = (float) ((double) (i % (samplesPerBeat * 4)) * 1.0e-6);
+        const auto out = run (t, head, ramp, block);
+        // Second bar, beats 3-4 (reversed): each sample is one sample earlier than the one before.
+        int backwards = 0, total = 0;
+        for (size_t i = samplesPerBeat * 6 + 100; i < samplesPerBeat * 8 - 100; ++i, ++total)
+            if (std::abs ((out[i] - out[i - 1]) + 1.0e-6f) < 2.0e-7f) ++backwards;
+        require (backwards > total * 0.98, "Reverse plays the second half of the bar backwards at normal speed");
+    }
+    // ---- SMOOTHING: repeats do not click ---------------------------------------------------------------------------------
+    {
+        auto clickiness = [&] (float smoothingMs, int& jumps)
+        {
+            TriadTime t;
+            t.prepareToPlay (rate, block);
+            setPlain (t.timeSlot, 6);   // "Repeat 1/16, beat 4"
+            setPlain (t.smoothing, smoothingMs);
+            Head head;
+            // 441 Hz: a jump back of a 1/16 note (6000 samples) lands at another point of the wave (440 Hz would line up exactly).
+            const auto in = sine (samplesPerBeat * 8, 441.0, rate);
+            const auto out = run (t, head, in, block);
+            jumps = t.getJumpCount();
+            return biggestStep (out, samplesPerBeat, out.size());
+        };
+        int jumpsSmooth = 0, jumpsHard = 0;
+        const float smooth = clickiness (8.0f, jumpsSmooth), hard = clickiness (0.0f, jumpsHard);
+        const float natural = 0.5f * 2.0f * juce::MathConstants<float>::pi * 441.0f / (float) rate;
+        std::cout << "Triad Time repeats: biggest step " << smooth << " with 8 ms smoothing, " << hard << " without (the tone itself: " << natural
+                  << "); " << jumpsSmooth << " jumps" << std::endl;
+        require (jumpsSmooth >= 6, "The 1/16 repeats jump back in time (3 per bar, and back to live)");
+        require (smooth < natural * 1.6f, "With smoothing, the jumps are crossfaded: no step bigger than the tone's own");
+        require (hard > natural * 3.0f, "Without smoothing the same jumps click (so the test can tell)");
+    }
+    // ---- VOLUME: the gate, attack and release, mix -----------------------------------------------------------------------
+    {
+        auto gated = [&] (float attackMs, float releaseMs, float mix, double bpm)
+        {
+            TriadTime t;
+            t.prepareToPlay (rate, block);
+            setPlain (t.volumeSlot, 2);   // "Gate 1/8": on for each 1/16, off for the next
+            setPlain (t.attack, attackMs);
+            setPlain (t.release, releaseMs);
+            setPlain (t.volumeMix, mix);
+            Head head;
+            head.bpm = bpm;
+            const std::vector<float> dc ((size_t) (rate * 4.0), 0.5f);
+            return run (t, head, dc, block);
+        };
+        {
+            const auto out = gated (0.0f, 0.0f, 100.0f, 120.0);
+            const size_t sixteenth = samplesPerBeat / 4;
+            require (std::abs (out[sixteenth / 2] - 0.5f) < 1.0e-6f && std::abs (out[sixteenth + sixteenth / 2]) < 1.0e-6f
+                     && std::abs (out[2 * sixteenth + sixteenth / 2] - 0.5f) < 1.0e-6f, "Gate 1/8: open for a 1/16, closed for the next (120 bpm)");
+        }
+        {
+            const auto out = gated (0.0f, 0.0f, 100.0f, 90.0);
+            const auto sixteenth = (size_t) (rate * 60.0 / 90.0 / 4.0);
+            require (std::abs (out[sixteenth / 2] - 0.5f) < 1.0e-6f && std::abs (out[sixteenth + sixteenth / 2]) < 1.0e-6f,
+                     "The gate follows the song's tempo (90 bpm)");
+        }
+        {
+            const auto out = gated (4.0f, 8.0f, 100.0f, 120.0);
+            const float step = biggestStep (out, 1, out.size());
+            require (step < 0.5f * 0.02f, "With attack and release the gate opens and closes smoothly (no click)");
+            const size_t sixteenth = samplesPerBeat / 4;
+            require (std::abs (out[sixteenth - 10] - 0.5f) < 0.01f && out[2 * sixteenth - 10] < 0.01f, "...and still opens fully and closes fully");
+        }
+        {
+            const auto out = gated (0.0f, 0.0f, 50.0f, 120.0);
+            require (std::abs (out[samplesPerBeat / 4 + samplesPerBeat / 8] - 0.25f) < 1.0e-5f, "Volume mix 50%: the closed gate lets half through");
+        }
+    }
+    // ---- State: patterns and knobs come back ---------------------------------------------------------------------------
+    {
+        TriadTime a;
+        auto drawn = mod::flat (0.5f);
+        drawn.insert (drawn.begin() + 1, { 0.5f, 0.9f, 1.5f });
+        mod::normalise (drawn);
+        a.setShape (TriadTime::volumeEnvelope, 4, drawn, true);
+        setPlain (a.timeSlot, 3);
+        setPlain (a.release, 120.0f);
+        a.setLength (TriadTime::volumeEnvelope, mod::defaultLength() - 2);
+        juce::MemoryBlock state;
+        a.getStateInformation (state);
+        TriadTime b;
+        b.setStateInformation (state.getData(), (int) state.getSize());
+        require (b.getShape (TriadTime::volumeEnvelope, 4) == a.getShape (TriadTime::volumeEnvelope, 4), "A drawn pattern is saved and restored");
+        require (b.getSlot (TriadTime::timeEnvelope) == 2 && std::abs (b.release->get() - 120.0f) < 0.2f
+                 && b.getLength (TriadTime::volumeEnvelope) == a.getLength (TriadTime::volumeEnvelope), "Its knobs, pattern choices and lengths are restored");
+        require (a.canUndo (TriadTime::volumeEnvelope) && a.undo (TriadTime::volumeEnvelope)
+                 && a.getShape (TriadTime::volumeEnvelope, 4) == TriadTime::slotPreset (TriadTime::volumeEnvelope, 4), "Undo puts a pattern back");
+        bool freeLength = false;
+        for (int i = 0; i < (int) mod::lengths().size(); ++i) freeLength |= mod::lengths()[(size_t) i].column == 3 && TriadTime::isTimeLength (i);
+        require (TriadTime::isTimeLength (mod::defaultLength()) && ! freeLength, "TIME lengths follow the song's tempo (1 bar by default, no free Hz lengths)");
+    }
+    // ---- Inside Triad: listed, loads, saves, reloads; LFO links keep the song position -------------------------------
+    {
+        const auto builtIns = TriadBuiltInFormat::effects();
+        require (builtIns.size() == 1 && builtIns[0].name == "Triad Time" && builtIns[0].manufacturerName == "Thomas Ross",
+                 "Triad lists its built-in effect: Triad Time by Thomas Ross");
+        TriadProcessor p;
+        p.prepareToPlay (rate, block);
+        require (p.loadEffect (0, 0, builtIns[0], false).isEmpty() && p.getSlotInfo (0, 0).loaded && p.getSlotInfo (0, 0).name == "Triad Time",
+                 "Triad Time loads into a band like any effect");
+        auto* fx = dynamic_cast<TriadTime*> (p.getHostedEffect (0, 0));
+        require (fx != nullptr && p.getLatencySamples() == 0, "It is Triad's own (no latency)");
+        fx->setShape (TriadTime::timeEnvelope, 7, mod::flat (0.25f), false);
+        setPlain (fx->volumeSlot, 4);
+        bool knob = false;
+        for (const auto& [destination, name] : p.getEffectParameters (0, 0)) knob |= name == "Time mix";
+        require (knob, "Its knobs can be linked to Triad's LFOs");
+        juce::MemoryBlock project;
+        p.getStateInformation (project);
+        TriadProcessor reopened;
+        reopened.prepareToPlay (rate, block);
+        reopened.setStateInformation (project.getData(), (int) project.getSize());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (300);
+        auto* back = dynamic_cast<TriadTime*> (reopened.getHostedEffect (0, 0));
+        require (back != nullptr && back->getSlot (TriadTime::volumeEnvelope) == 3
+                 && back->getShape (TriadTime::timeEnvelope, 7) == fx->getShape (TriadTime::timeEnvelope, 7), "A project with Triad Time reopens with its patterns");
+    }
+    {
+        // An LFO linked to one of its knobs makes Triad play it in 64-sample pieces: the pieces must see the song move on,
+        // so the gate lands exactly where it does on its own.
+        TriadTime alone;
+        alone.prepareToPlay (rate, block);
+        setPlain (alone.volumeSlot, 3);   // Gate 1/16
+        setPlain (alone.attack, 0.0f);
+        setPlain (alone.release, 0.0f);
+        Head head1;
+        const auto in = noise (samplesPerBeat * 4, 9);
+        const auto reference = run (alone, head1, in, block);
+        TriadProcessor p;
+        p.prepareToPlay (rate, block);
+        while (p.getBandCount() > 1) p.removeBand (p.getBandCount() - 1);
+        require (p.loadEffect (0, 0, TriadTime::makeDescription(), false).isEmpty(), "Load Triad Time into a 1-band Triad");
+        auto* fx = dynamic_cast<TriadTime*> (p.getHostedEffect (0, 0));
+        setPlain (fx->volumeSlot, 3);
+        setPlain (fx->attack, 0.0f);
+        setPlain (fx->release, 0.0f);
+        int release = -1;
+        const auto knobs = p.getEffectParameters (0, 0);
+        for (size_t k = 0; k < knobs.size(); ++k) if (knobs[k].second == "Smoothing") release = (int) k;
+        require (release >= 0, "Smoothing is a linkable knob");
+        const int lfo = p.addLfo (0);
+        p.setLfoShape (0, lfo, mod::flat (1.0f), false);   // drawn on: the LFO is on
+        const int route = p.addRoute (0, lfo, knobs[(size_t) release].first);
+        p.setRouteAmount (0, route, 0.0f);   // linked, but leaves the knob where it is
+        require (route >= 0, "Link an LFO to Triad Time's Smoothing knob");
+        Head head2;
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        const auto inside = run (p, head2, in, block);
+        float worst = 0.0f;
+        for (size_t i = 2400; i < in.size(); ++i) worst = juce::jmax (worst, std::abs (inside[i] - reference[i]));   // after Triad's 10 ms fade-in
+        std::cout << "Triad Time in Triad with a knob link: largest difference from Triad Time alone " << worst << std::endl;
+        require (worst < 1.0e-4f, "Inside Triad, with a knob linked (played in 64-sample pieces), the gate lands where it does on its own");
+    }
+    // ---- Its window: the LFO system (palette, generator, USER) on the TIME and VOLUME envelopes -------------------------
+    {
+        // (Drawn off screen: no window needed.)
+        TriadTime t;
+        std::unique_ptr<juce::AudioProcessorEditor> editor (t.createEditor());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        ShapePanel* shapes = nullptr;
+        GeneratorPanel* generator = nullptr;
+        for (auto* c : editor->getChildren())
+        {
+            if (auto* s = dynamic_cast<ShapePanel*> (c)) shapes = s;
+            if (auto* g = dynamic_cast<GeneratorPanel*> (c)) generator = g;
+        }
+        require (shapes != nullptr && generator != nullptr, "Triad Time's window has the LFO grid, palette and generator");
+        shapes->setPaletteCategory (1);
+        require (shapes->getNumPaletteButtons() > 0, "The preset palette shows Triad's shapes");
+        const auto before = t.getShape (TriadTime::timeEnvelope, 0);
+        shapes->getPaletteButton (0)->onClick();
+        require (! (t.getShape (TriadTime::timeEnvelope, 0) == before) || shapes->getPaletteButton (0) == nullptr, "A palette shape replaces the TIME pattern");
+        generator->setSeed (5);
+        generator->generate();
+        const auto generated = t.getShape (TriadTime::timeEnvelope, 0);
+        require (generated.size() >= 2, "The dice draws a new TIME pattern");
+        require (t.canUndo (TriadTime::timeEnvelope), "...as an undo step");
+        if (screenshotFolder != juce::File())
+        {
+            const auto file = screenshotFolder.getChildFile ("Triad-Time-preview.png");
+            juce::FileOutputStream stream (file);
+            if (stream.openedOk())
+            {
+                stream.setPosition (0);
+                stream.truncate();
+                juce::PNGImageFormat png;
+                png.writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.5f), stream);
+                std::cout << "Screenshot: " << file.getFullPathName() << std::endl;
+            }
+        }
+    }
+    // ---- Triad's band MUTE --------------------------------------------------------------------------------------------------
+    {
+        TriadProcessor p;
+        p.prepareToPlay (rate, block);
+        require (p.getBandCount() == 3 && ! p.isBandMuted (1), "Bands start unmuted");
+        const auto in = noise (48000, 11);
+        Head head;
+        auto energy = [] (const std::vector<float>& v, size_t from) { double e = 0.0; for (size_t i = from; i < v.size(); ++i) e += (double) v[i] * v[i]; return e; };
+        const auto all = run (p, head, in, block);
+        for (int b = 0; b < 3; ++b) p.setBandMuted (b, true);
+        const auto none = run (p, head, in, block);
+        require (energy (none, 4800) < 1.0e-10 * energy (all, 4800), "All three bands muted: silence");
+        p.setBandMuted (0, false);
+        p.setBandMuted (2, false);
+        const auto withoutMid = run (p, head, in, block);
+        std::vector<float> difference (all.size());
+        for (size_t i = 0; i < all.size(); ++i) difference[i] = withoutMid[i] - all[i];
+        const double removed = energy (difference, 4800) / energy (all, 4800), left = energy (withoutMid, 4800) / energy (all, 4800);
+        std::cout << "Band 2 (250 Hz - 2.5 kHz) muted: " << 100.0 * removed << "% of the noise's energy taken out, " << 100.0 * left << "% left" << std::endl;
+        require (removed > 0.03 && removed < 0.3 && left > 0.6, "Muting the middle band takes only its part out, the rest plays");
+        // Adding a band keeps each mute with its band.
+        require (p.addBand (100.0f), "Add a band below the first divider");
+        require (! p.isBandMuted (0) && ! p.isBandMuted (1) && p.isBandMuted (2) && ! p.isBandMuted (3), "The muted band keeps its mute when a band is added before it");
+        require (p.removeBand (0) && p.isBandMuted (1) && ! p.isBandMuted (0), "...and when one is removed");
+    }
+}
+}

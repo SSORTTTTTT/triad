@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.7.0 LANGUAGES C CXX)
-# Installed as "Triad v6.vst3" / "Triad v6.component"; the plug-in IDs are unchanged from Triad 0.1,
-# so projects made with the earlier "Triad", "Triad v2" ... "Triad v5" open with Triad v6.
-# Each new release gets the next name (v6, v7, ...) and replaces the earlier ones when installed.
-set(TRIAD_PRODUCT_NAME "Triad v6")
+project(Triad VERSION 0.8.0 LANGUAGES C CXX)
+# Installed as "Triad v7.vst3" / "Triad v7.component"; the plug-in IDs are unchanged from Triad 0.1,
+# so projects made with the earlier "Triad", "Triad v2" ... "Triad v6" open with Triad v7.
+# Each new release gets the next name (v7, v8, ...) and replaces the earlier ones when installed.
+set(TRIAD_PRODUCT_NAME "Triad v7")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(TRIAD_BUILD_TESTS "Build integration tests and a test effect" ON)
@@ -35,8 +35,8 @@ juce_add_plugin(Triad
     MICROPHONE_PERMISSION_TEXT "Triad uses audio input to process your sound.")
 target_sources(Triad PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/CrossoverDisplay.cpp
     Source/BandStrip.cpp Source/PluginCatalog.cpp Source/AudioUnitList.cpp Source/Modulation.cpp Source/Settings.cpp
-    Source/Widgets.cpp Source/LfoPage.cpp Source/MatrixPage.cpp Source/PlatformWindows.cpp
-    Source/Generator.cpp Source/ShapeLibrary.cpp)
+    Source/Widgets.cpp Source/Look.cpp Source/ShapePanel.cpp Source/LfoPage.cpp Source/MatrixPage.cpp Source/PlatformWindows.cpp
+    Source/Generator.cpp Source/ShapeLibrary.cpp Source/TriadTime.cpp)
 if(APPLE)
     target_sources(Triad PRIVATE Source/PlatformWindowsMac.mm)
 endif()
@@ -56,6 +56,25 @@ if(APPLE)
     # CoreAudioKit provides the generic editor view used when hosting Audio Units.
     target_link_libraries(Triad PUBLIC "-framework AudioToolbox" "-framework CoreAudioKit")
 endif()
+# "Triad Time": Triad's time and volume gate (built into Triad) as a plug-in of its own, for any track in any DAW.
+set(TRIAD_TIME_FORMATS VST3)
+if(APPLE)
+    list(APPEND TRIAD_TIME_FORMATS AU)
+endif()
+juce_add_plugin(TriadTime
+    COMPANY_NAME "Thomas Ross" BUNDLE_ID "audio.thomasross.triadtime"
+    PLUGIN_MANUFACTURER_CODE Tsrt PLUGIN_CODE TrTm
+    PRODUCT_NAME "Triad Time" FORMATS ${TRIAD_TIME_FORMATS}
+    IS_SYNTH FALSE NEEDS_MIDI_INPUT FALSE NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD FALSE VST3_CATEGORIES Fx)
+target_sources(TriadTime PRIVATE Source/TriadTime.cpp Source/ShapePanel.cpp Source/Look.cpp Source/Modulation.cpp
+    Source/Generator.cpp Source/ShapeLibrary.cpp Source/Settings.cpp)
+target_compile_definitions(TriadTime PUBLIC
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=0 JUCE_PLUGINHOST_AU=0 JUCE_PLUGINHOST_VST=0
+    JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0 TRIAD_TIME_PLUGIN=1
+    TRIAD_VERSION="${PROJECT_VERSION}")
+target_link_libraries(TriadTime PRIVATE juce::juce_audio_processors PUBLIC juce::juce_recommended_warning_flags)
 # "Triad Scanner": a small helper that opens a plug-in in its own process when Triad cannot tell
 # from disk whether it is an effect, so a plug-in that crashes while being checked cannot take
 # the DAW down. It is copied into every plug-in bundle as Contents/Helpers/Triad Scanner.
@@ -65,7 +84,7 @@ target_compile_definitions(TriadScanner PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_AU=0 JUCE_PLUGINHOST_VST=0
     JUCE_PLUGINHOST_LADSPA=0 JUCE_PLUGINHOST_LV2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
 target_link_libraries(TriadScanner PRIVATE juce::juce_audio_processors_headless PUBLIC juce::juce_recommended_warning_flags)
-foreach(target IN ITEMS Triad TriadScanner)
+foreach(target IN ITEMS Triad TriadTime TriadScanner)
     if(TRIAD_SIZE_OPTIMISED AND NOT MSVC)
         # Framework and UI code optimised for size; the audio path (PluginProcessor.cpp,
         # which inlines the crossover and delay lines) keeps full -O3 speed.
@@ -81,12 +100,14 @@ endif()
 if(APPLE)
     # Drop unreferenced code at link time.
     target_link_options(Triad INTERFACE $<$<CONFIG:Release>:LINKER:-dead_strip>)
+    target_link_options(TriadTime INTERFACE $<$<CONFIG:Release>:LINKER:-dead_strip>)
     target_link_options(TriadScanner PRIVATE $<$<CONFIG:Release>:LINKER:-dead_strip>)
 elseif(NOT MSVC)
-    foreach(target IN ITEMS Triad TriadScanner)
+    foreach(target IN ITEMS Triad TriadTime TriadScanner)
         target_compile_options(${target} PUBLIC $<$<CONFIG:Release>:-ffunction-sections -fdata-sections>)
     endforeach()
     target_link_options(Triad INTERFACE $<$<CONFIG:Release>:LINKER:--gc-sections>)
+    target_link_options(TriadTime INTERFACE $<$<CONFIG:Release>:LINKER:--gc-sections>)
     target_link_options(TriadScanner PRIVATE $<$<CONFIG:Release>:LINKER:--gc-sections>)
 endif()
 foreach(format IN ITEMS VST3 AU)

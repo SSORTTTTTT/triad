@@ -94,6 +94,7 @@ public:
     AddSlotButton& getAddButton() noexcept { return addButton; }
     juce::Slider& getMixKnob() { return mix; }
     juce::Slider& getVolumeSlider() { return volume; }
+    juce::Button& getMuteButton() { return muteButton; }
     int getBand() const noexcept { return band; }
     bool isPre() const noexcept { return band == TriadProcessor::preBand; }     // the PRE chain's strip
     bool isPost() const noexcept { return band == TriadProcessor::postBand; }   // the POST chain's strip
@@ -116,6 +117,8 @@ private:
     AddSlotButton addButton;
     juce::Slider mix, volume;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment, volumeAttachment;
+    juce::TextButton muteButton { "MUTE" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> muteAttachment;
     float startHz = 0.0f, endHz = 0.0f, level = 0.0f, peakHold = 0.0f;
     int chainLatency = 0;
     double holdTime = 0.0;

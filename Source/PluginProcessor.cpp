@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "PlatformWindows.h"
 #include "Settings.h"
+#include "TriadTime.h"
 #include <cstring>
 #include <map>
 #include <numeric>
@@ -121,6 +122,7 @@ private:
     {
         const auto d = effect.getPluginDescription();
         if (d.manufacturerName.startsWithIgnoreCase ("Apple")) return {};   // macOS's own effects need no keeper
+        if (d.pluginFormatName == TriadTime::formatName) return {};          // nor Triad's own
         return d.pluginFormatName + "|" + d.fileOrIdentifier + "|" + d.name;
     }
     static juce::String pluginKey (const Entry& e)
@@ -256,6 +258,7 @@ float peakOf (const juce::AudioBuffer<float>& b, int channels)
 juce::String TriadProcessor::crossoverID (int i) { return i == 0 ? "lowCut" : i == 1 ? "highCut" : "cross" + juce::String (i + 1); }
 juce::String TriadProcessor::bandMixID (int b) { return "mix" + juce::String (b); }
 juce::String TriadProcessor::bandGainID (int b) { return "gain" + juce::String (b); }
+juce::String TriadProcessor::bandMuteID (int b) { return "mute" + juce::String (b); }
 juce::String TriadProcessor::slopeID (int j) { return "slope" + juce::String (j); }
 
 juce::AudioProcessorValueTreeState::ParameterLayout TriadProcessor::makeParameters()
@@ -287,6 +290,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout TriadProcessor::makeParamete
               juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int) { return slopeText (v); })
                                                  .withValueFromStringFunction ([] (const juce::String& t)
                                                  { return juce::jlimit (1, 8, juce::roundToInt (t.getFloatValue() / 6.0f)); })));
+    // Added in 0.8.0: a mute per band (hear only the bands you want).
+    for (int b = 0; b < triad::maxBands; ++b)
+        p.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { bandMuteID (b), 5 }, "Band " + juce::String (b + 1) + " Mute", false));
     return p;
 }
 
@@ -526,6 +532,7 @@ TriadProcessor::TriadProcessor()
                                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       parameters (*this, nullptr, "Parameters", makeParameters())
 {
+    formats.addFormat (std::make_unique<TriadBuiltInFormat>());   // Triad Time
     formats.addFormat (std::make_unique<juce::VST3PluginFormat>());
    #if JUCE_MAC && JUCE_PLUGINHOST_AU
     formats.addFormat (std::make_unique<juce::AudioUnitPluginFormat>());
@@ -539,6 +546,7 @@ TriadProcessor::TriadProcessor()
     {
         bandMixValues[(size_t) b] = parameters.getRawParameterValue (bandMixID (b));
         bandGainValues[(size_t) b] = parameters.getRawParameterValue (bandGainID (b));
+        bandMuteValues[(size_t) b] = parameters.getRawParameterValue (bandMuteID (b));
         bands[(size_t) b] = std::make_unique<Band>();
     }
     bands[(size_t) preBand] = std::make_unique<Band> (true, true);
@@ -875,6 +883,35 @@ void TriadProcessor::retire (std::unique_ptr<juce::DocumentWindow> window)
     EffectGraveyard::get()->add ({}, std::move (window));
 }
 void TriadProcessor::startFadeIn() { fadeRemaining = fadeLength; }
+bool TriadProcessor::isBandMuted (int band) const
+{
+    return band >= 0 && band < triad::maxBands && bandMuteValues[(size_t) band]->load() >= 0.5f;
+}
+void TriadProcessor::setBandMuted (int band, bool on)
+{
+    if (band < 0 || band >= getBandCount()) return;
+    if (auto* p = parameters.getParameter (bandMuteID (band)))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (on ? 1.0f : 0.0f);
+        p->endChangeGesture();
+    }
+}
+juce::Optional<juce::AudioPlayHead::PositionInfo> TriadProcessor::ChunkPlayHead::getPosition() const
+{
+    // The DAW's position at the first sample of the piece an effect is playing now (Triad plays its effects in
+    // pieces of the DAW's block: knobs that follow LFOs are set every 64 samples), so tempo-synced effects stay in time.
+    if (host == nullptr) return {};
+    auto position = host->getPosition();
+    if (! position.hasValue() || offset == 0 || ! position->getIsPlaying()) return position;
+    auto info = *position;
+    const double seconds = offset / juce::jmax (1.0, rate);
+    if (const auto samples = info.getTimeInSamples()) info.setTimeInSamples (*samples + offset);
+    if (const auto time = info.getTimeInSeconds()) info.setTimeInSeconds (*time + seconds);
+    if (const auto ppq = info.getPpqPosition())
+        if (const auto bpm = info.getBpm()) info.setPpqPosition (*ppq + seconds * *bpm / 60.0);
+    return info;
+}
 
 // ---- Audio ------------------------------------------------------------------------------------------
 void TriadProcessor::readSongPosition()
@@ -981,10 +1018,11 @@ bool TriadProcessor::runChain (Band& band, juce::AudioBuffer<float>& buffer, int
         auto& slot = *slotPtr;
         if (! slot.isActive()) { slot.mix.skip (n); continue; }
         for (int ch = 0; ch < 2; ++ch) band.slotDry.copyFrom (ch, 0, buffer, ch, 0, n);
-        slot.effect->setPlayHead (getPlayHead());
+        slot.effect->setPlayHead (getPlayHead() != nullptr ? &chunkHead : nullptr);   // the song position at its own samples
         slot.effect->setNonRealtime (isNonRealtime());
         auto runEffect = [&] (int start, int length)
         {
+            chunkHead.offset = chunkBase + start;
             childMidi.clear();
             if (slot.channels > 2)
             {
@@ -1053,8 +1091,11 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
     splitter.setCutoffs (cuts.data());
     splitter.setSlopes (slopes.data());
     const int longest = bandsLatency;   // the bands are lined up to the slowest one (PRE came before them)
+    chunkHead.host = getPlayHead();
+    chunkHead.rate = rate.load();
     for (int offset = 0; offset < audio.getNumSamples(); offset += capacity)
     {
+        chunkBase = offset;
         const int n = juce::jmin (capacity, audio.getNumSamples() - offset);
         // The PRE chain, on the full-range sound, before it is split into bands.
         auto& pre = *bands[(size_t) preBand];
@@ -1078,7 +1119,10 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
             // Band mix (dry band vs. its chain) and volume, then align all bands to the longest chain.
             const int align = longest - band.chainLatency;
             const float mixKnob = bandMixValues[(size_t) b]->load (std::memory_order_relaxed) * 0.01f;
-            const float gainKnob = juce::Decibels::decibelsToGain (bandGainValues[(size_t) b]->load (std::memory_order_relaxed), minGainDb - 0.05f);
+            // MUTE: the band's volume goes to silence (smoothly, as the volume knob does), its effects keep playing.
+            const bool bandMuted = bandMuteValues[(size_t) b]->load (std::memory_order_relaxed) >= 0.5f;
+            const float gainKnob = bandMuted ? 0.0f
+                                             : juce::Decibels::decibelsToGain (bandGainValues[(size_t) b]->load (std::memory_order_relaxed), minGainDb - 0.05f);
             float peak = 0.0f;
             for (int frame = 0; frame < n; ++frame)
             {
@@ -1236,9 +1280,11 @@ bool TriadProcessor::addBand (float hz)
     {
         setParameterValue (bandMixID (p), getParameterValue (bandMixID (p - 1)));
         setParameterValue (bandGainID (p), getParameterValue (bandGainID (p - 1)));
+        setParameterValue (bandMuteID (p), getParameterValue (bandMuteID (p - 1)));
     }
     setParameterValue (bandMixID (index + 1), 100.0f);
     setParameterValue (bandGainID (index + 1), 0.0f);
+    setParameterValue (bandMuteID (index + 1), getParameterValue (bandMuteID (index)));   // half of a muted band stays muted
     muted.store (false);
     ++structureVersion;
     refreshWindowTitles();
@@ -1289,9 +1335,11 @@ bool TriadProcessor::removeBand (int band)
     {
         setParameterValue (bandMixID (p), getParameterValue (bandMixID (p + 1)));
         setParameterValue (bandGainID (p), getParameterValue (bandGainID (p + 1)));
+        setParameterValue (bandMuteID (p), getParameterValue (bandMuteID (p + 1)));
     }
     setParameterValue (bandMixID (count), 100.0f);
     setParameterValue (bandGainID (count), 0.0f);
+    setParameterValue (bandMuteID (count), 0.0f);
     muted.store (false);
     ++structureVersion;
     refreshWindowTitles();
@@ -1307,8 +1355,13 @@ bool TriadProcessor::moveBand (int from, int to)
     std::iota (order.begin(), order.end(), 0);
     order.erase (order.begin() + from);
     order.insert (order.begin() + to, from);   // new position i holds old band order[i]
-    std::array<float, triad::maxBands> mixes {}, gains {};
-    for (int i = 0; i < count; ++i) { mixes[(size_t) i] = getParameterValue (bandMixID (i)); gains[(size_t) i] = getParameterValue (bandGainID (i)); }
+    std::array<float, triad::maxBands> mixes {}, gains {}, mutes {};
+    for (int i = 0; i < count; ++i)
+    {
+        mixes[(size_t) i] = getParameterValue (bandMixID (i));
+        gains[(size_t) i] = getParameterValue (bandGainID (i));
+        mutes[(size_t) i] = getParameterValue (bandMuteID (i));
+    }
     {
         const juce::ScopedLock lock (gate);
         muted.store (true);
@@ -1324,6 +1377,7 @@ bool TriadProcessor::moveBand (int from, int to)
     {
         setParameterValue (bandMixID (i), mixes[(size_t) order[(size_t) i]]);
         setParameterValue (bandGainID (i), gains[(size_t) order[(size_t) i]]);
+        setParameterValue (bandMuteID (i), mutes[(size_t) order[(size_t) i]]);
     }
     muted.store (false);
     ++structureVersion;
