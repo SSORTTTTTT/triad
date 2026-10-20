@@ -1,5 +1,24 @@
 # Validation — Triad
 
+## Triad v8 (0.9.0), Triad Split and Triad Time on macOS — 2026-10-19
+
+Commit `7b927f6`, run 39372839847 (macos-14 runner, virtual Apple M1). New in 0.9.0: Triad Split (split mode, its own
+VST3 / AU with its own installer: link groups, PLAY, band outputs), the frequency panel shared by Triad and Triad
+Split, and a smoother, sharper interface (up to 120 frames a second, stepping down to 60 under load; automation and
+playheads move on every frame; cached pictures drawn pixel for pixel).
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v8-0.9.0`, `Triad-Time-0.9.0`, `Triad-Split-0.9.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (Triad v8 over simulated Triad ... v7 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six (VST3 and AU each); integration tests passed |
+| Triad Split sound | Three Triad Splits playing band 1, 2 and 3 add up to one playing ALL with a difference of 0; ALL vs Triad with 3 empty bands: 1.2e-7; a tone comes out of its own band at full level and at least 24 dB down in the others; band outputs equal the bands |
+| Triad Split links | A divider moved on one moves the sound of the others within a block and their windows on the next tick; bands added or removed follow, PLAY moves with its band (a removed band's track plays NONE), a linked track stays silent while its band moves; joining a group takes its bands; saved and reopened with or without the others; the installed VST3 and AU link with each other and with a third build in the same process |
+| Frame rate | 120 frames a second while drawing is quick, 60 when frames take too long or the audio is busy, back to 120 afterwards; playheads carry on between audio blocks; spectrum frame 1.3 ms at 1x / 3.3 ms at 2x (a frame at 120 fps has 8.3 ms) |
+| Real plug-ins (57, with Triad Split VST3 and Triad Time VST3 / AU / built in) | 5 x 3,000 random edits (each in its own process) all passed: no crash, no NaN/Inf from Triad; up to 110 effects loaded at once; memory up to 3.4 GB. The Triad Split AU is not loaded inside Triad (its 10 band outputs cannot be switched off as an Audio Unit; inside Triad it has no use) |
+
+An earlier run of the same code (1e463f2) had one of five random-edit sequences crash inside ChowMatrix's own message
+handling (`juce::MessageQueue::runLoopSourceCallback`, "pure virtual function called"), the known intermittent
+third-party issue; that sequence passed without the Chowdhury plug-ins, and the whole run passed when repeated.
+
 ## Triad v7 (0.8.0) and Triad Time on macOS — 2026-10-19
 
 Commit `8de47bc`, run 39350295768 (macos-14 runner, virtual Apple M1). New in 0.8.0: Triad Time (built into Triad, and its
