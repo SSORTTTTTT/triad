@@ -21,7 +21,7 @@ private:
     juce::Component holder;
     std::vector<std::unique_ptr<triad::ui::RouteRow>> rows;
     juce::TextButton addButton { "+ ADD ROUTE" };
-    juce::String built;
+    juce::String built, shownRange;
 };
 
 // The MATRIX tab: a matrix for PRE, each band and POST, side by side like the strips (scroll sideways).

@@ -29,6 +29,7 @@ private:
     Led light { "Route on/off" };
     juce::TextButton source, invert { "INV" }, destination, remove { "x" };
     TriadProcessor::RouteInfo info;
+    bool shown = false;
 };
 
 }

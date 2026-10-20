@@ -591,9 +591,11 @@ void CrossoverDisplay::resized()
 // ---- Live spectrum --------------------------------------------------------------------------
 void CrossoverDisplay::frame (double time)
 {
+    // Every frame of the screen, up to 120 a second while the computer keeps up (see FramePacer).
     const double dt = lastFrame > 0.0 ? juce::jlimit (0.0, 0.1, time - lastFrame) : 1.0 / 60.0;
-    if (lastFrame > 0.0 && dt < 1.0 / 65.0) return;   // at most 60 frames a second
-    lastFrame = time;
+    if (! pacer->due (lastFrame, time)) return;
+    const FramePacer::Timed timed (*pacer);
+    if (onFrame) onFrame (dt);
     updateSpectrum (dt);
     repaint (plotBounds().toNearestInt().expanded (2));
     repaint (getWidth() - (int) meterWidth - 24, 0, (int) meterWidth + 24, getHeight());
@@ -698,6 +700,7 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
 }
 void CrossoverDisplay::paint (juce::Graphics& g)
 {
+    const FramePacer::Timed timed (*pacer);
     const auto plot = plotBounds();
     const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     std::vector<float> key { (float) getWidth(), (float) getHeight(), scale, (float) host.getBandCount(), (float) activeSlope,
@@ -714,7 +717,7 @@ void CrossoverDisplay::paint (juce::Graphics& g)
         layer.addTransform (juce::AffineTransform::scale (scale));
         paintStaticLayer (layer);
     }
-    g.drawImageTransformed (staticLayer, juce::AffineTransform::scale (1.0f / scale));
+    drawPixelExact (g, staticLayer, scale);
     if (spectrumVisible)
     {
         g.setGradientFill (juce::ColourGradient (juce::Colour (0x30e8ece6), 0.0f, plot.getY() + 26.0f,

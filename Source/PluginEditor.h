@@ -117,6 +117,7 @@ private:
     void layoutContent();
     void timerCallback() override;
     double lastFrame = 0.0;
+    juce::SharedResourcePointer<triad::ui::FramePacer> pacer;
     juce::VBlankAttachment frames { this, [this] (double t) { animate (t); } };
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void rebuildStrips();

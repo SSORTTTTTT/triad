@@ -3,6 +3,8 @@
 #include <array>
 #include <atomic>
 #include <vector>
+#include <cmath>
+#include <cstring>
 
 // Triad's LFOs: a shape drawn with points on a grid (ShaperBox / Gross Beat / Serum style), played
 // back in sync with the DAW's tempo. Values run from 0 (bottom, 0%) to 1 (top, 100%).
@@ -75,4 +77,46 @@ std::unique_ptr<juce::XmlElement> toXml (const Shape&, const juce::String& tag);
 Shape fromXml (const juce::XmlElement*);
 juce::String toText (const Shape&);               // clipboard
 Shape fromText (const juce::String&);
+}
+
+namespace triad
+{
+// A playing position as the audio thread last set it, stamped with the time it did and how fast it moves, so the
+// screen can carry it on smoothly between audio blocks, at the screen's own frame rate (60 or 120 a second), instead
+// of in block-sized steps. Phase and time are one atomic value, so the two always belong together.
+class PhaseClock
+{
+public:
+    // Audio thread: the position (0..1, < 0: not playing) and its speed in cycles per second.
+    void set (float phase, double cyclesPerSecond) noexcept
+    {
+        rate.store ((float) cyclesPerSecond, std::memory_order_relaxed);
+        uint32_t bits = 0;
+        std::memcpy (&bits, &phase, sizeof (bits));
+        state.store (((uint64_t) bits << 32) | micros(), std::memory_order_release);
+    }
+    float last() const noexcept { return phaseOf (state.load (std::memory_order_acquire)); }
+    // Where it is now: the last position carried on at its speed (for at most `maxAhead` seconds, so a DAW that
+    // stopped sending audio leaves it standing where it was).
+    float now (double maxAhead = 0.1) const noexcept
+    {
+        const auto s = state.load (std::memory_order_acquire);
+        const float phase = phaseOf (s);
+        if (phase < 0.0f) return phase;
+        const auto elapsed = (double) (uint32_t) (micros() - (uint32_t) s) * 1.0e-6;
+        const double p = (double) phase + (double) rate.load (std::memory_order_relaxed) * juce::jlimit (0.0, maxAhead, elapsed);
+        return (float) (p - std::floor (p));
+    }
+private:
+    static uint32_t micros() noexcept { return (uint32_t) (uint64_t) (juce::Time::getMillisecondCounterHiRes() * 1000.0); }
+    static float phaseOf (uint64_t s) noexcept
+    {
+        const auto bits = (uint32_t) (s >> 32);
+        float phase;
+        std::memcpy (&phase, &bits, sizeof (phase));
+        return phase;
+    }
+    std::atomic<uint64_t> state { 0xbf80000000000000ull };   // -1.0f: not playing yet
+    std::atomic<float> rate { 0.0f };
+};
 }

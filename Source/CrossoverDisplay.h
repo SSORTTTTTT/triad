@@ -94,6 +94,9 @@ public:
     juce::Rectangle<float> slopeReadoutBounds (int index) const;
     int getActiveSlope() const noexcept { return activeSlope; }
     void updateSpectrum (double dt = 1.0 / 30.0);
+    // Called on each frame it draws (up to 120 a second), before the spectrum: what else moves with the screen.
+    std::function<void (double dt)> onFrame;
+    triad::ui::FramePacer& getPacer() noexcept { return *pacer; }
     int getStaticLayerRenders() const noexcept { return staticRenders; }
     bool isSpectrumVisible() const noexcept { return spectrumVisible; }
 
@@ -153,6 +156,7 @@ private:
     std::vector<float> staticKey, refreshKey;
     int staticRenders = 0;
     double lastFrame = 0.0;
+    juce::SharedResourcePointer<triad::ui::FramePacer> pacer;
     juce::VBlankAttachment frames { this, [this] (double t) { frame (t); } };
     struct Tip final : juce::Component, juce::SettableTooltipClient {} meterTip;
 

@@ -22,6 +22,7 @@ struct ShapeHost
     virtual void setLength (int) = 0;
     virtual bool allowsLength (int index) const { juce::ignoreUnused (index); return true; }
     virtual float getPhase() const = 0;               // the playing position 0..1 (< 0: not playing)
+    virtual float getPhaseNow() const { return getPhase(); }   // the same, carried on to this very moment (smooth motion)
     virtual juce::Colour getColour() const = 0;
     virtual juce::String valueLabel (int percent) const { return juce::String (percent) + "%"; }   // the scale on the left
     virtual void setStatus (const juce::String&) {}
@@ -64,7 +65,7 @@ public:
     const triad::mod::Shape& getShape() const noexcept { return shape; }
     std::function<void()> onChange;
     int getLayerRenders() const noexcept { return layerRenders; }
-    void frame (double time);   // every frame of the screen (up to 60 a second): the playing position
+    void frame (double time);   // every frame of the screen (up to 120 a second): the playing position
     static triad::mod::Shape clipboard;
 private:
     void paintLayer (juce::Graphics&);
@@ -90,6 +91,7 @@ private:
     juce::int64 layerKey = 0;
     int layerRenders = 0;
     double lastFrame = 0.0;
+    juce::SharedResourcePointer<triad::ui::FramePacer> pacer;
     juce::VBlankAttachment frames { this, [this] (double t) { frame (t); } };
 };
 

@@ -380,6 +380,8 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
     if (! playingSong) freeBeats = beats + n * beatsPerSample;
     phases[timeEnvelope].store (timePhase, std::memory_order_relaxed);
     phases[volumeEnvelope].store (volumePhase, std::memory_order_relaxed);
+    clocks[timeEnvelope].set (timePhase, beatsPerSample * rate / timeBeats);
+    clocks[volumeEnvelope].set (volumePhase, beatsPerSample * rate / volumeBeats);
     for (int c = channels; c < audio.getNumChannels(); ++c) audio.clear (c, 0, n);
 }
 
@@ -467,6 +469,7 @@ void TriadTime::setLength (int envelope, int lengthIndex)
     p->endChangeGesture();
 }
 float TriadTime::getPhase (int envelope) const { return phases[(size_t) juce::jlimit (0, 1, envelope)].load (std::memory_order_relaxed); }
+float TriadTime::getPhaseNow (int envelope) const { return getPhase (envelope) < 0.0f ? -1.0f : clocks[(size_t) juce::jlimit (0, 1, envelope)].now(); }
 void TriadTime::handleAsyncUpdate() { updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true)); }
 
 // ---- State ----------------------------------------------------------------------------------------------------
@@ -532,6 +535,7 @@ struct EnvelopeHost final : ShapeHost
         return envelope == TriadTime::timeEnvelope ? TriadTime::isTimeLength (index) : TriadTime::isVolumeLength (index);
     }
     float getPhase() const override { return processor.getPhase (envelope); }
+    float getPhaseNow() const override { return processor.getPhaseNow (envelope); }
     juce::Colour getColour() const override { return envelope == TriadTime::timeEnvelope ? timeColour : volumeColour; }
     juce::String valueLabel (int percent) const override
     {
@@ -716,15 +720,17 @@ private:
         shown[0] = processor.getSlot (0);
         shown[1] = processor.getSlot (1);
     }
-    void timerCallback() override
+    void timerCallback() override { shapes.updateToolbar(); }
+    // Every frame of the screen (up to 120 a second): a pattern switched by automation (or one of Triad's LFOs)
+    // shows at once.
+    void frame (double time)
     {
-        // The slot changed by automation (or one of Triad's LFOs): show that pattern.
+        if (! pacer->due (lastFrame, time)) return;
         if (processor.getSlot (0) != shown[0] || processor.getSlot (1) != shown[1])
         {
             refreshSlots();
             shapes.setHost (&hostFor (envelope));
         }
-        shapes.updateToolbar();
     }
     TriadTime& processor;
     triad::ui::TriadLook look;
@@ -739,6 +745,9 @@ private:
     std::vector<std::unique_ptr<juce::SliderParameterAttachment>> attachments;
     juce::Rectangle<int> knobArea;
     juce::TooltipWindow tooltips { this, 600 };
+    double lastFrame = 0.0;
+    juce::SharedResourcePointer<triad::ui::FramePacer> pacer;
+    juce::VBlankAttachment frames { this, [this] (double t) { frame (t); } };
 };
 }
 

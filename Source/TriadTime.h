@@ -40,6 +40,7 @@ public:
     int getLength (int envelope) const;                        // index into triad::mod::lengths()
     void setLength (int envelope, int lengthIndex);
     float getPhase (int envelope) const;                       // the playing position 0..1, -1 before it plays
+    float getPhaseNow (int envelope) const;                    // the same, carried on to this moment (for the screen)
     void beginEdit (int envelope);
     bool undo (int envelope);
     bool redo (int envelope);
@@ -108,6 +109,7 @@ private:
     float gate = 1.0f;
     juce::SmoothedValue<float> timeMixSmooth, volumeMixSmooth;
     std::atomic<float> phases[2] { -1.0f, -1.0f };
+    std::array<triad::PhaseClock, 2> clocks;
     std::atomic<int> jumps { 0 };
     bool prepared = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TriadTime)

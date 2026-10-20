@@ -49,6 +49,15 @@ void BandMatrix::refresh()
     signature << processor.getStructureVersion() << ":" << processor.getRouteCount (band) << ":" << processor.getLfoCount (band);
     if (signature != built) { built = signature; rebuild(); }
     for (auto& row : rows) row->update();
+    // The band's range in the title follows the dividers.
+    juce::String range;
+    if (! TriadProcessor::isExtraChain (band))
+    {
+        const auto cuts = processor.effectiveCrossovers();
+        range << (band == 0 ? 0.0f : cuts[(size_t) juce::jmin (band, (int) cuts.size()) - 1]) << "/"
+              << (band < (int) cuts.size() ? cuts[(size_t) band] : processor.nyquistFrequency());
+    }
+    if (range != shownRange) { shownRange = range; repaint (0, 0, getWidth(), 36); }
 }
 void BandMatrix::resized()
 {
@@ -120,7 +129,7 @@ void MatrixPage::refresh()
         }
         resized();
     }
-    for (auto& p : panels) { p->refresh(); p->repaint(); }
+    for (auto& p : panels) p->refresh();
 }
 void MatrixPage::resized()
 {

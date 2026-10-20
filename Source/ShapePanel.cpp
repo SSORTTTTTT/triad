@@ -193,17 +193,17 @@ int ShapeEditor::hitCurve (juce::Point<float> pos) const
 
 void ShapeEditor::frame (double time)
 {
-    const double dt = lastFrame > 0.0 ? time - lastFrame : 1.0;
-    if (lastFrame > 0.0 && dt < 1.0 / 65.0) return;   // at most 60 frames a second
-    lastFrame = time;
-    const auto next = host != nullptr ? host->getPhase() : -1.0f;
+    // Every frame of the screen, up to 120 a second (ProMotion): the playing position, carried on smoothly between
+    // the audio's updates.
+    if (! pacer->due (lastFrame, time)) return;
+    const auto next = host != nullptr ? host->getPhaseNow() : -1.0f;
     if (std::abs (next - phase) <= 1.0e-4f) return;
     // Repaint only the strips under the old and the new playing position.
     const auto strip = [this] (float p)
     {
         if (p < 0.0f) return juce::Rectangle<int>();
         const int x = juce::roundToInt (toScreen ({ p, 0.0f, 0.0f }).x);
-        return juce::Rectangle<int> (x - 6, 0, 12, getHeight());
+        return juce::Rectangle<int> (x - 7, 0, 14, getHeight());
     };
     repaint (strip (phase));
     phase = next;
@@ -211,6 +211,7 @@ void ShapeEditor::frame (double time)
 }
 void ShapeEditor::paint (juce::Graphics& g)
 {
+    const triad::ui::FramePacer::Timed timed (*pacer);
     const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     auto key = (juce::uint64) (juce::String (getWidth()) + "x" + juce::String (getHeight()) + "@" + juce::String (scale) + "/" + juce::String ((juce::int64) shapeColour().getARGB())
                                + "/" + juce::String (columns()) + "/" + juce::String (hoverPoint) + "/" + juce::String (hoverCurve)).hashCode64();
@@ -227,7 +228,7 @@ void ShapeEditor::paint (juce::Graphics& g)
         lg.addTransform (juce::AffineTransform::scale (scale));
         paintLayer (lg);
     }
-    g.drawImageTransformed (layer, juce::AffineTransform::scale (1.0f / scale));
+    triad::ui::drawPixelExact (g, layer, scale);
     const auto colour = shapeColour();
     if (drag == Drag::select)
     {
@@ -240,7 +241,7 @@ void ShapeEditor::paint (juce::Graphics& g)
         const auto r = plot();
         const auto p = toScreen ({ phase, mod::evaluate (shape, phase), 0.0f });
         g.setColour (juce::Colours::white.withAlpha (0.35f));
-        g.drawVerticalLine (juce::roundToInt (p.x), r.getY(), r.getBottom());
+        g.fillRect (juce::Rectangle<float> (p.x - 0.75f, r.getY(), 1.5f, r.getHeight()));   // at sub-pixel positions: glides
         g.setColour (juce::Colours::white);
         g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre (p));
     }

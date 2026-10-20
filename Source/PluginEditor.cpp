@@ -381,14 +381,22 @@ void TriadEditor::timerCallback()
 }
 void TriadEditor::animate (double frameTime)
 {
-    // At most 60 frames a second (a 120 Hz screen gets every other one); the meters' ballistics follow the clock.
+    // Every frame of the screen: 120 a second on a ProMotion screen while the computer keeps up, else 60 (FramePacer).
+    // The meters' ballistics follow the clock. Whatever the DAW automates (dividers, slopes, band edges) moves here too.
     const double dt = lastFrame > 0.0 ? juce::jlimit (0.0, 0.1, frameTime - lastFrame) : 1.0 / 60.0;
-    if (lastFrame > 0.0 && dt < 1.0 / 65.0) return;
-    lastFrame = frameTime;
+    if (! pacer->due (lastFrame, frameTime)) return;
+    const FramePacer::Timed timed (*pacer);
     const auto meters = processor.takeMeters();
+    pacer->setAudioLoad (meters.cpu);
     frequencyDisplay.setMeters (meters.input, meters.output, meters.cpu, dt);
     if (tab == Tab::bands)
     {
+        if (processor.getBandCount() == builtCount)
+        {
+            frequencyDisplay.refreshIfChanged();
+            const auto cuts = processor.effectiveCrossovers();
+            for (auto& strip : strips) strip->updateEdges (cuts, builtCount, processor.nyquistFrequency());
+        }
         for (auto& strip : strips) strip->animate (meters.bands[(size_t) strip->getBand()], dt);
         if (isPreShown()) preStrip->animate (0.0f, dt);
         if (isPostShown()) postStrip->animate (0.0f, dt);

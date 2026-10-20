@@ -18,6 +18,7 @@ struct LfoShapeHost final : ShapeHost
     int getLength() const override { return processor.getLfoInfo (band, lfo).length; }
     void setLength (int index) override { processor.setLfoLength (band, lfo, index); }
     float getPhase() const override { return processor.getLfoPhase (band, lfo); }
+    float getPhaseNow() const override { return processor.getLfoPhaseNow (band, lfo); }
     juce::Colour getColour() const override { return triad::ui::bandColour (band); }
     void setStatus (const juce::String& text) override { processor.setStatus (text); }
 };

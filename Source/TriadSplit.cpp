@@ -100,7 +100,7 @@ TriadSplit::TriadSplit()
     lastOwn = readOwn();
     join (defaultGroup);
     updatePlayers();
-    startTimerHz (30);
+    startTimerHz (60);   // linked Triad Splits follow each other on every frame of a 60 Hz screen
 }
 TriadSplit::~TriadSplit()
 {
@@ -396,8 +396,12 @@ bool TriadSplit::isBusesLayoutSupported (const BusesLayout& layouts) const
     const auto main = layouts.getMainOutputChannelSet();
     if (main != juce::AudioChannelSet::mono() && main != juce::AudioChannelSet::stereo()) return false;
     if (layouts.getMainInputChannelSet() != main) return false;
+    // Each band output: off, mono or stereo, whatever the main output is (Audio Units check them one by one).
     for (int i = 1; i < layouts.outputBuses.size(); ++i)
-        if (! layouts.outputBuses[i].isDisabled() && layouts.outputBuses[i] != main) return false;
+    {
+        const auto& set = layouts.outputBuses.getReference (i);
+        if (! set.isDisabled() && set != juce::AudioChannelSet::mono() && set != juce::AudioChannelSet::stereo()) return false;
+    }
     return true;
 }
 void TriadSplit::prepareToPlay (double sampleRate, int maximumBlock)
@@ -685,9 +689,18 @@ public:
             playButtons.push_back (std::move (b));
         }
         info.setInterceptsMouseClicks (false, false);
+        // What moves (meters, dividers and slopes under automation or from a linked Triad Split) follows the screen,
+        // up to 120 frames a second; the text below a few times a second.
+        display.onFrame = [this] (double dt)
+        {
+            display.refreshIfChanged();
+            display.getPacer().setAudioLoad (split.getCpuLoad());
+            display.setMeters (split.takeInputPeak(), split.takeOutputPeak(), split.getCpuLoad(), dt);
+            if (split.getPlay() != shownPlay || split.getBandCount() != laidOutBands) refresh();
+        };
         setSize (980, 520);
         refresh();
-        startTimerHz (30);
+        startTimerHz (15);
     }
     ~TriadSplitEditor() override { setLookAndFeel (nullptr); }
     CrossoverDisplay& getDisplay() noexcept { return display; }
@@ -777,6 +790,7 @@ public:
     void refresh()
     {
         const int group = split.getLinkGroup(), play = split.getPlay(), count = split.getBandCount();
+        shownPlay = play;
         const int linked = split.getLinkedCount();
         const auto linkText = group == 0 ? juce::String ("LINK: OFF") : "LINK " + L::groupName (group) + u8 ("  \xc2\xb7  ") + juce::String (linked);
         if (linkButton.getButtonText() != linkText) linkButton.setButtonText (linkText);
@@ -823,11 +837,6 @@ public:
 private:
     void timerCallback() override
     {
-        display.refreshIfChanged();
-        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-        const double dt = lastTick > 0.0 ? juce::jlimit (0.001, 0.2, now - lastTick) : 1.0 / 30.0;
-        lastTick = now;
-        display.setMeters (split.takeInputPeak(), split.takeOutputPeak(), split.getCpuLoad(), dt);
         display.setLatency (0, split.getSampleRateForDisplay(), {});
         refresh();
     }
@@ -839,8 +848,7 @@ private:
     juce::Component info;
     juce::Rectangle<int> playArea, infoArea;
     juce::String infoText;
-    int laidOutBands = -1;
-    double lastTick = 0.0;
+    int laidOutBands = -1, shownPlay = -1;
     juce::TooltipWindow tooltips { this, 600 };
 };
 }

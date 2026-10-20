@@ -38,7 +38,7 @@ public:
     void showMenu();
     void setLifted (bool on) { lifted = on; setAlpha (on ? 0.92f : 1.0f); repaint(); }   // drawn as picked up while dragged
     double latencyMs (int samples) const;
-    void animate();   // every frame: the LFO dot riding round the knob
+    void animate (double dt = 1.0 / 60.0);   // every frame: the LFO dot riding round the knob (glides between audio blocks)
     juce::String latencyText (int samples) const;
     juce::Slider knob;
     juce::Rectangle<int> ledArea() const { return { getWidth() - 20, 0, 18, getHeight() }; }
@@ -50,6 +50,7 @@ private:
     int band, slot, count = 1;
     juce::Colour colour;
     TriadProcessor::SlotInfo info;
+    float shownMix = -1.0f;   // where the dot is drawn (follows info.liveMix smoothly)
     bool hover = false, first = true, lifted = false;
 };
 
@@ -75,6 +76,7 @@ class BandStrip final : public juce::Component
 public:
     BandStrip (TriadProcessor&, StripHost&, int band);
     void update (const std::vector<float>& crossovers, int bandCount, float nyquist);   // a few times a second
+    void updateEdges (const std::vector<float>& crossovers, int bandCount, float nyquist);   // every frame
     void animate (float level, double dt);                                             // every frame
     juce::Rectangle<int> meterArea() const;
     juce::Rectangle<int> peakTextArea() const;

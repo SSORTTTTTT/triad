@@ -45,7 +45,7 @@ public:
     void setLinkGroup (int group);
     int getLinkedCount() const;                              // Triad Splits in this group (this one included)
     int getPlayers (int band) const;                         // how many in this group play `band` (anyBand: ALL / NONE)
-    // Publishes this instance's changes and follows the group's (message thread; the timer does it 30 times
+    // Publishes this instance's changes and follows the group's (message thread; the timer does it 60 times
     // a second, tests call it directly).
     void syncLink();
 

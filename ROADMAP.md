@@ -15,11 +15,17 @@ between each band and put onto a new insert or mixer effect":
   tracks add back up exactly to the original (tested: three Triad Splits playing bands 1, 2, 3 sum to ALL, and ALL equals
   Triad with empty bands, bit for bit).
 - **LINK groups A to H**: every Triad Split in a group shares band count, dividers and slopes, live (a divider dragged on
-  one moves every other within a block of audio; the windows follow 30 times a second). The VST3 and AU builds find the
+  one moves every other within a block of audio; the windows follow 60 times a second). The VST3 and AU builds find the
   same groups (one shared block per DAW process). Adding or removing a band moves every linked track's PLAY with its band;
   the window warns when a band is on no track or on two.
 - **Band outputs**: every band on its own output (Band 1 = outputs 3-4 ...), for FL's Patcher or routing plug-in outputs to
   mixer inserts (FL's wrapper: Processing > Connections). PLAY NONE silences the main output.
+- **Smoother, sharper interface** (Thomas: "make the whole plugin run at 60+ fps ... 120 fps if there's not issues"): every
+  animation follows the screen at up to 120 frames a second (ProMotion), stepping down to 60 when frames come late, the
+  drawing takes too long or the audio is busy; automation (dividers, slopes, band edges, Triad Time's patterns, Triad
+  Split's display) moves on every frame instead of 15 times a second; playheads (LFO tab, Triad Time) and the knobs' LFO
+  dots glide between audio blocks; cached pictures are put back pixel for pixel (no soft edges at 125% and similar sizes);
+  rows that did not change are no longer redrawn several times a second.
 
 Next:
 - Thomas tests Triad Split in FL (sends to inserts; Patcher) and Ableton (rack chains).

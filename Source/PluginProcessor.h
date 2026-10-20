@@ -169,6 +169,7 @@ public:
     int addLfo (int band);
     bool removeLfo (int band, int lfo);                          // extra LFOs only
     float getLfoPhase (int band, int lfo) const;                 // 0..1, or < 0 when not running
+    float getLfoPhaseNow (int band, int lfo) const;              // the same, carried on to this moment (for the screen)
 
     // ---- Matrix (message thread) -----------------------------------------------------------------
     struct Destination
@@ -288,6 +289,7 @@ private:
         // Audio thread.
         double runPhase = 0.0, blockPhase = 0.0, increment = 0.0;
         std::atomic<float> displayPhase { -1.0f };
+        triad::PhaseClock clock;         // the same, for the screen to move on smoothly between audio blocks
         float value (int frame) const noexcept { return table.lookup (blockPhase + increment * frame); }
     };
     struct Route

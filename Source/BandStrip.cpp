@@ -40,7 +40,7 @@ void SlotRow::update (const TriadProcessor::SlotInfo& next, int slotCount)
         && next.enabled == info.enabled && next.pending == info.pending && next.hasContent == info.hasContent && next.format == info.format
         && next.reportedLatency == info.reportedLatency && next.liveBypassed == info.liveBypassed && next.latency == info.latency)
     {
-        if (liveChanged) { info.liveMix = next.liveMix; info.modulated = next.modulated; repaint(); }
+        if (liveChanged) { info.liveMix = next.liveMix; info.modulated = next.modulated; }   // the dot itself moves in animate()
         return;
     }
     first = false;
@@ -116,14 +116,19 @@ void SlotRow::paint (juce::Graphics& g)
     else g.setColour (juce::Colour (0xff4a504c));
     g.fillEllipse (light);
 }
-void SlotRow::animate()
+void SlotRow::animate (double dt)
 {
     bool modulated = false;
     const float live = processor.getSlotLiveMix (band, slot, modulated);
-    if (modulated == info.modulated && std::abs (live - info.liveMix) < 0.05f) return;
+    // The audio updates the value once a block (about 90 times a second); the dot glides to it (a few ms behind)
+    // so it moves on every frame of the screen instead of in steps.
+    const float before = shownMix;
+    if (! modulated || shownMix < 0.0f) shownMix = live;
+    else shownMix += (live - shownMix) * (float) (1.0 - std::exp (-dt / 0.008));
+    const bool changed = modulated != info.modulated || std::abs (shownMix - before) >= 0.02f;
     info.modulated = modulated;
     info.liveMix = live;
-    repaint (knob.getBounds().expanded (6));
+    if (changed) repaint (knob.getBounds().expanded (6));
 }
 void SlotRow::paintOverChildren (juce::Graphics& g)
 {
@@ -136,7 +141,7 @@ void SlotRow::paintOverChildren (juce::Graphics& g)
     // Where the LFO has the mix right now: a dot riding round the knob.
     const auto k = knob.getBounds().toFloat();
     const auto params = knob.getRotaryParameters();
-    const float angle = params.startAngleRadians + (info.liveMix / 100.0f) * (params.endAngleRadians - params.startAngleRadians);
+    const float angle = params.startAngleRadians + ((shownMix < 0.0f ? info.liveMix : shownMix) / 100.0f) * (params.endAngleRadians - params.startAngleRadians);
     const float radius = k.getWidth() * 0.5f + 1.0f;
     const auto centre = k.getCentre();
     const auto dot = centre.getPointOnCircumference (radius, angle);
@@ -381,18 +386,7 @@ bool BandStrip::slotDrag (int slot, const juce::MouseEvent& e, int phase)
 }
 void BandStrip::update (const std::vector<float>& crossovers, int bandCount, float nyquist)
 {
-    if (! isExtra())
-    {
-        startHz = band == 0 ? 0.0f : crossovers[(size_t) band - 1];
-        endHz = band < (int) crossovers.size() ? crossovers[(size_t) band] : nyquist;
-    }
-    // Only band edges that are real crossovers can be typed in (0 Hz and Nyquist are fixed).
-    startLabel.setEditable (band > 0, band > 0, false);
-    endLabel.setEditable (band < bandCount - 1, band < bandCount - 1, false);
-    if (! startLabel.isBeingEdited()) startLabel.setText (formatHz (startHz), juce::dontSendNotification);
-    if (! endLabel.isBeingEdited()) endLabel.setText (formatHz (endHz), juce::dontSendNotification);
-    startLabel.setTooltip (band > 0 ? "Click to type the band's lower edge (e.g. 250 or 2.5k)" : "The lowest band starts at 0 Hz");
-    endLabel.setTooltip (band < bandCount - 1 ? "Click to type the band's upper edge" : "The highest band ends at Nyquist (half the sample rate)");
+    updateEdges (crossovers, bandCount, nyquist);
     removeButton.setVisible (bandCount > 1 && ! isExtra());
     if (slotDragState.active) return;   // the rows stay as they are until the dragged slot is dropped
     const int count = processor.getSlotCount (band);
@@ -413,11 +407,27 @@ void BandStrip::update (const std::vector<float>& crossovers, int bandCount, flo
     }
     if (chain != chainLatency) { chainLatency = chain; repaint(); }
 }
-// Every frame (up to 60 a second): the level meter and the LFO dots on the slot knobs.
+// The band's edges (they move with the dividers: every frame, so automation moves them smoothly).
+void BandStrip::updateEdges (const std::vector<float>& crossovers, int bandCount, float nyquist)
+{
+    if (! isExtra() && band < (int) crossovers.size() + 1)
+    {
+        startHz = band == 0 ? 0.0f : crossovers[(size_t) band - 1];
+        endHz = band < (int) crossovers.size() ? crossovers[(size_t) band] : nyquist;
+    }
+    // Only band edges that are real crossovers can be typed in (0 Hz and Nyquist are fixed).
+    startLabel.setEditable (band > 0, band > 0, false);
+    endLabel.setEditable (band < bandCount - 1, band < bandCount - 1, false);
+    if (! startLabel.isBeingEdited()) startLabel.setText (formatHz (startHz), juce::dontSendNotification);
+    if (! endLabel.isBeingEdited()) endLabel.setText (formatHz (endHz), juce::dontSendNotification);
+    startLabel.setTooltip (band > 0 ? "Click to type the band's lower edge (e.g. 250 or 2.5k)" : "The lowest band starts at 0 Hz");
+    endLabel.setTooltip (band < bandCount - 1 ? "Click to type the band's upper edge" : "The highest band ends at Nyquist (half the sample rate)");
+}
+// Every frame (up to 120 a second): the level meter and the LFO dots on the slot knobs.
 void BandStrip::animate (float newLevel, double dt)
 {
     // Fast attack, gentle fall (about -30 dB a second), peak hold for 0.75 s, timed by the frame clock.
-    if (isExtra()) { for (auto& row : rows) row->animate(); return; }   // no band meter
+    if (isExtra()) { for (auto& row : rows) row->animate (dt); return; }   // no band meter
     const float before = level, holdBefore = peakHold;
     level = juce::jmax (newLevel, level * (float) std::pow (0.7, dt * 20.0));
     if (newLevel >= peakHold) { peakHold = newLevel; holdTime = 0.75; }
@@ -426,7 +436,7 @@ void BandStrip::animate (float newLevel, double dt)
     if (peakHold < 1.0e-4f) peakHold = 0.0f;
     if (std::abs (level - before) > 1.0e-5f || std::abs (peakHold - holdBefore) > 1.0e-5f)
         repaint (meterArea().expanded (4).getUnion (peakTextArea()));
-    for (auto& row : rows) row->animate();
+    for (auto& row : rows) row->animate (dt);
 }
 juce::Rectangle<int> BandStrip::meterArea() const
 {

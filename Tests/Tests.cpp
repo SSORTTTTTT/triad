@@ -20,6 +20,7 @@ void require (bool b, const char* message) { if (! b) throw std::runtime_error (
 #include "GeneratorTests.h"
 #include "TimeTests.h"
 #include "SplitTests.h"
+#include "FrameTests.h"
 
 namespace
 {
@@ -375,6 +376,8 @@ int main (int argc, char** argv)
         testStage = "Triad Split";
         splitTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
         if (splitVst3.exists()) splitTests::runHosted (splitVst3);
+        testStage = "frame rate and smooth motion";
+        frameTests::run();
         testStage = "running the tests";
 
         // ---- Built-in Linkwitz-Riley filter equals JUCE's -----------------------------------
@@ -2143,7 +2146,7 @@ int main (int argc, char** argv)
                         return juce::String (total / 12.0, 1) + " ms (worst " + juce::String (worst, 1) + ")";
                     };
                     auto timePaint = [&timeArea] (juce::Component& c, float scale) { return timeArea (c, c.getLocalBounds(), scale); };
-                    std::cout << "UI drawing times, whole window at 1x / 2x (a frame at 60 fps has 16.7 ms):" << std::endl;
+                    std::cout << "UI drawing times, whole window at 1x / 2x (a frame at 60 fps has 16.7 ms, at 120 fps 8.3 ms):" << std::endl;
                     for (auto tab : { TriadEditor::Tab::bands, TriadEditor::Tab::lfo, TriadEditor::Tab::matrix })
                     {
                         editor->setTab (tab);
@@ -2153,7 +2156,7 @@ int main (int argc, char** argv)
                     }
                     editor->setTab (TriadEditor::Tab::bands);
                     editor->refreshNow();
-                    std::cout << "What moves every frame (up to 60 a second), at 1x / 2x:" << std::endl;
+                    std::cout << "What moves every frame (up to 120 a second), at 1x / 2x:" << std::endl;
                     auto& display = editor->getDisplay();
                     display.createComponentSnapshot (display.getLocalBounds(), true, 2.0f);
                     const int displayRenders = display.getStaticLayerRenders();

@@ -70,7 +70,13 @@ RouteRow::RouteRow (TriadProcessor& p, int b, int r, bool withSource, juce::Colo
 }
 void RouteRow::update()
 {
-    info = processor.getRouteInfo (band, route);
+    const auto next = processor.getRouteInfo (band, route);
+    // Only what changed is redrawn (this runs several times a second; the screen's frames go to what moves).
+    const bool changed = ! juce::exactlyEqual (next.amount, info.amount) || next.muted != info.muted || next.invert != info.invert
+                         || next.sourceName != info.sourceName || next.destinationName != info.destinationName || ! shown;
+    info = next;
+    if (! changed) return;
+    shown = true;
     light.setToggleState (! info.muted, juce::dontSendNotification);
     if (! amount.isMouseButtonDown()) amount.setValue (info.amount * 100.0, juce::dontSendNotification);
     invert.setToggleState (info.invert, juce::dontSendNotification);

@@ -949,6 +949,7 @@ void TriadProcessor::advanceLfos (Band& band, int offset, int frames)
         const double end = l.blockPhase + l.increment * frames;
         l.runPhase = end - std::floor (end);
         l.displayPhase.store ((float) l.runPhase, std::memory_order_relaxed);
+        l.clock.set ((float) l.runPhase, l.increment * sr);
     }
 }
 void TriadProcessor::applyParameterModulation (Slot& slot, int frame)
@@ -2001,6 +2002,11 @@ float TriadProcessor::getLfoPhase (int band, int index) const
 {
     auto* l = lfoAt (band, index);
     return l != nullptr && prepared ? l->displayPhase.load() : -1.0f;
+}
+float TriadProcessor::getLfoPhaseNow (int band, int index) const
+{
+    auto* l = lfoAt (band, index);
+    return l != nullptr && prepared && l->displayPhase.load() >= 0.0f ? l->clock.now() : -1.0f;
 }
 
 // ---- Matrix ------------------------------------------------------------------------------------------------

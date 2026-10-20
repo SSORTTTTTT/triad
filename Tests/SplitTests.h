@@ -221,7 +221,7 @@ inline void run (const juce::File& screenshotFolder)
         run (*one, in, block); run (*two, in, block); run (*three, in, block);
         require (one->addBand (1000.0f), "Split band 2 at 1 kHz");   // bands: <250, 250-1k, 1k-2.5k (new), >2.5k
         // Band 3's track: its audio hears the new bands first; it waits, silent, until its PLAY has moved.
-        // (Its window's timer, 30 times a second, moves it along: here after 6 blocks, 64 ms.)
+        // (Its timer, 60 times a second, moves it along: here after 6 blocks, 64 ms.)
         const auto held = run (*three, in, block, [&] (int index) { if (index == 6) three->syncLink(); });
         float before = 0.0f;
         for (size_t i = 512; i < 6 * (size_t) block; ++i) before = juce::jmax (before, std::abs (held.main[i]));
@@ -256,7 +256,10 @@ inline void run (const juce::File& screenshotFolder)
         for (int b = 1; b < layout.outputBuses.size(); ++b) layout.outputBuses.getReference (b) = juce::AudioChannelSet::disabled();
         require (s.setBusesLayout (layout), "Mono, with the band outputs off");
         layout.outputBuses.getReference (2) = juce::AudioChannelSet::stereo();
-        require (! s.checkBusesLayoutSupported (layout), "A band output must match the main output");
+        require (s.checkBusesLayoutSupported (layout), "A band output can be stereo with a mono main output (and the other way)");
+        layout.outputBuses.getReference (2) = juce::AudioChannelSet::quadraphonic();
+        require (! s.checkBusesLayoutSupported (layout), "Band outputs are mono or stereo");
+        layout.outputBuses.getReference (2) = juce::AudioChannelSet::disabled();
         s.setPlay (2);
         s.prepareToPlay (rate, block);
         const auto o = run (s, sine (24000, 800.0, rate), block);
@@ -283,7 +286,7 @@ inline void run (const juce::File& screenshotFolder)
         require (display != nullptr && display->getNumHandles() == 2, "Triad Split's window: Triad's band display, one divider per crossover");
         require (! display->getPreButton().isVisible() && ! display->getLiveButton().isVisible(), "...without Triad's PRE / POST / LIVE");
         display->setCrossoverValue (1, 3000.0f);
-        s->syncLink();   // (its timer, 30 times a second)
+        s->syncLink();   // (its timer, 60 times a second)
         t->syncLink();
         require (std::abs (t->effectiveCrossovers()[1] - 3000.0f) < 0.5f, "Dragging a divider in the window moves it on the linked ones");
         display->getAddButton().onClick();
