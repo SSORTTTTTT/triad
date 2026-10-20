@@ -145,6 +145,9 @@ int ShapeEditor::columns() const
     const double columnBeats = 4.0 / gridDivision * (triplet ? 2.0 / 3.0 : 1.0);
     return juce::jlimit (8, 128, (int) std::round (beats / columnBeats));
 }
+bool ShapeEditor::isSquareGrid() const { return host != nullptr && host->squareGrid(); }
+int ShapeEditor::rows() const { return isSquareGrid() ? 16 : 8; }
+int ShapeEditor::snapRows() const { return 16; }
 juce::Point<float> ShapeEditor::toScreen (const mod::Point& p) const
 {
     const auto r = plot();
@@ -158,7 +161,8 @@ mod::Point ShapeEditor::snapPoint (mod::Point p, bool snapping) const
     {
         const auto c = (float) columns();
         p.x = std::round (p.x * c) / c;
-        p.y = std::round (p.y * 16.0f) / 16.0f;
+        const auto r = (float) snapRows();
+        p.y = std::round (p.y * r) / r;
     }
     return p;
 }
@@ -252,21 +256,39 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
     const auto colour = shapeColour();
     g.setColour (gridBackground);
     g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
-    // Grid: columns, beats and quarters of the cycle; eight rows.
     const int cols = columns();
-    for (int c = 0; c <= cols; ++c)
+    if (isSquareGrid())
+    {
+        // Triad Time, laid out as ShaperBox's grid: the quarters of both directions make 4 x 4 big squares. Across, each
+        // quarter is divided in 4 by bright lines and each of those in 4 again by faint ones (64 columns at GRID 1/64 for a
+        // 1-bar pattern); down, each quarter in 4 by faint lines (16 rows).
+        for (int c = 0; c <= cols; ++c)
+        {
+            const float alpha = (c * 4) % cols == 0 ? 0.40f : (c * 16) % cols == 0 ? 0.26f : 0.13f;
+            g.setColour (juce::Colour (0xffcfd5cc).withAlpha (alpha));
+            g.drawVerticalLine (juce::roundToInt (r.getX() + r.getWidth() * (float) c / (float) cols), r.getY(), r.getBottom());
+        }
+        for (int row = 0; row <= 16; ++row)
+        {
+            g.setColour (juce::Colour (0xffcfd5cc).withAlpha (row % 4 == 0 ? 0.30f : 0.10f));
+            g.drawHorizontalLine (juce::roundToInt (r.getY() + r.getHeight() * (float) row / 16.0f), r.getX(), r.getRight());
+        }
+    }
+    // Grid: columns, beats and quarters of the cycle; eight rows.
+    else for (int c = 0; c <= cols; ++c)
     {
         const float x = r.getX() + r.getWidth() * (float) c / (float) cols;
         const bool quarter = (c * 4) % cols == 0;
         g.setColour (juce::Colour (0xffcfd5cc).withAlpha (quarter ? 0.22f : 0.07f));
         g.drawVerticalLine (juce::roundToInt (x), r.getY(), r.getBottom());
     }
-    for (int row = 0; row <= 8; ++row)
-    {
-        const float y = r.getY() + r.getHeight() * (float) row / 8.0f;
-        g.setColour (juce::Colour (0xffcfd5cc).withAlpha (row % 4 == 0 ? 0.2f : 0.07f));
-        g.drawHorizontalLine (juce::roundToInt (y), r.getX(), r.getRight());
-    }
+    if (! isSquareGrid())
+        for (int row = 0; row <= 8; ++row)
+        {
+            const float y = r.getY() + r.getHeight() * (float) row / 8.0f;
+            g.setColour (juce::Colour (0xffcfd5cc).withAlpha (row % 4 == 0 ? 0.2f : 0.07f));
+            g.drawHorizontalLine (juce::roundToInt (y), r.getX(), r.getRight());
+        }
     g.setFont (juce::FontOptions (10.0f));
     g.setColour (dimTextColour);
     for (int q = 1; q < 4; ++q)

@@ -2176,6 +2176,7 @@ int main (int argc, char** argv)
                     editor->showLfo (0, 1);
                     editor->refreshNow();
                     auto& grid = editor->getLfoPage().getEditor();
+                    require (grid.rows() == 8 && grid.snapRows() == 16, "Triad's LFO grid keeps its 8 rows and 16 steps (only Triad Time's grid is square)");
                     grid.createComponentSnapshot (grid.getLocalBounds(), true, 2.0f);
                     const int gridRenders = grid.getLayerRenders();
                     const auto playhead = juce::Rectangle<int> (grid.getWidth() / 2 - 6, 0, 12, grid.getHeight());

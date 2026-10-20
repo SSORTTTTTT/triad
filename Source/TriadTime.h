@@ -25,10 +25,10 @@ public:
     static constexpr double historySeconds = 12.0;             // the rolling buffer
     static juce::String slotName (int envelope, int slot);
     static triad::mod::Shape slotPreset (int envelope, int slot);
-    // How far back the TIME envelope's bottom reaches: twice its length (a 1-bar pattern reaches 2 bars back),
-    // so a line from the top-left corner to the bottom-right corner plays backwards at normal speed and a line
-    // to the middle of the right edge holds the sound still.
-    static double timeDepthInBeats (double lengthBeats) { return 2.0 * lengthBeats; }
+    // How far back the TIME envelope's bottom reaches: one pattern length (a 1-bar pattern reaches 1 bar back), as
+    // ShaperBox ("As LFO Length") and Gross Beat: a line from the top-left corner to the bottom-right corner holds the
+    // sound still, a line half as steep plays it at half speed, one twice as steep plays it backwards.
+    static double timeDepthInBeats (double lengthBeats) { return lengthBeats; }
     static bool isTimeLength (int lengthIndex);                // the TIME envelope: synced lengths up to 2 bars
     static bool isVolumeLength (int lengthIndex);              // the VOLUME envelope: any synced length
 

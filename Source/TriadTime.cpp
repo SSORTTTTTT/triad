@@ -8,8 +8,9 @@ using namespace triad::ui;
 // ---- Patterns ---------------------------------------------------------------------------------------------
 namespace
 {
-// TIME: y = 1 is live; one beat further back is 1 / (2 x length in beats) lower. Presets are drawn for 1 bar.
-constexpr float beatBack = 1.0f / 8.0f;
+// TIME: y = 1 is live, y = 0 one pattern length back (as ShaperBox's "As LFO Length" and Gross Beat); one beat further back
+// is 1 / (length in beats) lower. Presets are drawn for 1 bar.
+constexpr float beatBack = 1.0f / 4.0f;
 mod::Shape points (std::initializer_list<mod::Point> list) { mod::Shape s (list); mod::normalise (s); return s; }
 // A staircase that repeats the piece starting at `from` (x) every `step` (x), each repeat `back` lower.
 mod::Shape repeats (float from, float step, float back)
@@ -74,8 +75,8 @@ const std::array<std::vector<Preset>, 2>& presets()
             { "Reverse, beat 4", points ({ { 0.0f, 1.0f, 0.0f }, { 0.75f, 1.0f, 0.0f }, { 1.0f, 1.0f - 2.0f * beatBack, 0.0f } }) },
             { "Reverse, 2nd half", points ({ { 0.0f, 1.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, { 1.0f, 1.0f - 4.0f * beatBack, 0.0f } }) },
             { "Scratch, beats 3-4", points ({ { 0.0f, 1.0f, 0.0f }, { 0.5f, 1.0f, 0.0f },
-                                             { 0.5625f, 0.9375f, 0.0f }, { 0.625f, 0.96875f, 0.0f }, { 0.6875f, 0.90625f, 0.0f }, { 0.75f, 0.9375f, 0.0f },
-                                             { 0.8125f, 0.875f, 0.0f }, { 0.875f, 0.90625f, 0.0f }, { 0.9375f, 0.84375f, 0.0f }, { 1.0f, 0.875f, 0.0f } }) },
+                                             { 0.5625f, 0.875f, 0.0f }, { 0.625f, 0.9375f, 0.0f }, { 0.6875f, 0.8125f, 0.0f }, { 0.75f, 0.875f, 0.0f },
+                                             { 0.8125f, 0.75f, 0.0f }, { 0.875f, 0.8125f, 0.0f }, { 0.9375f, 0.6875f, 0.0f }, { 1.0f, 0.75f, 0.0f } }) },
             { "Roll 1/32, beat 4", repeats (0.75f, 1.0f / 32.0f, 0.125f * beatBack) },
         };
         p[1] = {
@@ -476,7 +477,7 @@ void TriadTime::handleAsyncUpdate() { updateHostDisplay (ChangeDetails().withNon
 void TriadTime::getStateInformation (juce::MemoryBlock& data)
 {
     juce::XmlElement root ("TriadTime");
-    root.setAttribute ("version", 1);
+    root.setAttribute ("version", 2);   // 2: the TIME grid reaches one pattern length back (1: two)
     for (auto* p : getParameters())
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (p))
             root.setAttribute (withId->getParameterID(), (double) withId->getValue());
@@ -505,6 +506,10 @@ void TriadTime::setStateInformation (const void* data, int size)
         const int s = x->getIntAttribute ("slot") - 1;
         if (e < 0 || s < 0 || s >= numSlots) continue;
         auto shape = mod::fromXml (x);
+        // Saved by Triad Time 0.8 / 0.9, whose TIME grid reached twice the pattern's length back: the same delays on
+        // today's grid (one length back). Anything further back than one length stays at the bottom.
+        if (e == timeEnvelope && xml->getIntAttribute ("version", 1) < 2)
+            for (auto& p : shape) p.y = juce::jmax (0.0f, 2.0f * p.y - 1.0f);
         if (shape.size() >= 2) setShape (e, s, shape, false);
     }
     for (auto& u : undoStack) u.clear();
@@ -540,11 +545,11 @@ struct EnvelopeHost final : ShapeHost
     juce::String valueLabel (int percent) const override
     {
         if (envelope != TriadTime::timeEnvelope) return juce::String (percent) + "%";
-        if (percent >= 100) return "live";
-        // Beats back: the bottom of the grid is twice the pattern's length back.
-        const double back = (1.0 - percent / 100.0) * TriadTime::timeDepthInBeats (mod::lengthInBeats (getLength(), 4.0));
-        return "-" + juce::String (back, back < 1.0 ? 2 : 1).trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+        // How far back, in parts of the pattern (as ShaperBox: 0 at the top, -4/4 at the bottom, one length back).
+        const int quarters = juce::roundToInt ((100 - percent) / 25.0);
+        return quarters == 0 ? juce::String ("0") : "-" + juce::String (quarters) + "/4";
     }
+    bool squareGrid() const override { return true; }
 };
 
 // A pattern slot: its number over a small picture of its shape.
@@ -603,6 +608,7 @@ public:
             slots.push_back (std::move (b));
         }
         shapes.onChange = [this] { refreshSlots(); };
+        shapes.getEditor().gridDivision = 64;   // ShaperBox's grid: 64 columns and 16 rows for a 1-bar pattern
         addAndMakeVisible (shapes);
         generator.setTarget (&shapes.getEditor());
         addAndMakeVisible (generator);
@@ -640,7 +646,7 @@ public:
             tab->setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
             tab->setColour (juce::TextButton::textColourOffId, tab->getToggleState() ? juce::Colour (0xff111312) : c);
         }
-        shapes.lengthTooltip = e == TriadTime::timeEnvelope ? "TIME length: one cycle of the pattern (up to 2 bars; the grid reaches twice as far back)"
+        shapes.lengthTooltip = e == TriadTime::timeEnvelope ? "TIME length: one cycle of the pattern (up to 2 bars; the grid reaches one cycle back, as in ShaperBox)"
                                                             : "VOLUME length: one cycle of the gate";
         shapes.setHost (&hostFor (e));
         refreshSlots();

@@ -25,6 +25,10 @@ struct ShapeHost
     virtual float getPhaseNow() const { return getPhase(); }   // the same, carried on to this very moment (smooth motion)
     virtual juce::Colour getColour() const = 0;
     virtual juce::String valueLabel (int percent) const { return juce::String (percent) + "%"; }   // the scale on the left
+    // Triad Time's grid, laid out as ShaperBox's: 4 x 4 big squares; across, every quarter divided in 4 (bright lines) and
+    // those in 4 again (faint: 64 columns at GRID 1/64 for a 1-bar pattern); down, every quarter in 4 (16 rows), and
+    // points snap to all of them. Triad's LFOs keep their own grid (false).
+    virtual bool squareGrid() const { return false; }
     virtual void setStatus (const juce::String&) {}
 };
 
@@ -59,6 +63,8 @@ public:
     int gridDivision = 16;
     bool triplet = false, snap = true;
     int columns() const;
+    int rows() const;           // the grid's rows: 8 (Triad's LFOs), 16 (Triad Time, as ShaperBox)
+    int snapRows() const;       // the steps points snap to up and down: 16
     juce::Rectangle<float> plot() const;
     float plotAspect() const;                        // the grid's width / height on screen
     juce::Point<float> toScreen (const triad::mod::Point&) const;
@@ -75,6 +81,7 @@ private:
     triad::mod::Point snapPoint (triad::mod::Point, bool snapping) const;
     void commit (bool undoable);
     juce::Colour shapeColour() const;
+    bool isSquareGrid() const;
 
     ShapeHost* host = nullptr;
     triad::mod::Shape shape { triad::mod::flat() }, dragStart;

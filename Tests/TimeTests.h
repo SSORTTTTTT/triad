@@ -99,7 +99,7 @@ inline void run (const juce::File& screenshotFolder)
     {
         TriadTime t;
         t.prepareToPlay (rate, block);
-        t.setShape (TriadTime::timeEnvelope, 0, mod::flat (1.0f - 1.0f / 8.0f), false);   // 1 bar pattern: the bottom is 8 beats back
+        t.setShape (TriadTime::timeEnvelope, 0, mod::flat (1.0f - 1.0f / 4.0f), false);   // 1 bar pattern: the bottom is 4 beats back
         Head head;
         const auto in = noise (samplesPerBeat * 3);
         const auto out = run (t, head, in, block);
@@ -223,6 +223,17 @@ inline void run (const juce::File& screenshotFolder)
         bool freeLength = false;
         for (int i = 0; i < (int) mod::lengths().size(); ++i) freeLength |= mod::lengths()[(size_t) i].column == 3 && TriadTime::isTimeLength (i);
         require (TriadTime::isTimeLength (mod::defaultLength()) && ! freeLength, "TIME lengths follow the song's tempo (1 bar by default, no free Hz lengths)");
+        // A project saved by Triad Time 0.8 / 0.9 (its TIME grid reached two lengths back): the same delays on today's grid.
+        juce::XmlElement old ("TriadTime");
+        old.setAttribute ("version", 1);
+        auto* time = mod::toXml (mod::flat (0.875f), "Time").release();   // one beat back then (1 bar pattern)
+        time->setAttribute ("slot", 1);
+        old.addChildElement (time);
+        juce::MemoryBlock oldState;
+        juce::AudioProcessor::copyXmlToBinary (old, oldState);
+        TriadTime c;
+        c.setStateInformation (oldState.getData(), (int) oldState.getSize());
+        require (std::abs (c.getShape (TriadTime::timeEnvelope, 0)[0].y - 0.75f) < 1.0e-6f, "Patterns saved before 0.10 keep their delays (one beat back is still one beat)");
     }
     // ---- Inside Triad: listed, loads, saves, reloads; LFO links keep the song position -------------------------------
     {
@@ -300,6 +311,16 @@ inline void run (const juce::File& screenshotFolder)
             if (auto* g = dynamic_cast<GeneratorPanel*> (c)) generator = g;
         }
         require (shapes != nullptr && generator != nullptr, "Triad Time's window has the LFO grid, palette and generator");
+        {
+            // The grid laid out as ShaperBox's: 64 columns and 16 rows for a 1-bar pattern (4 x 4 big squares), points snap to all.
+            auto& grid = shapes->getEditor();
+            require (grid.gridDivision == 64 && grid.columns() == 64 && grid.rows() == 16 && grid.snapRows() == 16,
+                     "Triad Time's grid: 64 columns and 16 rows for a 1-bar pattern, as ShaperBox's");
+            grid.gridDivision = 16;
+            require (grid.columns() == 16 && grid.rows() == 16, "...and the GRID button still sets the columns");
+            grid.gridDivision = 64;
+            require (std::abs (TriadTime::timeDepthInBeats (4.0) - 4.0) < 1.0e-9, "The TIME grid reaches one pattern length back (ShaperBox's \"As LFO Length\")");
+        }
         shapes->setPaletteCategory (1);
         require (shapes->getNumPaletteButtons() > 0, "The preset palette shows Triad's shapes");
         const auto before = t.getShape (TriadTime::timeEnvelope, 0);
@@ -310,6 +331,10 @@ inline void run (const juce::File& screenshotFolder)
         const auto generated = t.getShape (TriadTime::timeEnvelope, 0);
         require (generated.size() >= 2, "The dice draws a new TIME pattern");
         require (t.canUndo (TriadTime::timeEnvelope), "...as an undo step");
+        // The picture: two 1/16 repeats at the start, each one 1/16 wide and 1/16 back (as drawn in ShaperBox).
+        t.setShape (TriadTime::timeEnvelope, 0, { { 0.0f, 1.0f, 0.0f }, { 0.0625f, 0.9375f, 0.0f }, { 0.0625f, 1.0f, 0.0f }, { 0.125f, 0.9375f, 0.0f },
+                                                  { 0.125f, 1.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } }, false);
+        shapes->getEditor().reload();
         if (screenshotFolder != juce::File())
         {
             const auto file = screenshotFolder.getChildFile ("Triad-Time-preview.png");

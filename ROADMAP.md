@@ -4,7 +4,20 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.9.0 ("Triad v8"): split mode (Triad Split)
+## Current testing version — 0.10.0 ("Triad v9"): Triad Time's grid as in ShaperBox
+
+0.10.0 (2026-10-20), Thomas, comparing Triad Time with ShaperBox 3 side by side: "make the grid ... exactly the same as a
+shaper box ... a 4x4 square ... so there's more small points ... keep the LFO tab on Triad exactly the same":
+- **Triad Time's TIME grid** reaches one pattern length back (ShaperBox's "As LFO Length", Gross Beat's convention: the
+  diagonal holds the sound still) instead of two, with labels 0, -1/4 ... -4/4.
+- **ShaperBox's grid layout** in Triad Time (both envelopes): 4 x 4 big squares; across, quarters divided in 4 by
+  bright lines and in 4 again by faint ones (GRID 1/64, the new default: 64 columns for a 1-bar pattern); down, 16 rows;
+  points snap to all of them, so the same small repeats as in ShaperBox can be drawn (measured from Thomas's photo of
+  ShaperBox 3 at 1 bar: bright lines every 1/16, faint every 1/64, rows every 1/16 of the range).
+- The TIME presets keep their sound on the new grid; patterns saved with 0.8 / 0.9 are converted when they open.
+- Triad's LFO tab grid is unchanged (8 rows, its own snapping).
+
+### 0.9.0 ("Triad v8"): split mode (Triad Split)
 
 0.9.0 (2026-10-19), Thomas: "work on the split mode now ... another VST or tool that allows for that signal to be split
 between each band and put onto a new insert or mixer effect":
