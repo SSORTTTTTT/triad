@@ -217,6 +217,24 @@ Still to do from this list:
 
 Thomas will send fonts and aesthetic references soon; the theme work (see "Look and feel" below) starts then.
 
+### Later: colour theme in the settings (Thomas, 2026-10-20)
+
+Thomas: "easily change the color theme in the settings such as changing the background color of the plugin and the
+color of the lines specifically but keep the band colors in triad the same".
+- A **Theme** choice in the gear menu (Triad's, and the gears of Triad Time and Triad Split): a few ready-made themes
+  (today's dark one stays the default) and **Custom**.
+- Custom: a colour picker (or a hex code) for the **background**, the **panels**, the **lines** (the shapes drawn in
+  the LFO tab and Triad Time, the playheads) and the **grid lines**; maybe also text and the accent. Each has a
+  "back to default", and a preview shows while choosing.
+- **The ten band colours stay as they are** in every theme (band strips, band tabs, the frequency display).
+- Shared by every Triad, Triad Time and Triad Split on the Mac (stored in Triad.settings, like the pitch labels) and
+  shown at once in open windows; a theme could also be saved as a file to keep or share.
+- Readability guard: text, lines and labels stay readable on the chosen background (a warning, or lighter / darker
+  automatically).
+- To settle with Thomas when it starts: in the LFO tab the lines take their band's colour today; should they keep
+  it, or take the theme's line colour (with the band colour kept elsewhere)?
+- Built on the theme system planned in "Look and feel" below, and can come before the full redesign.
+
 ### Ideas from this work (later)
 
 - Drag an effect onto **another band's** strip to move it there (today: up and down within its band, or Copy / Paste
