@@ -1,5 +1,23 @@
 # Validation — Triad
 
+## Triad v10 (0.11.0), Triad Time and Triad Split on macOS — 2026-10-20
+
+Commit `73de26a`, run 39518825780 attempt 2 (macos-14 runner, virtual Apple M1). New in 0.11.0: Triad Time's grid with
+ShaperBox's proportions (3.48 : 1 across the whole window, knobs underneath; ShaperBox's labels and diagonal stripes)
+and pitch labels on the TIME lines (FWD / REV and semitones, FREEZE; Off / While dragging / Always in the settings).
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v10-0.11.0`, `Triad-Time-0.11.0`, `Triad-Split-0.11.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (Triad v10 over simulated Triad ... v9 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| Triad Time grid and pitch | Grid 1020 x 293 (aspect 3.481, ShaperBox 3.48); a cut from 0 to -1/16 over 1/8: 440 Hz in, 219.98 Hz out (-12 st); labels FWD -12 / -5 / -24 / +12 / +24 st, REV 0 / -12 / +12 st, FREEZE; the setting reaches an open window; Triad's LFO tab unchanged |
+| Real plug-ins (57) | 5 x 3,000 random edits (each in its own process) all passed: PASS, no crashes, no NaN/Inf output, all checks held |
+
+Sequence 779 crashed in two earlier runs of this release (0e82182 attempt 1: inside REEV-R's own message handling;
+73de26a attempt 1: the allocator found the heap damaged while Triad deleted a Dragonfly Hall Reverb, just after
+ChowMatrix and other Chowdhury plug-ins went); both times the sequence passed without the Chowdhury plug-ins, and the
+whole run passed when repeated. 0e82182 attempt 2 failed one new test (an open window took over 1.3 s to pick up a
+changed pitch-label setting); windows now check twice a second and the test allows 5 s.
+
 ## Triad v9 (0.10.0), Triad Time and Triad Split on macOS — 2026-10-20
 
 Commit `bda7754`, run 39484490130 attempt 2 (macos-14 runner, virtual Apple M1). New in 0.10.0: Triad Time's grid laid
