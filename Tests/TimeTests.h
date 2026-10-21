@@ -404,18 +404,21 @@ inline void run (const juce::File& screenshotFolder)
         grid.reload();
         {
             // The pitch labels setting (Triad Time's gear and Triad's gear share it): while dragging by default; Off; Always.
+            // An open window picks a change up within half a second; allow 5 s on a busy machine.
             juce::SharedResourcePointer<TriadSettings> settings;
-            const auto before = settings->getPitchLabels();
+            const auto pickedUp = [&grid] (int mode)
+            {
+                const auto start = juce::Time::getMillisecondCounter();
+                while (grid.getHost()->segmentLabelMode() != mode && juce::Time::getMillisecondCounter() - start < 5000)
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+                return grid.getHost()->segmentLabelMode() == mode;
+            };
             settings->setPitchLabels (TriadSettings::PitchLabels::dragging);
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (1300);
-            require (grid.getHost()->segmentLabelMode() == 1, "TIME labels show while dragging a point (the default)");
+            require (pickedUp (1), "TIME labels show while dragging a point (the default)");
             settings->setPitchLabels (TriadSettings::PitchLabels::off);
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (1300);
-            require (grid.getHost()->segmentLabelMode() == 0, "...the setting turns them off (picked up by an open window)");
+            require (pickedUp (0), "...the setting turns them off (picked up by an open window)");
             settings->setPitchLabels (TriadSettings::PitchLabels::always);
-            juce::MessageManager::getInstance()->runDispatchLoopUntil (1300);
-            require (grid.getHost()->segmentLabelMode() == 2, "...or shows them on every line");
-            juce::ignoreUnused (before);
+            require (pickedUp (2), "...or shows them on every line");
         }
         const auto held = grid.toScreen (grid.getShape()[1]);
         const auto now = juce::Time::getCurrentTime();

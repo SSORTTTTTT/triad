@@ -800,7 +800,7 @@ private:
     void timerCallback() override
     {
         shapes.updateToolbar();
-        if (++settingsTicks >= 15) { settingsTicks = 0; applyLabelMode (settings->getPitchLabels()); }   // changed in Triad's gear menu
+        if (++settingsTicks >= 8) { settingsTicks = 0; applyLabelMode (settings->getPitchLabels()); }   // changed in Triad's gear menu
     }
     // Every frame of the screen (up to 120 a second): a pattern switched by automation (or one of Triad's LFOs)
     // shows at once.
