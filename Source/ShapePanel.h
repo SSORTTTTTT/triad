@@ -32,6 +32,8 @@ struct ShapeHost
     // Triad Time's TIME: shaded below the corner-to-corner diagonal (where it reaches back before the cycle began), as
     // ShaperBox's Time view, instead of under the line.
     virtual bool shadeBelowDiagonal() const { return false; }
+    // Triad Time's TIME: its own preset folders (pitch and chops, TimePresets.h) in the palette, first in the folder menu.
+    virtual bool offersTimePresets() const { return false; }
     // The proportions ShaperBox draws its grid with (width / height of the plot, 1 bar across and 1 bar down).
     static constexpr float shaperBoxAspect = 3.48f;
     // A label on a straight line (Triad Time's TIME: what it plays, "FWD -12 st", "REV 0 st", "FREEZE"), and when the
@@ -136,6 +138,7 @@ public:
     // big folders have several pages (< and >, or the mouse wheel over the palette).
     static constexpr int paletteSize = 11;
     static constexpr int userFolder = 1000;   // the USER folder (saved shapes), after the preset folders
+    static constexpr int timeFolder = 2000;   // Triad Time's TIME folders: timeFolder + 0 ... (only for a host that offers them)
     void setPaletteCategory (int);            // a preset category, or userFolder
     int getPaletteCategory() const noexcept { return paletteCategory; }
     void setPalettePage (int);
@@ -162,6 +165,9 @@ private:
     struct PaletteShape { juce::String name; triad::mod::Shape shape; juce::File file; };
     std::vector<PaletteShape> paletteShapes() const;   // the shapes in the open folder
     juce::String paletteFolderName() const;
+    bool isTimeFolder (int category) const noexcept { return category >= timeFolder; }
+    bool timeHost() const { return host != nullptr && host->offersTimePresets(); }
+    int validCategory (int category) const;
 
     ShapeHost* host = nullptr;
     ShapeEditor editor;

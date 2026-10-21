@@ -1,6 +1,7 @@
 #pragma once
 #include "../Source/TriadTime.h"
 #include "../Source/ShapePanel.h"
+#include "../Source/TimePresets.h"
 #include <cmath>
 #include <iostream>
 
@@ -77,6 +78,13 @@ inline float biggestStep (const std::vector<float>& v, size_t from, size_t to)
     return m;
 }
 inline void setPlain (juce::RangedAudioParameter* p, float plain) { p->setValueNotifyingHost (p->convertTo0to1 (plain)); }
+// Clicks the TIME or VOLUME tab of a Triad Time window.
+inline void editorShowEnvelope (juce::Component& editor, int envelope)
+{
+    for (auto* c : editor.getChildren())
+        if (auto* b = dynamic_cast<juce::TextButton*> (c))
+            if (b->getButtonText() == (envelope == TriadTime::timeEnvelope ? "TIME" : "VOLUME")) { b->onClick(); return; }
+}
 
 inline void run (const juce::File& screenshotFolder)
 {
@@ -185,6 +193,72 @@ inline void run (const juce::File& screenshotFolder)
                  "Reversed and pitched: REV -12 st, REV +12 st");
         require (label (0.0f, 0.75f, 0.5f, 0.75f).isEmpty(), "A flat line (live or a steady delay) has no label");
         require (std::abs (TriadTime::segmentSpeed ({ 0.0f, 1.0f, 0.0f }, { 0.25f, 0.625f, 0.0f }) + 0.5) < 1.0e-9, "...REV -12 st is backwards at half speed");
+    }
+    // ---- The TIME folders trained on the Gross Beat banks: octave repitches forwards and backwards, and chops ---------------
+    {
+        namespace tp = triad::timePresets;
+        require (tp::numFolders == 5 && tp::numPresets == 120, "Five TIME folders, 120 patterns");
+        const auto minus = juce::String::fromUTF8 ("\xe2\x88\x92");
+        int onGrid = 0, inRange = 0;
+        std::array<int, 5> good {};
+        struct Line { double speed; float from, to; };
+        std::vector<std::pair<int, Line>> octaveLines;   // (preset, its longest octave line)
+        for (int i = 0; i < tp::numPresets; ++i)
+        {
+            const auto shape = tp::shape (i);
+            bool grid = juce::exactlyEqual (shape.front().x, 0.0f) && juce::exactlyEqual (shape.back().x, 1.0f), range = true;
+            int chops = 0;
+            bool down = false, up = false, rev = false;
+            Line longest { 1.0, 0.0f, 0.0f };
+            for (size_t k = 0; k < shape.size(); ++k)
+            {
+                const auto& p = shape[k];
+                grid &= std::abs (p.x * 64.0f - std::round (p.x * 64.0f)) < 1.0e-4f && std::abs (p.y * 16.0f - std::round (p.y * 16.0f)) < 1.0e-4f;
+                range &= p.y >= -1.0e-6f && p.y <= 1.0f + 1.0e-6f && (k == 0 || p.x >= shape[k - 1].x);
+                if (k == 0) continue;
+                const auto& a = shape[k - 1];
+                if (juce::exactlyEqual (a.x, p.x) && p.y < a.y - 1.0e-4f) ++chops;   // a jump further back: a chop
+                if (p.x - a.x < 1.0f / 16.0f - 1.0e-6f || std::abs (a.curve) > 1.0e-3f) continue;   // straight lines of a 1/16 bar or more
+                const auto text = TriadTime::pitchText (TriadTime::segmentSpeed (a, p));
+                down |= text == "FWD " + minus + "12 st" || text == "FWD " + minus + "24 st";
+                up |= text == "FWD +12 st" || text == "FWD +24 st";
+                rev |= text.startsWith ("REV");
+                const bool octave = text == "FWD " + minus + "12 st" || text == "FWD " + minus + "24 st" || text == "FWD +12 st" || text == "REV 0 st"
+                                    || text == "REV " + minus + "12 st";
+                if (octave && p.x - a.x > longest.to - longest.from) longest = { TriadTime::segmentSpeed (a, p), a.x, p.x };
+            }
+            onGrid += grid ? 1 : 0;
+            inRange += range ? 1 : 0;
+            const int folder = tp::entries[i].folder;
+            const bool ok = folder == 0 ? down : folder == 1 ? up : folder == 2 ? rev : folder == 3 ? chops >= 3 : (chops >= 2 && (down || up || rev));
+            good[(size_t) folder] += ok ? 1 : 0;
+            if (longest.to - longest.from >= 0.124f) octaveLines.push_back ({ i, longest });
+        }
+        std::cout << "TIME folders: " << onGrid << " of 120 on the grid, " << inRange << " in range; octave down " << good[0] << "/24, octave up " << good[1]
+                  << "/24, reverse " << good[2] << "/24, chops " << good[3] << "/24, pitch + chops " << good[4] << "/24" << std::endl;
+        require (onGrid == 120 && inRange == 120, "Every TIME folder pattern is on Triad Time's grid (1/64 bar, 1/16 bar back) and within one bar back");
+        require (good[0] == 24 && good[1] == 24 && good[2] == 24 && good[3] == 24 && good[4] == 24,
+                 "Each folder has what it is named for: a straight FWD -12 / -24, FWD +12 / +24, REV line; 3 chops; or 2 chops and an octave or reverse line");
+        // Played: the octave lines bend a 440 Hz tone by an octave (forwards or backwards).
+        int checked = 0, right = 0;
+        for (size_t k = 0; k < octaveLines.size() && checked < 12; k += juce::jmax ((size_t) 1, octaveLines.size() / 12), ++checked)
+        {
+            const auto& [index, line] = octaveLines[k];
+            TriadTime t;
+            t.prepareToPlay (rate, block);
+            setPlain (t.smoothing, 0.0f);
+            t.setShape (TriadTime::timeEnvelope, 0, tp::shape (index), false);
+            Head head;
+            const auto in = sine (samplesPerBeat * 8, 440.0, rate);
+            const auto out = run (t, head, in, block);
+            const auto bar = (double) samplesPerBeat * 4.0;
+            const auto from = (size_t) (bar * 1.0 + bar * line.from) + 600, to = (size_t) (bar * 1.0 + bar * line.to) - 600;
+            const double f = frequency (out, from, to, rate), expected = 440.0 * std::abs (line.speed);
+            if (std::abs (f - expected) < expected * 0.02) ++right;
+            else std::cout << "  " << tp::entries[index].name << ": expected " << expected << " Hz, got " << f << std::endl;
+        }
+        std::cout << "TIME folders played: " << right << " of " << checked << " octave / reverse lines bend 440 Hz as labelled" << std::endl;
+        require (checked >= 10 && right == checked, "The folders' octave and reverse lines bend the pitch as labelled when played");
     }
     // ---- SMOOTHING: repeats do not click ---------------------------------------------------------------------------------
     {
@@ -374,6 +448,22 @@ inline void run (const juce::File& screenshotFolder)
             require (std::abs (grid.plotAspect() - ShapeHost::shaperBoxAspect) < 0.03f, "Triad Time's grid has ShaperBox's proportions (3.48 : 1)");
             require (grid.plot().getWidth() > 0.9f * (float) editor->getWidth(), "...across the whole window, as ShaperBox's");
         }
+        require (shapes->getPaletteCategory() >= ShapePanel::timeFolder || shapes->getPaletteCategory() < 1000 || shapes->getPaletteCategory() == ShapePanel::userFolder,
+                 "TIME opens a folder");
+        shapes->setPaletteCategory (ShapePanel::timeFolder + 2);
+        require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2 && shapes->getNumPaletteButtons() == 11, "TIME has its own folders (REVERSE: 24 patterns, 11 a page)");
+        {
+            const auto beforeFolder = t.getShape (TriadTime::timeEnvelope, 0);
+            shapes->getPaletteButton (0)->onClick();
+            require (t.getShape (TriadTime::timeEnvelope, 0) == triad::timePresets::shape (triad::timePresets::presetsIn (2).front())
+                         && ! (beforeFolder == t.getShape (TriadTime::timeEnvelope, 0)), "A TIME folder pattern goes onto the grid");
+            t.setShape (TriadTime::timeEnvelope, 0, beforeFolder, false);
+            shapes->getEditor().reload();
+        }
+        editorShowEnvelope (*editor, TriadTime::volumeEnvelope);
+        require (shapes->getPaletteCategory() < ShapePanel::timeFolder, "VOLUME shows Triad's folders (the TIME folders are TIME's)");
+        editorShowEnvelope (*editor, TriadTime::timeEnvelope);
+        require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2, "...and back on TIME, the TIME folder chosen there");
         shapes->setPaletteCategory (1);
         require (shapes->getNumPaletteButtons() > 0, "The preset palette shows Triad's shapes");
         const auto before = t.getShape (TriadTime::timeEnvelope, 0);
@@ -442,6 +532,23 @@ inline void run (const juce::File& screenshotFolder)
             }
         }
         grid.mouseUp (press);
+        // The picture of the new folders: PITCH + CHOPS open, one of its patterns on the grid, every line labelled.
+        shapes->setPaletteCategory (ShapePanel::timeFolder + 4);
+        shapes->getPaletteButton (2)->onClick();
+        grid.reload();
+        if (screenshotFolder != juce::File())
+        {
+            const auto file = screenshotFolder.getChildFile ("Triad-Time-folders.png");
+            juce::FileOutputStream stream (file);
+            if (stream.openedOk())
+            {
+                stream.setPosition (0);
+                stream.truncate();
+                juce::PNGImageFormat png;
+                png.writeImageToStream (editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f), stream);
+                std::cout << "Screenshot: " << file.getFullPathName() << std::endl;
+            }
+        }
         juce::SharedResourcePointer<TriadSettings>()->setPitchLabels (TriadSettings::PitchLabels::dragging);
     }
     // ---- Triad's band MUTE --------------------------------------------------------------------------------------------------

@@ -4,7 +4,24 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.12.0 ("Triad v11"): colour themes
+## Current testing version — 0.13.0 ("Triad v12"): TIME folders trained on Gross Beat banks
+
+0.13.0 (2026-10-21), Thomas: "make another batch of presets trained only upon the lfos from the grossbeat presets I
+sent ... the best part about ... triad time is the repitching of melody either reversed or fwd being repitched an
+octave or two up or down and also the 90 degree square shaped parts of the preset that rechops the melody":
+- Read the time envelopes of the Gross Beat banks he sent (220 banks, 2,183 different time patterns; the format is
+  noted in tools/time-presets). What they do: straight lines mostly an octave down (1,205), reverse at normal pitch
+  (678), an octave up (199), reverse an octave down (171) or up (141), two octaves down (95); about 8,500 jumps (back to
+  live 58%, further back 17%, replaying the run just played 15%).
+- A generator trained only on those (lengths of the runs between jumps, what each run does, how the jumps go) made
+  **120 new TIME patterns** in five folders shown with TIME in Triad Time: OCTAVE DOWN, OCTAVE UP, REVERSE, CHOPS,
+  PITCH + CHOPS (24 each). Each is checked to be new (no copy of a bank pattern: at least 0.12 beats from every one),
+  on Triad Time's grid, within one bar back, and to have what its folder is named for. Tested: their octave and
+  reverse lines bend a 440 Hz tone as labelled.
+- Not copied as they are: the banks are mostly other producers' and sample companies' paid packs (DrumSelect,
+  DrumVault, TM88, The Kit Plug ...), and Triad is going to be released; they were used to learn the style only.
+
+### 0.12.0 ("Triad v11"): colour themes
 
 0.12.0 (2026-10-21), Thomas: "make a new version with the color picker and themes included ... make sure the color
 shades you can change it to don't conflict with ... the color used for the 10 existing bands":

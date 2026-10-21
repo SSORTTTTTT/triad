@@ -23,6 +23,8 @@ public:
     void setGenerator (float angular, float soft, float chaos);
     int getPaletteCategory() const;
     void setPaletteCategory (int);
+    int getTimePaletteCategory (int fallback) const;   // the folder open for Triad Time's TIME envelope
+    void setTimePaletteCategory (int);
 
     // Triad Time's pitch labels on the TIME grid's straight lines ("FWD -12 st", "REV 0 st", "FREEZE"): off, while a
     // point is dragged (the default), or always.

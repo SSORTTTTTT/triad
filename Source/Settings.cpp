@@ -101,6 +101,18 @@ int TriadSettings::getPaletteCategory() const
     reload();
     return file->getIntValue ("lfoPalette", 0);
 }
+int TriadSettings::getTimePaletteCategory (int fallback) const
+{
+    reload();
+    return file->getIntValue ("timePalette", fallback);
+}
+void TriadSettings::setTimePaletteCategory (int category)
+{
+    reload();
+    file->setValue ("timePalette", category);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
 void TriadSettings::setPaletteCategory (int category)
 {
     reload();

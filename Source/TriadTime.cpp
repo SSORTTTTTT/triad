@@ -575,6 +575,7 @@ struct EnvelopeHost final : ShapeHost
     }
     bool squareGrid() const override { return true; }
     bool shadeBelowDiagonal() const override { return envelope == TriadTime::timeEnvelope; }
+    bool offersTimePresets() const override { return envelope == TriadTime::timeEnvelope; }
     juce::String segmentLabel (const mod::Point& from, const mod::Point& to) const override
     {
         if (envelope != TriadTime::timeEnvelope) return {};

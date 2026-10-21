@@ -1,4 +1,5 @@
 #include "ShapePanel.h"
+#include "TimePresets.h"
 
 using namespace triad::ui;
 namespace mod = triad::mod;
@@ -782,21 +783,39 @@ ShapePanel::ShapePanel()
 ShapePanel::~ShapePanel() = default;
 void ShapePanel::setHost (ShapeHost* h)
 {
+    const bool wasTime = timeHost();
     host = h;
     editor.setHost (h);
+    // Triad Time's TIME envelope opens its own folders (and remembers the one chosen there); everything else Triad's.
+    if (timeHost() != wasTime || (! timeHost() && isTimeFolder (paletteCategory)))
+    {
+        const int wanted = timeHost() ? settings->getTimePaletteCategory (timeFolder) : settings->getPaletteCategory();
+        const int category = validCategory (wanted);
+        if (category != paletteCategory) { paletteCategory = category; palettePage = 0; rebuildPalette(); }
+    }
     updateToolbar();
+}
+int ShapePanel::validCategory (int category) const
+{
+    if (category == userFolder) return userFolder;
+    if (isTimeFolder (category)) return timeHost() ? juce::jlimit (timeFolder, timeFolder + triad::timePresets::numFolders - 1, category) : 0;
+    return juce::jlimit (0, mod::numPresetCategories() - 1, category);
 }
 std::vector<ShapePanel::PaletteShape> ShapePanel::paletteShapes() const
 {
     std::vector<PaletteShape> list;
     if (paletteCategory == userFolder)
         for (auto& e : triad::userShapes::load()) list.push_back ({ e.name, std::move (e.shape), e.file });
+    else if (isTimeFolder (paletteCategory))
+        for (const int i : triad::timePresets::presetsIn (paletteCategory - timeFolder))
+            list.push_back ({ triad::timePresets::entries[i].name, triad::timePresets::shape (i), {} });
     else
         for (const int i : mod::presetsIn (paletteCategory)) list.push_back ({ mod::presetName (i), mod::preset (i), {} });
     return list;
 }
 juce::String ShapePanel::paletteFolderName() const
 {
+    if (isTimeFolder (paletteCategory)) return triad::timePresets::folderNames[juce::jlimit (0, triad::timePresets::numFolders - 1, paletteCategory - timeFolder)];
     return paletteCategory == userFolder ? juce::String ("USER") : mod::presetCategoryName (paletteCategory);
 }
 void ShapePanel::rebuildPalette()
@@ -832,11 +851,12 @@ int ShapePanel::getNumPalettePages() const
 }
 void ShapePanel::setPaletteCategory (int category)
 {
-    category = category == userFolder ? userFolder : juce::jlimit (0, mod::numPresetCategories() - 1, category);
+    category = validCategory (category);
     if (category == paletteCategory && ! presetButtons.empty()) return;
     paletteCategory = category;
     palettePage = 0;
-    settings->setPaletteCategory (category);
+    if (timeHost()) settings->setTimePaletteCategory (category);
+    else settings->setPaletteCategory (category);
     rebuildPalette();
 }
 void ShapePanel::setPalettePage (int page)
@@ -866,7 +886,8 @@ juce::File ShapePanel::saveShapeToUser (const juce::String& name)
     }
     if (host != nullptr) host->setStatus ("Saved shape \"" + file.getFileNameWithoutExtension() + "\" to USER");
     paletteCategory = userFolder;
-    settings->setPaletteCategory (userFolder);
+    if (timeHost()) settings->setTimePaletteCategory (userFolder);
+    else settings->setPaletteCategory (userFolder);
     const auto list = paletteShapes();
     for (int k = 0; k < (int) list.size(); ++k)
         if (list[(size_t) k].file == file) palettePage = k / paletteSize;
@@ -904,6 +925,12 @@ void ShapePanel::showCategoryMenu()
         const int pages = (count + paletteSize - 1) / paletteSize;
         menu.addItem (id, name + "  (" + juce::String (count) + (pages > 1 ? ", " + juce::String (pages) + " pages)" : ")"), true, ticked);
     };
+    if (timeHost())
+    {
+        menu.addSectionHeader ("TRIAD TIME: PITCH AND CHOPS (TRAINED ON GROSS BEAT BANKS)");
+        for (int f = 0; f < triad::timePresets::numFolders; ++f)
+            add (timeFolder + f + 1, triad::timePresets::folderNames[f], (int) triad::timePresets::presetsIn (f).size(), paletteCategory == timeFolder + f);
+    }
     menu.addSectionHeader ("SHAPES BY TYPE");
     bool generatedHeader = false;
     for (int c = 0; c < mod::numPresetCategories(); ++c)
