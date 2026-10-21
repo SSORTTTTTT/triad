@@ -19,7 +19,7 @@ shades you can change it to don't conflict with ... the color used for the 10 ex
 - **Kept clear of the band colours**: a theme colour picked closer to a band colour than the bands are to each other
   (CIE delta E 20; the closest two bands are 18 apart) is moved the least it takes; backgrounds stay dark enough for
   every band (contrast 2.2 or more). The ready-made themes keep at least 23.6 from every band. Triad's own theme is
-  unchanged (its green accent is Band 1's colour) — to settle with Thomas whether it should change too.
+  unchanged (its green accent is Band 1's colour): Thomas, 2026-10-21, "No keep the default theme".
 - **RANDOM COLOURWAY** (Thomas: "a random colorway generator that makes a color scheme that doesn't clash with any
   others ... save it as default for all triads ... save it and title it how you want"): dark backgrounds tinted from
   one hue, an accent and the two Triad Time lines from a colour scheme around it (complementary, split, triadic...);
