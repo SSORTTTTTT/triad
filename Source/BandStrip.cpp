@@ -113,7 +113,7 @@ void SlotRow::paint (juce::Graphics& g)
         g.fillEllipse (light.expanded (2.5f));
         g.setColour (ledColour);
     }
-    else g.setColour (juce::Colour (0xff4a504c));
+    else g.setColour (currentPalette.ledOff);
     g.fillEllipse (light);
 }
 void SlotRow::animate (double dt)
@@ -145,7 +145,7 @@ void SlotRow::paintOverChildren (juce::Graphics& g)
     const float radius = k.getWidth() * 0.5f + 1.0f;
     const auto centre = k.getCentre();
     const auto dot = centre.getPointOnCircumference (radius, angle);
-    g.setColour (juce::Colours::white);
+    g.setColour (currentPalette.marker);
     g.fillEllipse (juce::Rectangle<float> (4.5f, 4.5f).withCentre (dot));
 }
 void SlotRow::mouseDown (const juce::MouseEvent& e)
@@ -263,12 +263,9 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
     for (auto* label : { &startLabel, &endLabel })
     {
         label->setFont (juce::FontOptions (13.0f));
-        label->setColour (juce::Label::textColourId, juce::Colour (0xffbac4b8));
-        label->setColour (juce::Label::textWhenEditingColourId, textColour);
-        label->setColour (juce::Label::backgroundWhenEditingColourId, juce::Colour (0xff0d0f0e));
-        label->setColour (juce::Label::outlineWhenEditingColourId, colour);
         if (! isExtra()) addAndMakeVisible (*label);
     }
+    lookAndFeelChanged();
     startLabel.setJustificationType (juce::Justification::centredLeft);
     endLabel.setJustificationType (juce::Justification::centredRight);
     startLabel.onTextChange = [this] { if (auto hz = parseHz (startLabel.getText()); hz > 0.0f && band > 0) host.setCrossoverFrequency (band - 1, hz); };
@@ -464,6 +461,17 @@ void BandStrip::resized()
     volume.setBounds (10, footerTop + 26, w - 96, 18);
     muteButton.setBounds (12, footerTop + 62, 50, 22);
 }
+void BandStrip::lookAndFeelChanged()
+{
+    // The frequency labels' colours follow the theme.
+    for (auto* label : { &startLabel, &endLabel })
+    {
+        label->setColour (juce::Label::textColourId, currentPalette.softText);
+        label->setColour (juce::Label::textWhenEditingColourId, textColour);
+        label->setColour (juce::Label::backgroundWhenEditingColourId, currentPalette.field);
+        label->setColour (juce::Label::outlineWhenEditingColourId, colour);
+    }
+}
 void BandStrip::paint (juce::Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
@@ -472,10 +480,10 @@ void BandStrip::paint (juce::Graphics& g)
     g.setColour (colour); g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     g.drawText (isPre() ? juce::String ("PRE") : isPost() ? juce::String ("POST") : "BAND " + juce::String (band + 1), 23, 8, getWidth() - 90, 24,
                 juce::Justification::centredLeft);
-    g.setColour (juce::Colour (0xff778275)); g.setFont (juce::FontOptions (12.0f));
+    g.setColour (currentPalette.faintText); g.setFont (juce::FontOptions (12.0f));
     if (isExtra())
     {
-        g.setColour (juce::Colour (0xffbac4b8)); g.setFont (juce::FontOptions (12.0f));
+        g.setColour (currentPalette.softText); g.setFont (juce::FontOptions (12.0f));
         g.drawText (isPre() ? "Full range, before the bands" : "Full range, after the bands", 10, 31, getWidth() - 20, 22, juce::Justification::centredLeft);
     }
     else g.drawText (juce::String::fromUTF8 ("\xe2\x86\x92"), getWidth() / 2 - 10, 31, 20, 22, juce::Justification::centred);
@@ -503,13 +511,13 @@ void BandStrip::paint (juce::Graphics& g)
         return;
     }
     // Volume: label and value, slider (a component), then the level meter.
-    g.setColour (juce::Colour (0xffa5afa2)); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    g.setColour (dimTextColour); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
     g.drawText ("VOLUME", left, footerTop + 8, 80, 16, juce::Justification::centredLeft);
     const auto db = (float) volume.getValue();
     g.setColour (textColour); g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
     g.drawText ((db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB", right - 80, footerTop + 8, 80, 16, juce::Justification::centredRight);
     const auto meter = meterArea().toFloat();
-    g.setColour (juce::Colour (0xff111312)); g.fillRoundedRectangle (meter, 2.0f);
+    g.setColour (gridBackground); g.fillRoundedRectangle (meter, 2.0f);
     auto position = [&meter] (float gain)
     {
         const float dbValue = juce::jlimit (-60.0f, 6.0f, juce::Decibels::gainToDecibels (gain, -60.0f));
@@ -546,7 +554,7 @@ void BandStrip::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
         g.drawText ("MUTED", getWidth() - 110, 8, 46, 24, juce::Justification::centredRight);
     }
-    g.setColour (juce::Colour (0xffa5afa2)); g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    g.setColour (dimTextColour); g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
     g.drawText ("BAND MIX", getWidth() - 80, footerTop + 70, 70, 16, juce::Justification::centred);
 }
 void BandStrip::paintOverChildren (juce::Graphics& g)

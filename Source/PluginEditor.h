@@ -5,6 +5,7 @@
 #include "MatrixPage.h"
 #include "PluginCatalog.h"
 #include "Settings.h"
+#include "Theme.h"
 
 using TriadLook = triad::ui::TriadLook;
 
@@ -89,6 +90,9 @@ public:
     triad::ui::IconButton& getUndoButton() noexcept { return undoButton; }
     triad::ui::IconButton& getRedoButton() noexcept { return redoButton; }
     bool loadChain (int band, const juce::File&);
+    // Colours (the gear menu's THEME: Edit colours...), laid over the whole window.
+    void openThemePanel() { themePanel.open(); }
+    triad::ui::ThemePanel& getThemePanel() noexcept { return themePanel; }
 
 private:
     class Content final : public juce::Component
@@ -135,7 +139,7 @@ private:
     TabButton bandsTab { "BANDS" }, lfoTab { "LFO" }, matrixTab { "MATRIX" };
     std::array<TabButton*, 3> tabButtons { &bandsTab, &lfoTab, &matrixTab };
     PresetButton presetButton;
-    triad::ui::IconButton gearButton { triad::ui::IconButton::Icon::gear, "Settings: effect list, window size, presets folder" };
+    triad::ui::IconButton gearButton { triad::ui::IconButton::Icon::gear, "Settings: effect list, window size, theme and colours, presets" };
     triad::ui::IconButton undoButton { triad::ui::IconButton::Icon::undo, "Undo" }, redoButton { triad::ui::IconButton::Icon::redo, "Redo" };
     juce::Component bandsPage;
     CrossoverDisplay frequencyDisplay;
@@ -150,11 +154,14 @@ private:
     MatrixPage matrixPage;
     juce::Label status;
     NamePrompt prompt;
+    triad::ui::ThemePanel themePanel;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::TooltipWindow tooltips { this, 700 };
     Tab tab = Tab::bands;
     double scale = 1.0;
     int builtCount = -1;
     struct Drag { int band = -1; float startMouse = 0.0f; int startX = 0; bool active = false; int target = -1; } drag;
+    void themeChanged();
+    triad::ui::ThemeWatcher themeWatcher { [this] { themeChanged(); } };   // last: the window is built when it first calls
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TriadEditor)
 };

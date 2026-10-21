@@ -4,7 +4,33 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.11.0 ("Triad v10"): Triad Time's grid with ShaperBox's proportions
+## Current testing version — 0.12.0 ("Triad v11"): colour themes
+
+0.12.0 (2026-10-21), Thomas: "make a new version with the color picker and themes included ... make sure the color
+shades you can change it to don't conflict with ... the color used for the 10 existing bands":
+- **THEME** in the gear menu of Triad, Triad Time and Triad Split (Triad Split got a gear): Triad (default), Midnight,
+  Graphite, Black, Plum, Forest, the themes you saved, Custom, and **Edit colours...**.
+- **Edit colours**: a row per colour (background, panels, buttons and slots, grids and displays, grid lines, text,
+  accent, Triad Time's TIME and VOLUME lines) with a swatch, a hex code and "back to Triad's colour"; a colour picker
+  for the chosen one; Start from any theme; MAKE READABLE; SAVE AS (~/Music/Triad/Themes/*.triadtheme). Changes show
+  at once in every window; one theme for all three plug-ins (Triad.settings), followed by open windows within half a
+  second.
+- **Band colours untouched**, and Triad's LFO lines keep their band colour; Triad Time's lines can be any colour.
+- **Kept clear of the band colours**: a theme colour picked closer to a band colour than the bands are to each other
+  (CIE delta E 20; the closest two bands are 18 apart) is moved the least it takes; backgrounds stay dark enough for
+  every band (contrast 2.2 or more). The ready-made themes keep at least 23.6 from every band. Triad's own theme is
+  unchanged (its green accent is Band 1's colour) — to settle with Thomas whether it should change too.
+- **RANDOM COLOURWAY** (Thomas: "a random colorway generator that makes a color scheme that doesn't clash with any
+  others ... save it as default for all triads ... save it and title it how you want"): dark backgrounds tinted from
+  one hue, an accent and the two Triad Time lines from a colour scheme around it (complementary, split, triadic...);
+  every roll readable, clear of the band colours, its accent and lines clearly different, not a copy of a ready-made
+  theme (300 rolls tested: all passed, 297 different backgrounds). The theme left in the panel (DONE) is every Triad's,
+  Triad Time's and Triad Split's from then on; CANCEL goes back to the one before; SAVE AS names it.
+- Every colour of the interface now comes from the theme (knobs, sliders, LEDs, meters' backgrounds, grid lines,
+  playheads, pills, menus, tooltips, text fields); status colours (latency amber / red, clip red, MUTE, LIVE, the
+  like / dislike buttons) keep their meaning in every theme.
+
+### 0.11.0 ("Triad v10"): Triad Time's grid with ShaperBox's proportions
 
 0.11.0 (2026-10-20), Thomas: "when I'm doing the little triangular cut, it's not pitching things down the same ... only
 by five semitones or seven semitones not the full 12 ... I need the triad time grid to have the same point and same
@@ -217,7 +243,7 @@ Still to do from this list:
 
 Thomas will send fonts and aesthetic references soon; the theme work (see "Look and feel" below) starts then.
 
-### Later: colour theme in the settings (Thomas, 2026-10-20)
+### Colour theme in the settings (Thomas, 2026-10-20) — done in 0.12.0
 
 Thomas: "easily change the color theme in the settings such as changing the background color of the plugin and the
 color of the lines specifically but keep the band colors in triad the same".

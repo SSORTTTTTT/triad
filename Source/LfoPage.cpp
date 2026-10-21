@@ -30,7 +30,7 @@ public:
         g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
         g.drawFittedText (line2, area, juce::Justification::centredLeft, 1, 0.8f);
         const auto light = juce::Rectangle<float> ((float) getWidth() - 16.0f, 7.0f, 8.0f, 8.0f);
-        g.setColour (active ? ledColour : juce::Colour (0xff4a504c));
+        g.setColour (active ? ledColour : currentPalette.ledOff);
         g.fillEllipse (light);
     }
 private:
@@ -152,12 +152,22 @@ void LfoPage::refresh()
     for (auto& row : routeRows) row->update();
     updateToolbar();
 }
+void LfoPage::colourBandButtons()
+{
+    for (size_t i = 0; i < bandButtons.size() && i < bandButtonIndex.size(); ++i)
+    {
+        const int index = bandButtonIndex[i];
+        bandButtons[i]->setColour (juce::TextButton::buttonColourId, index == band ? bandColour (index).withAlpha (0.85f) : slotRow);
+        bandButtons[i]->setColour (juce::TextButton::textColourOffId, index == band ? inkColour : bandColour (index));
+    }
+}
 void LfoPage::rebuild()
 {
     builtSignature = signature();
     host.band = band; host.lfo = lfo;
     shapes.setHost (&host);
     bandButtons.clear();
+    bandButtonIndex.clear();
     // PRE first, then the bands, then POST: each has its own LFOs, like a band.
     const int count = processor.getBandCount();
     for (int b = -1; b <= count; ++b)
@@ -165,12 +175,12 @@ void LfoPage::rebuild()
         const int index = b < 0 ? TriadProcessor::preBand : b == count ? TriadProcessor::postBand : b;
         auto button = std::make_unique<juce::TextButton> (TriadProcessor::isExtraChain (index) ? TriadProcessor::chainName (index)
                                                                                               : count > 8 ? "B" + juce::String (b + 1) : "BAND " + juce::String (b + 1));
-        button->setColour (juce::TextButton::buttonColourId, index == band ? bandColour (index).withAlpha (0.85f) : slotRow);
-        button->setColour (juce::TextButton::textColourOffId, index == band ? juce::Colour (0xff111312) : bandColour (index));
         button->onClick = [this, index] { select (index, juce::jmax (0, processor.getBandLfo (index))); };
         addAndMakeVisible (*button);
         bandButtons.push_back (std::move (button));
+        bandButtonIndex.push_back (index);
     }
+    colourBandButtons();
     tabs.clear();
     for (int i = 0; i < processor.getLfoCount (band); ++i)
     {

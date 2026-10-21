@@ -26,7 +26,7 @@ public:
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         const auto r = getLocalBounds().toFloat().reduced (1.0f);
-        g.setColour (down ? juce::Colour (0xff3d4a36) : over ? slotRowHover : juce::Colour (0xff1a1d1c));
+        g.setColour (down ? currentPalette.controlsOn : over ? slotRowHover : currentPalette.paletteButton);
         g.fillRoundedRectangle (r, 4.0f);
         const auto area = r.reduced (6.0f, 5.0f);
         // Drawn from the shape's own points (steps exactly, curves finely), so dense shapes stay crisp.
@@ -268,7 +268,8 @@ void ShapeEditor::paint (juce::Graphics& g)
     const triad::ui::FramePacer::Timed timed (*pacer);
     const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     auto key = (juce::uint64) (juce::String (getWidth()) + "x" + juce::String (getHeight()) + "@" + juce::String (scale) + "/" + juce::String ((juce::int64) shapeColour().getARGB())
-                               + "/" + juce::String (columns()) + "/" + juce::String (hoverPoint) + "/" + juce::String (hoverCurve)).hashCode64();
+                               + "/" + juce::String (columns()) + "/" + juce::String (hoverPoint) + "/" + juce::String (hoverCurve)
+                               + "/t" + juce::String (themeGeneration)).hashCode64();
     auto mix = [&key] (int v) { key = key * 1099511628211ull + (juce::uint64) (juce::uint32) v; };
     for (const auto& p : shape) { mix (juce::roundToInt (p.x * 1.0e6f)); mix (juce::roundToInt (p.y * 1.0e6f)); mix (juce::roundToInt (p.curve * 1.0e4f)); }
     for (bool b : selected) mix (b ? 7 : 3);
@@ -301,9 +302,9 @@ void ShapeEditor::paint (juce::Graphics& g)
     {
         const auto r = plot();
         const auto p = toScreen ({ phase, mod::evaluate (shape, phase), 0.0f });
-        g.setColour (juce::Colours::white.withAlpha (0.35f));
+        g.setColour (currentPalette.marker.withAlpha (0.35f));
         g.fillRect (juce::Rectangle<float> (p.x - 0.75f, r.getY(), 1.5f, r.getHeight()));   // at sub-pixel positions: glides
-        g.setColour (juce::Colours::white);
+        g.setColour (currentPalette.marker);
         g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre (p));
     }
 }
@@ -322,12 +323,12 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         for (int c = 0; c <= cols; ++c)
         {
             const float alpha = (c * 4) % cols == 0 ? 0.40f : (c * 16) % cols == 0 ? 0.26f : 0.13f;
-            g.setColour (juce::Colour (0xffcfd5cc).withAlpha (alpha));
+            g.setColour (currentPalette.gridLines.withAlpha (alpha));
             g.drawVerticalLine (juce::roundToInt (r.getX() + r.getWidth() * (float) c / (float) cols), r.getY(), r.getBottom());
         }
         for (int row = 0; row <= 16; ++row)
         {
-            g.setColour (juce::Colour (0xffcfd5cc).withAlpha (row % 4 == 0 ? 0.40f : 0.13f));
+            g.setColour (currentPalette.gridLines.withAlpha (row % 4 == 0 ? 0.40f : 0.13f));
             g.drawHorizontalLine (juce::roundToInt (r.getY() + r.getHeight() * (float) row / 16.0f), r.getX(), r.getRight());
         }
     }
@@ -336,14 +337,14 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
     {
         const float x = r.getX() + r.getWidth() * (float) c / (float) cols;
         const bool quarter = (c * 4) % cols == 0;
-        g.setColour (juce::Colour (0xffcfd5cc).withAlpha (quarter ? 0.22f : 0.07f));
+        g.setColour (currentPalette.gridLines.withAlpha (quarter ? 0.22f : 0.07f));
         g.drawVerticalLine (juce::roundToInt (x), r.getY(), r.getBottom());
     }
     if (! isSquareGrid())
         for (int row = 0; row <= 8; ++row)
         {
             const float y = r.getY() + r.getHeight() * (float) row / 8.0f;
-            g.setColour (juce::Colour (0xffcfd5cc).withAlpha (row % 4 == 0 ? 0.2f : 0.07f));
+            g.setColour (currentPalette.gridLines.withAlpha (row % 4 == 0 ? 0.2f : 0.07f));
             g.drawHorizontalLine (juce::roundToInt (y), r.getX(), r.getRight());
         }
     g.setFont (juce::FontOptions (10.0f));
@@ -396,7 +397,7 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         fill.addTriangle (r.getTopLeft(), r.getBottomRight(), r.getBottomLeft());
         juce::Graphics::ScopedSaveState state (g);
         g.reduceClipRegion (fill);
-        g.setColour (juce::Colour (0xffcfd5cc).withAlpha (0.045f));
+        g.setColour (currentPalette.gridLines.withAlpha (0.045f));
         for (float x = r.getX() - r.getHeight(); x < r.getRight(); x += 8.0f)
             g.drawLine (x, r.getBottom(), x + r.getHeight(), r.getY(), 3.5f);
     }
@@ -412,7 +413,7 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
     }
     if (host != nullptr && host->shadeBelowDiagonal())
     {
-        g.setColour (juce::Colour (0xffcfd5cc).withAlpha (0.12f));
+        g.setColour (currentPalette.gridLines.withAlpha (0.12f));
         g.drawLine ({ r.getTopLeft(), r.getBottomRight() }, 1.2f);
     }
     g.setColour (colour);
@@ -437,9 +438,9 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         const auto p = toScreen (shape[i]);
         const bool sel = i < selected.size() && selected[i];
         const float radius = pointRadius + (hoverPoint == (int) i ? 1.5f : 0.0f);
-        g.setColour (sel ? colour : juce::Colour (0xfff2f5ef));
+        g.setColour (sel ? colour : currentPalette.marker);
         g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (p));
-        if (sel) { g.setColour (juce::Colours::white); g.drawEllipse (juce::Rectangle<float> (radius * 2.0f + 3.0f, radius * 2.0f + 3.0f).withCentre (p), 1.2f); }
+        if (sel) { g.setColour (currentPalette.marker); g.drawEllipse (juce::Rectangle<float> (radius * 2.0f + 3.0f, radius * 2.0f + 3.0f).withCentre (p), 1.2f); }
     }
 }
 
@@ -774,7 +775,6 @@ ShapePanel::ShapePanel()
     nextPage.onClick = [this] { setPalettePage (palettePage + 1); };
     pageLabel.setJustificationType (juce::Justification::centred);
     pageLabel.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    pageLabel.setColour (juce::Label::textColourId, triad::ui::dimTextColour);
     pageLabel.setTooltip ("Page (the mouse wheel over the shapes turns the pages)");
     for (auto* c : std::initializer_list<juce::Component*> { &prevPage, &nextPage, &pageLabel }) addAndMakeVisible (*c);
     rebuildPalette();
@@ -1090,11 +1090,7 @@ GeneratorPanel::GeneratorPanel()
     hardStyleButton.onClick = [this] { setStyle (1.0f, 0.0f, (float) chaosSlider.getValue() * 0.01f); };
     mixStyleButton.onClick = [this] { setStyle (1.0f, 0.6f, (float) chaosSlider.getValue() * 0.01f); };
     softStyleButton.onClick = [this] { setStyle (0.0f, 1.0f, (float) chaosSlider.getValue() * 0.01f); };
-    for (auto* b : { &hardStyleButton, &mixStyleButton, &softStyleButton })
-    {
-        b->setColour (juce::TextButton::buttonColourId, slotRow);
-        addAndMakeVisible (*b);
-    }
+    for (auto* b : { &hardStyleButton, &mixStyleButton, &softStyleButton }) addAndMakeVisible (*b);
     generateButton = std::make_unique<GenerateButton>();
     generateButton->onClick = [this] { generate(); };
     addAndMakeVisible (*generateButton);

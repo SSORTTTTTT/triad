@@ -91,9 +91,9 @@ void BandMatrix::paint (juce::Graphics& g)
         g.drawText (formatHz (lo) + u8 ("  \xe2\x86\x92  ") + formatHz (hi), getWidth() - 190, 8, 176, 24, juce::Justification::centredRight);
     }
     // Column titles, as in Serum's and Omnisphere's matrix.
-    g.setColour (juce::Colour (0xff2b2f2d));
+    g.setColour (currentPalette.controls.interpolatedWith (currentPalette.panel, 0.2f));
     g.fillRect (8, 40, getWidth() - 16, 22);
-    g.setColour (juce::Colour (0xffb8bfb5));
+    g.setColour (currentPalette.softText);
     g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
     const int x0 = 8 + 4 + 22;
     const int usable = getWidth() - 16 - 8 - 22 - 26 - 8;

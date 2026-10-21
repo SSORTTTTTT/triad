@@ -21,6 +21,7 @@ void require (bool b, const char* message) { if (! b) throw std::runtime_error (
 #include "TimeTests.h"
 #include "SplitTests.h"
 #include "FrameTests.h"
+#include "ThemeTests.h"
 
 namespace
 {
@@ -378,6 +379,8 @@ int main (int argc, char** argv)
         if (splitVst3.exists()) splitTests::runHosted (splitVst3);
         testStage = "frame rate and smooth motion";
         frameTests::run();
+        testStage = "colour themes";
+        themeTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
         testStage = "running the tests";
 
         // ---- Built-in Linkwitz-Riley filter equals JUCE's -----------------------------------

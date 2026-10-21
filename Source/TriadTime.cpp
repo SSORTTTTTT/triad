@@ -1,5 +1,6 @@
 #include "TriadTime.h"
 #include "ShapePanel.h"
+#include "Theme.h"
 #include "TriadIdentity.h"
 
 namespace mod = triad::mod;
@@ -540,7 +541,9 @@ void TriadTime::setStateInformation (const void* data, int size)
 // ---- Editor -----------------------------------------------------------------------------------------------------
 namespace
 {
-const juce::Colour timeColour (0xff6fb7e9), volumeColour (0xffe9a96f);
+// The TIME and VOLUME colours (lines, tabs, knobs): from the theme, any colour Thomas likes.
+const juce::Colour& timeColour = currentPalette.timeLine;
+const juce::Colour& volumeColour = currentPalette.volumeLine;
 
 struct EnvelopeHost final : ShapeHost
 {
@@ -659,6 +662,7 @@ public:
         }
         gearButton.onClick = [this] { showGearMenu(); };
         addAndMakeVisible (gearButton);
+        addChildComponent (themePanel);
         applyLabelMode (settings->getPitchLabels());
         showEnvelope (TriadTime::timeEnvelope);
         // The grid spans the whole window at ShaperBox's proportions (1 bar across is 3.48 x 1 bar down), so a line drawn at
@@ -678,8 +682,8 @@ public:
             const auto c = tab == &timeTab ? timeColour : volumeColour;
             tab->setColour (juce::TextButton::buttonColourId, tab->getToggleState() ? c.withAlpha (0.85f) : slotRow);
             tab->setColour (juce::TextButton::buttonOnColourId, c.withAlpha (0.85f));
-            tab->setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
-            tab->setColour (juce::TextButton::textColourOffId, tab->getToggleState() ? juce::Colour (0xff111312) : c);
+            tab->setColour (juce::TextButton::textColourOnId, inkColour);
+            tab->setColour (juce::TextButton::textColourOffId, tab->getToggleState() ? inkColour : c);
         }
         shapes.lengthTooltip = e == TriadTime::timeEnvelope ? "TIME length: one cycle of the pattern (up to 2 bars; the grid reaches one cycle back, as in ShaperBox)"
                                                             : "VOLUME length: one cycle of the gate";
@@ -726,17 +730,32 @@ public:
         menu.addItem (1, "Off", true, mode == TriadSettings::PitchLabels::off);
         menu.addItem (2, "While dragging a point", true, mode == TriadSettings::PitchLabels::dragging);
         menu.addItem (3, "Always, on every line", true, mode == TriadSettings::PitchLabels::always);
-        menu.addSeparator();
         menu.addItem (-1, "FWD / REV: which way it plays; st: semitones up or down", false);
+        triad::ui::addThemeItems (menu, themeBase);
         juce::Component::SafePointer<TriadTimeEditor> safe (this);
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&gearButton), [safe] (int choice)
         {
-            if (safe == nullptr || choice < 1 || choice > 3) return;
+            if (safe == nullptr) return;
+            if (triad::ui::handleThemeChoice (choice, themeBase, [safe] { if (safe != nullptr) safe->openThemePanel(); })) return;
+            if (choice < 1 || choice > 3) return;
             const auto next = (TriadSettings::PitchLabels) (choice - 1);
             safe->settings->setPitchLabels (next);
             safe->applyLabelMode (next);
         });
     }
+    // Colours (the gear's THEME: Edit colours...), over the whole window.
+    void openThemePanel() { themePanel.open(); }
+    void themeChanged()
+    {
+        // A new theme (from here or another plug-in): re-colour what was set up once, then redraw everything.
+        look.applyTheme();
+        for (auto* knob : { &timeMixKnob, &smoothingKnob }) knob->setColour (juce::Slider::rotarySliderFillColourId, timeColour);
+        for (auto* knob : { &volumeMixKnob, &attackKnob, &releaseKnob }) knob->setColour (juce::Slider::rotarySliderFillColourId, volumeColour);
+        showEnvelope (envelope);
+        sendLookAndFeelChange();
+        repaint();
+    }
+    static constexpr int themeBase = 100;
     // Heights of the rows under the header, and the window height that gives the grid ShaperBox's proportions.
     static constexpr int slotRowHeight = 46, bottomRowHeight = GeneratorPanel::preferredHeight;
     static int shapesHeightFor (int shapesWidth)
@@ -751,6 +770,7 @@ public:
         auto r = getLocalBounds().reduced (16, 0);
         auto header = r.removeFromTop (44);
         gearButton.setBounds (header.removeFromRight (30).withSizeKeepingCentre (30, 28));
+        themePanel.setBounds (getLocalBounds());
         header.removeFromLeft (270);   // TRIAD TIME by Thomas Ross
         auto tabs = header.withSizeKeepingCentre (header.getWidth(), 30);
         timeTab.setBounds (tabs.removeFromLeft (92));
@@ -819,7 +839,7 @@ private:
     int shown[2] { -1, -1 };
     EnvelopeHost timeHost { processor, TriadTime::timeEnvelope }, volumeHost { processor, TriadTime::volumeEnvelope };
     juce::TextButton timeTab { "TIME" }, volumeTab { "VOLUME" };
-    triad::ui::IconButton gearButton { triad::ui::IconButton::Icon::gear, "Settings: pitch labels on the TIME lines (FWD / REV and semitones)" };
+    triad::ui::IconButton gearButton { triad::ui::IconButton::Icon::gear, "Settings: pitch labels on the TIME lines, theme and colours" };
     juce::SharedResourcePointer<TriadSettings> settings;
     int settingsTicks = 0;
     std::vector<std::unique_ptr<SlotButton>> slots;
@@ -832,6 +852,8 @@ private:
     double lastFrame = 0.0;
     juce::SharedResourcePointer<triad::ui::FramePacer> pacer;
     juce::VBlankAttachment frames { this, [this] (double t) { frame (t); } };
+    triad::ui::ThemePanel themePanel;
+    triad::ui::ThemeWatcher themeWatcher { [this] { themeChanged(); } };   // last: the window is built when it first calls
 };
 }
 

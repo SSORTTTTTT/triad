@@ -1,4 +1,5 @@
 #include "Look.h"
+#include "Theme.h"
 
 namespace triad::ui
 {
@@ -11,7 +12,7 @@ IconButton::IconButton (Icon i, const juce::String& tip) : Button (tip), icon (i
 void IconButton::paintButton (juce::Graphics& g, bool over, bool down)
 {
     const auto r = getLocalBounds().toFloat().reduced (0.5f);
-    g.setColour (down ? juce::Colour (0xff3d4a36) : over ? juce::Colour (0xff353a37) : juce::Colour (0xff2a2e2c));
+    g.setColour (down ? currentPalette.controlsOn : over ? currentPalette.iconOver : currentPalette.iconFill);
     g.fillRoundedRectangle (r, 4.0f);
     const auto c = ! isEnabled() ? dimTextColour.withAlpha (0.35f) : getToggleState() ? accent : textColour.withAlpha (over ? 1.0f : 0.85f);
     drawIcon (g, icon, r.reduced (r.getHeight() * 0.24f), c);
@@ -126,28 +127,52 @@ void Led::paintButton (juce::Graphics& g, bool over, bool)
         g.fillEllipse (light.expanded (2.5f));
         g.setColour (ledColour);
     }
-    else g.setColour (over ? juce::Colour (0xff5d645f) : juce::Colour (0xff4a504c));
+    else g.setColour (over ? currentPalette.ledOffOver : currentPalette.ledOff);
     g.fillEllipse (light);
 }
 
 // ---- Look ---------------------------------------------------------------------------------------------
 TriadLook::TriadLook()
 {
-    setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2c302e));
-    setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3d4a36));
-    setColour (juce::TextButton::textColourOffId, textColour);
-    setColour (juce::TextButton::textColourOnId, accent);
-    setColour (juce::Label::textColourId, dimTextColour);
-    setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff1b1e1c));
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, juce::Colour (0xff3d4a36));
-    setColour (juce::PopupMenu::headerTextColourId, accent);
-    setColour (juce::TooltipWindow::backgroundColourId, juce::Colour (0xff111312));
-    setColour (juce::TooltipWindow::textColourId, textColour);
-    setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff4a504c));
-    setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0d0f0e));
-    setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff3d4240));
-    setColour (juce::TextEditor::focusedOutlineColourId, accent);
-    setColour (juce::TextEditor::textColourId, textColour);
+    syncThemeFromSettings();
+    applyTheme();
+}
+void TriadLook::applyTheme()
+{
+    const auto& p = currentPalette;
+    // The default theme's buttons were a shade darker than its slot rows: kept as they were.
+    setColour (juce::TextButton::buttonColourId, p.controls == juce::Colour (0xff2e3230) ? juce::Colour (0xff2c302e) : p.controls);
+    setColour (juce::TextButton::buttonOnColourId, p.controlsOn);
+    setColour (juce::TextButton::textColourOffId, p.text);
+    setColour (juce::TextButton::textColourOnId, p.accent);
+    setColour (juce::Label::textColourId, p.dimText);
+    setColour (juce::PopupMenu::backgroundColourId, p.panel);
+    setColour (juce::PopupMenu::textColourId, p.text);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, p.controlsOn);
+    setColour (juce::PopupMenu::highlightedTextColourId, p.text);
+    setColour (juce::PopupMenu::headerTextColourId, p.accent);
+    setColour (juce::TooltipWindow::backgroundColourId, p.grid);
+    setColour (juce::TooltipWindow::textColourId, p.text);
+    setColour (juce::TooltipWindow::outlineColourId, p.fieldOutline);
+    setColour (juce::ScrollBar::thumbColourId, p.scrollThumb);
+    setColour (juce::TextEditor::backgroundColourId, p.field);
+    setColour (juce::TextEditor::outlineColourId, p.fieldOutline);
+    setColour (juce::TextEditor::focusedOutlineColourId, p.accent);
+    setColour (juce::TextEditor::textColourId, p.text);
+    setColour (juce::TextEditor::highlightColourId, p.accent.withAlpha (0.35f));
+    setColour (juce::CaretComponent::caretColourId, p.text);
+    setColour (juce::ComboBox::backgroundColourId, p.controls);
+    setColour (juce::ComboBox::textColourId, p.text);
+    setColour (juce::ComboBox::outlineColourId, p.fieldOutline);
+    setColour (juce::ComboBox::arrowColourId, p.dimText);
+    setColour (juce::Slider::textBoxTextColourId, p.text);
+    setColour (juce::Slider::textBoxBackgroundColourId, p.field);
+    setColour (juce::Slider::textBoxOutlineColourId, p.fieldOutline);
+    setColour (juce::Slider::thumbColourId, p.sliderThumb);
+    setColour (juce::Slider::trackColourId, p.accent);
+    setColour (juce::Slider::backgroundColourId, p.sliderTrack);
+    setColour (juce::ResizableWindow::backgroundColourId, p.background);
+    setColour (juce::DocumentWindow::textColourId, p.text);
 }
 void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float start, float end, juce::Slider& slider)
 {
@@ -157,13 +182,13 @@ void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
     const float stroke = small ? 2.5f : 4.5f;
     const auto centre = bounds.getCentre();
     // Dark body like FL's slot knobs, with the value arc in the band colour around it.
-    g.setColour (juce::Colour (0xff131615));
+    g.setColour (currentPalette.knobBody);
     g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (centre));
     const auto arcRadius = radius - stroke * 0.5f;
     juce::Path track, value;
     track.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0, start, end, true);
     value.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0, start, start + pos * (end - start), true);
-    g.setColour (juce::Colour (0xff3b413a)); g.strokePath (track, juce::PathStrokeType (stroke));
+    g.setColour (currentPalette.knobTrack); g.strokePath (track, juce::PathStrokeType (stroke));
     g.setColour (slider.findColour (juce::Slider::rotarySliderFillColourId)); g.strokePath (value, juce::PathStrokeType (stroke));
     // The percentage, inside the circle.
     const auto v = slider.getValue();
@@ -190,13 +215,13 @@ void TriadLook::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h,
     // A Serum-style bar: dark track, coloured fill, rounded thumb.
     const auto r = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
     const auto track = r.withSizeKeepingCentre (r.getWidth(), 4.0f);
-    g.setColour (juce::Colour (0xff141716)); g.fillRoundedRectangle (track, 2.0f);
+    g.setColour (currentPalette.sliderTrack); g.fillRoundedRectangle (track, 2.0f);
     const auto colour = slider.findColour (juce::Slider::trackColourId);
     g.setColour (colour.withAlpha (slider.isEnabled() ? 0.9f : 0.4f));
     g.fillRoundedRectangle (track.withRight (pos), 2.0f);
     const auto thumb = juce::Rectangle<float> (14.0f, juce::jmin (14.0f, r.getHeight())).withCentre ({ pos, r.getCentreY() });
-    g.setColour (juce::Colour (0xffd7ddd4)); g.fillRoundedRectangle (thumb, 4.0f);
-    g.setColour (juce::Colour (0xff7a827c)); g.drawVerticalLine (juce::roundToInt (pos), thumb.getY() + 3.0f, thumb.getBottom() - 3.0f);
+    g.setColour (currentPalette.sliderThumb); g.fillRoundedRectangle (thumb, 4.0f);
+    g.setColour (currentPalette.sliderThumbLine); g.drawVerticalLine (juce::roundToInt (pos), thumb.getY() + 3.0f, thumb.getBottom() - 3.0f);
 }
 void TriadLook::drawButtonBackground (juce::Graphics& g, juce::Button& b, const juce::Colour& fill, bool over, bool down)
 {

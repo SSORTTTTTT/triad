@@ -64,6 +64,7 @@ public:
     // The band / PRE / POST buttons above the grid: narrower when there are many.
     int chipWidth() const noexcept { return juce::jlimit (48, 76, (getWidth() - 220) / juce::jmax (1, (int) bandButtons.size())); }
     void paint (juce::Graphics&) override;
+    void lookAndFeelChanged() override { colourBandButtons(); }   // the theme changed
 
 private:
     void rebuild();
@@ -74,6 +75,8 @@ private:
     int band = 0, lfo = 0;
     juce::String builtSignature;
     std::vector<std::unique_ptr<juce::TextButton>> bandButtons;
+    std::vector<int> bandButtonIndex;   // the band (or PRE / POST) of each
+    void colourBandButtons();
     juce::Viewport tabView;
     juce::Component tabHolder;
     std::vector<std::unique_ptr<juce::Button>> tabs;

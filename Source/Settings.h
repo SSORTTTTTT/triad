@@ -30,6 +30,12 @@ public:
     PitchLabels getPitchLabels() const;
     void setPitchLabels (PitchLabels);
 
+    // The colour theme (Theme.h), shared by Triad, Triad Time and Triad Split: its name ("Triad", "Midnight" ...,
+    // "Custom", or "My: <name>" for one saved in themeFolder()) and the Custom theme's colours (as text).
+    juce::String getThemeName() const;
+    juce::String getCustomTheme() const;
+    void setTheme (const juce::String& name, const juce::String& customText);   // customText empty: keep the stored one
+
     // The preset every new Triad opens with: "" = Init (an empty Triad), a saved preset's name, or
     // currentSettings (the settings saved with "Use the current settings as the startup preset").
     static constexpr const char* currentSettings = "*current*";
@@ -46,6 +52,7 @@ public:
     static juce::File presetFolder();        // ~/Music/Triad/Presets
     static juce::File chainFolder();         // ~/Music/Triad/Chains
     static juce::File lfoShapeFolder();      // ~/Music/Triad/LFO Shapes (the LFO palette's USER folder)
+    static juce::File themeFolder();         // ~/Music/Triad/Themes (saved colour themes, .triadtheme)
 
 private:
     void reload() const;

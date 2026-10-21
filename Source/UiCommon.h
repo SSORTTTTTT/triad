@@ -15,9 +15,45 @@ inline juce::Colour bandColour (int band)
     if (band >= 11) return juce::Colour (0xffc3cde0);   // the POST chain (TriadProcessor::postBand)
     return colours[juce::jlimit (0, 9, band)];
 }
-const juce::Colour background (0xff252729), panel (0xff1b1e1c), textColour (0xffe7eae5), dimTextColour (0xffa6afa5),
-                   slotRow (0xff2e3230), slotRowHover (0xff363b38), ledColour (0xff8fe04a), accent (0xff9bd85c),
-                   headerColour (0xff303235), gridBackground (0xff111312);
+// Every colour of Triad's interface except the band colours (which never change): set by the theme (Theme.h), the
+// same in every window of this plug-in. Read through the names below (background, panel, textColour ...), so whatever
+// is drawn next uses the theme of the moment.
+struct Palette
+{
+    juce::Colour background, panel, header, controls, controlsHover, controlsOn, iconFill, iconOver, grid, gridLines,
+                 text, dimText, softText, faintText, accent, led, ledOff, ledOffOver, knobBody, knobTrack, sliderTrack,
+                 sliderThumb, sliderThumbLine, field, fieldOutline, scrollThumb, marker, spectrum, meterBack, separator,
+                 paletteButton, tabOn, tabOver, timeLine, volumeLine, pill;
+};
+// Triad's own dark look (the default theme), colour for colour as it has always been drawn.
+inline Palette legacyPalette()
+{
+    Palette p;
+    p.background = juce::Colour (0xff252729);   p.panel = juce::Colour (0xff1b1e1c);        p.header = juce::Colour (0xff303235);
+    p.controls = juce::Colour (0xff2e3230);     p.controlsHover = juce::Colour (0xff363b38); p.controlsOn = juce::Colour (0xff3d4a36);
+    p.iconFill = juce::Colour (0xff2a2e2c);     p.iconOver = juce::Colour (0xff353a37);
+    p.grid = juce::Colour (0xff111312);         p.gridLines = juce::Colour (0xffcfd5cc);
+    p.text = juce::Colour (0xffe7eae5);         p.dimText = juce::Colour (0xffa6afa5);      p.softText = juce::Colour (0xffb8bcba);
+    p.faintText = juce::Colour (0xff8f9690);    p.accent = juce::Colour (0xff9bd85c);       p.led = juce::Colour (0xff8fe04a);
+    p.ledOff = juce::Colour (0xff4a504c);       p.ledOffOver = juce::Colour (0xff5d645f);
+    p.knobBody = juce::Colour (0xff131615);     p.knobTrack = juce::Colour (0xff3b413a);
+    p.sliderTrack = juce::Colour (0xff141716);  p.sliderThumb = juce::Colour (0xffd7ddd4);  p.sliderThumbLine = juce::Colour (0xff7a827c);
+    p.field = juce::Colour (0xff0d0f0e);        p.fieldOutline = juce::Colour (0xff3d4240); p.scrollThumb = juce::Colour (0xff4a504c);
+    p.marker = juce::Colour (0xfff2f5ef);       p.spectrum = juce::Colour (0xffe8ece6);     p.meterBack = juce::Colour (0xff1c1f1e);
+    p.separator = juce::Colour (0xff3a3f3c);    p.paletteButton = juce::Colour (0xff1a1d1c);
+    p.tabOn = juce::Colour (0xff242826);        p.tabOver = juce::Colour (0xff383c3a);
+    p.timeLine = juce::Colour (0xff6fb7e9);     p.volumeLine = juce::Colour (0xffe9a96f);   p.pill = juce::Colour (0xff090b09);
+    return p;
+}
+inline Palette currentPalette = legacyPalette();
+inline int themeGeneration = 0;   // goes up with every theme change (cached pictures redraw)
+inline const juce::Colour& background = currentPalette.background, & panel = currentPalette.panel,
+                        & textColour = currentPalette.text, & dimTextColour = currentPalette.dimText,
+                        & slotRow = currentPalette.controls, & slotRowHover = currentPalette.controlsHover,
+                        & ledColour = currentPalette.led, & accent = currentPalette.accent,
+                        & headerColour = currentPalette.header, & gridBackground = currentPalette.grid;
+// Dark text on a bright fill (a lit band button, a selected tab): stays dark in every theme.
+const juce::Colour inkColour (0xff111312);
 // Text with non-ASCII characters (middle dot, arrows) written as UTF-8 in the source.
 inline juce::String u8 (const char* text) { return juce::String::fromUTF8 (text); }
 // Decibels for meters and readouts: "-6.0 dB", "-inf".

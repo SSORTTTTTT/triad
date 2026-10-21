@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.11.0 LANGUAGES C CXX)
-# Installed as "Triad v10.vst3" / "Triad v10.component"; the plug-in IDs are unchanged from Triad 0.1,
-# so projects made with the earlier "Triad", "Triad v2" ... "Triad v9" open with Triad v10.
+project(Triad VERSION 0.12.0 LANGUAGES C CXX)
+# Installed as "Triad v11.vst3" / "Triad v11.component"; the plug-in IDs are unchanged from Triad 0.1,
+# so projects made with the earlier "Triad", "Triad v2" ... "Triad v10" open with Triad v11.
 # Each new release gets the next name (v9, v10, ...) and replaces the earlier ones when installed.
-set(TRIAD_PRODUCT_NAME "Triad v10")
+set(TRIAD_PRODUCT_NAME "Triad v11")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(TRIAD_BUILD_TESTS "Build integration tests and a test effect" ON)
@@ -36,7 +36,7 @@ juce_add_plugin(Triad
 target_sources(Triad PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/CrossoverDisplay.cpp
     Source/BandStrip.cpp Source/PluginCatalog.cpp Source/AudioUnitList.cpp Source/Modulation.cpp Source/Settings.cpp
     Source/Widgets.cpp Source/Look.cpp Source/ShapePanel.cpp Source/LfoPage.cpp Source/MatrixPage.cpp Source/PlatformWindows.cpp
-    Source/Generator.cpp Source/ShapeLibrary.cpp Source/TriadTime.cpp)
+    Source/Generator.cpp Source/ShapeLibrary.cpp Source/TriadTime.cpp Source/Theme.cpp)
 if(APPLE)
     target_sources(Triad PRIVATE Source/PlatformWindowsMac.mm)
 endif()
@@ -69,7 +69,7 @@ juce_add_plugin(TriadTime
     IS_MIDI_EFFECT FALSE EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE VST3_CATEGORIES Fx)
 target_sources(TriadTime PRIVATE Source/TriadTime.cpp Source/ShapePanel.cpp Source/Look.cpp Source/Modulation.cpp
-    Source/Generator.cpp Source/ShapeLibrary.cpp Source/Settings.cpp)
+    Source/Generator.cpp Source/ShapeLibrary.cpp Source/Settings.cpp Source/Theme.cpp)
 target_compile_definitions(TriadTime PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=0 JUCE_PLUGINHOST_AU=0 JUCE_PLUGINHOST_VST=0
     JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0 TRIAD_TIME_PLUGIN=1
@@ -84,7 +84,8 @@ juce_add_plugin(TriadSplit
     IS_SYNTH FALSE NEEDS_MIDI_INPUT FALSE NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE VST3_CATEGORIES Fx Tools)
-target_sources(TriadSplit PRIVATE Source/TriadSplit.cpp Source/SplitLink.cpp Source/CrossoverDisplay.cpp Source/Look.cpp)
+target_sources(TriadSplit PRIVATE Source/TriadSplit.cpp Source/SplitLink.cpp Source/CrossoverDisplay.cpp Source/Look.cpp
+    Source/Settings.cpp Source/Theme.cpp)
 if(APPLE)
     target_sources(TriadSplit PRIVATE Source/SplitLinkMac.mm)
 endif()

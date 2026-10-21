@@ -176,3 +176,25 @@ juce::File TriadSettings::lfoShapeFolder()
 {
     return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/LFO Shapes");
 }
+juce::File TriadSettings::themeFolder()
+{
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/Themes");
+}
+juce::String TriadSettings::getThemeName() const
+{
+    reload();
+    return file->getValue ("theme", "Triad");
+}
+juce::String TriadSettings::getCustomTheme() const
+{
+    reload();
+    return file->getValue ("themeCustom");
+}
+void TriadSettings::setTheme (const juce::String& name, const juce::String& customText)
+{
+    reload();
+    file->setValue ("theme", name);
+    if (customText.isNotEmpty()) file->setValue ("themeCustom", customText);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}

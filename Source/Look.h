@@ -28,7 +28,8 @@ public:
 class TriadLook final : public juce::LookAndFeel_V4
 {
 public:
-    TriadLook();
+    TriadLook();                                     // in the theme stored in Triad.settings
+    void applyTheme();                               // after a theme change (the window then calls sendLookAndFeelChange)
     void drawRotarySlider (juce::Graphics&, int, int, int, int, float, float, float, juce::Slider&) override;
     void drawLinearSlider (juce::Graphics&, int, int, int, int, float, float, float, juce::Slider::SliderStyle, juce::Slider&) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;

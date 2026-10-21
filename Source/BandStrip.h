@@ -82,6 +82,7 @@ public:
     juce::Rectangle<int> peakTextArea() const;
     void paint (juce::Graphics&) override;
     void paintOverChildren (juce::Graphics&) override;
+    void lookAndFeelChanged() override;          // the theme changed: re-colour the frequency labels
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;

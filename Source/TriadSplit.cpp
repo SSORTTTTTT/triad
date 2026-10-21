@@ -1,6 +1,7 @@
 #include "TriadSplit.h"
 #include "CrossoverDisplay.h"
 #include "Look.h"
+#include "Theme.h"
 #include <thread>
 
 namespace L = triad::link;
@@ -647,14 +648,14 @@ public:
         g.setColour (on ? colour : over ? slotRowHover : slotRow);
         g.fillRoundedRectangle (r, 5.0f);
         if (! on) { g.setColour (colour.withAlpha (down ? 0.9f : 0.55f)); g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.2f); }
-        g.setColour (on ? juce::Colour (0xff111312) : colour);
+        g.setColour (on ? inkColour : colour);
         g.setFont (juce::FontOptions (play == TriadSplit::playAll || play == TriadSplit::playNone ? 13.0f : 16.0f, juce::Font::bold));
         const auto label = play == TriadSplit::playAll ? juce::String ("ALL") : play == TriadSplit::playNone ? juce::String ("NONE") : juce::String (play);
         g.drawText (label, r, juce::Justification::centred);
         if (others > 0)
         {
             const auto badge = juce::Rectangle<float> (16.0f, 16.0f).withPosition (r.getRight() - 18.0f, r.getY() + 2.0f);
-            g.setColour (juce::Colour (0xff111312).withAlpha (on ? 0.75f : 1.0f));
+            g.setColour (inkColour.withAlpha (on ? 0.75f : 1.0f));
             g.fillEllipse (badge);
             g.setColour (colour);
             g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
@@ -677,6 +678,9 @@ public:
                                "they all follow, on every track. OFF: this one keeps its own.");
         linkButton.onClick = [this] { showLinkMenu(); };
         addAndMakeVisible (linkButton);
+        gearButton.onClick = [this] { showGearMenu(); };
+        addAndMakeVisible (gearButton);
+        addChildComponent (themePanel);
         for (int play = TriadSplit::playAll; play <= TriadSplit::playNone; ++play)
         {
             auto b = std::make_unique<PlayButton> (play);
@@ -733,7 +737,10 @@ public:
     {
         auto r = getLocalBounds().reduced (16, 0);
         auto header = r.removeFromTop (48);
+        gearButton.setBounds (header.removeFromRight (30).withSizeKeepingCentre (30, 28));
+        header.removeFromRight (8);
         linkButton.setBounds (header.removeFromRight (170).withSizeKeepingCentre (170, 28));
+        themePanel.setBounds (getLocalBounds());
         display.setBounds (r.removeFromTop (270));
         r.removeFromTop (10);
         playArea = r.removeFromTop (96);
@@ -754,6 +761,24 @@ public:
         laidOutBands = count;
     }
 private:
+    static constexpr int themeBase = 100;
+    void showGearMenu()
+    {
+        juce::PopupMenu menu;
+        triad::ui::addThemeItems (menu, themeBase);
+        juce::Component::SafePointer<TriadSplitEditor> safe (this);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&gearButton), [safe] (int choice)
+        {
+            if (safe != nullptr) triad::ui::handleThemeChoice (choice, themeBase, [safe] { if (safe != nullptr) safe->themePanel.open(); });
+        });
+    }
+    void themeChanged()
+    {
+        look.applyTheme();
+        refresh();
+        sendLookAndFeelChange();
+        repaint();
+    }
     void showLinkMenu()
     {
         juce::PopupMenu menu;
@@ -795,7 +820,7 @@ public:
         const auto linkText = group == 0 ? juce::String ("LINK: OFF") : "LINK " + L::groupName (group) + u8 ("  \xc2\xb7  ") + juce::String (linked);
         if (linkButton.getButtonText() != linkText) linkButton.setButtonText (linkText);
         linkButton.setColour (juce::TextButton::buttonColourId, group == 0 ? slotRow : accent.withAlpha (0.85f));
-        linkButton.setColour (juce::TextButton::textColourOffId, group == 0 ? textColour : juce::Colour (0xff111312));
+        linkButton.setColour (juce::TextButton::textColourOffId, group == 0 ? textColour : inkColour);
         for (auto& b : playButtons)
         {
             b->setToggleState (b->play == play, juce::dontSendNotification);
@@ -851,6 +876,9 @@ private:
     juce::String infoText;
     int laidOutBands = -1, shownPlay = -1;
     juce::TooltipWindow tooltips { this, 600 };
+    triad::ui::IconButton gearButton { triad::ui::IconButton::Icon::gear, "Settings: theme and colours" };
+    triad::ui::ThemePanel themePanel;
+    triad::ui::ThemeWatcher themeWatcher { [this] { themeChanged(); } };   // last: the window is built when it first calls
 };
 }
 

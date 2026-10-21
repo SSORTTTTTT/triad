@@ -105,7 +105,7 @@ void NamePrompt::resized()
 void TriadEditor::TabButton::paintButton (juce::Graphics& g, bool over, bool)
 {
     const bool on = getToggleState();
-    g.setColour (on ? juce::Colour (0xff242826) : over ? juce::Colour (0xff383c3a) : juce::Colours::transparentBlack);
+    g.setColour (on ? currentPalette.tabOn : over ? currentPalette.tabOver : juce::Colours::transparentBlack);
     g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 5.0f);
     g.setColour (on ? accent : over ? textColour : dimTextColour);
     g.setFont (juce::FontOptions (13.5f, juce::Font::bold));
@@ -115,7 +115,7 @@ void TriadEditor::TabButton::paintButton (juce::Graphics& g, bool over, bool)
 void TriadEditor::PresetButton::paintButton (juce::Graphics& g, bool over, bool)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (over ? juce::Colour (0xff1f2321) : juce::Colour (0xff1a1d1c));
+    g.setColour (over ? currentPalette.paletteButton.interpolatedWith (currentPalette.text, 0.02f) : currentPalette.paletteButton);
     g.fillRoundedRectangle (r, 5.0f);
     auto area = getLocalBounds().reduced (10, 0);
     g.setColour (dimTextColour);
@@ -171,6 +171,7 @@ TriadEditor::TriadEditor (TriadProcessor& p)
     status.setFont (juce::FontOptions (12.0f));
     content.addAndMakeVisible (status);
     content.addChildComponent (prompt);
+    content.addChildComponent (themePanel);
     catalog->addChangeListener (this);
     rebuildStrips();
     setTab (Tab::bands);
@@ -192,6 +193,13 @@ void TriadEditor::setScale (double s)
     setSize (juce::roundToInt (logicalWidth * scale), juce::roundToInt (logicalHeight * scale));
 }
 void TriadEditor::paint (juce::Graphics& g) { g.fillAll (background); }
+void TriadEditor::themeChanged()
+{
+    // A new theme (chosen here, in another Triad, Triad Time or Triad Split): re-colour and redraw everything.
+    look.applyTheme();
+    sendLookAndFeelChange();
+    repaint();
+}
 void TriadEditor::resized()
 {
     content.setBounds (0, 0, logicalWidth, logicalHeight);
@@ -203,7 +211,7 @@ void TriadEditor::paintContent (juce::Graphics& g)
     g.setColour (headerColour); g.fillRect (0, 0, logicalWidth, headerHeight);
     g.setColour (accent); g.setFont (juce::FontOptions (28.0f, juce::Font::bold));
     g.drawText ("TRIAD", margin, 7, 110, 38, juce::Justification::centredLeft);
-    g.setColour (juce::Colour (0xffaeb6ab)); g.setFont (juce::FontOptions (11.5f));
+    g.setColour (currentPalette.softText); g.setFont (juce::FontOptions (11.5f));
     g.drawText (juce::String ("VST3 + AU  /  ") + juce::String (TRIAD_PRODUCT_NAME).fromLastOccurrenceOf (" ", false, false).toUpperCase() + "  " + TRIAD_VERSION, logicalWidth - margin - 170, 13, 170, 26, juce::Justification::centredRight);
 }
 void TriadEditor::layoutContent()
@@ -222,6 +230,7 @@ void TriadEditor::layoutContent()
     viewport.setBounds (0, displayHeight + 8, page.getWidth(), page.getHeight() - displayHeight - 8);
     status.setBounds (margin, logicalHeight - 28, logicalWidth - 2 * margin, 24);
     prompt.setBounds (0, 0, logicalWidth, logicalHeight);
+    themePanel.setBounds (0, 0, logicalWidth, logicalHeight);
     layoutStrips();
 }
 void TriadEditor::setTab (Tab t)
@@ -781,7 +790,7 @@ void TriadEditor::showGearMenu()
 {
     enum { sortCompany = 1, sortAZ, autoCheck, refreshList, rescanAll, addFolder, presetsFolder, chainsFolder,
            startupUseCurrent, startupInit, startupCurrentSettings, scaleBase = 100, removeFolderBase = 200, startupBase = 1000,
-           pitchLabelsBase = 900000 };
+           pitchLabelsBase = 900000, themeBase = 800000 };
     const auto folders = settings->getFolders();
     juce::PopupMenu menu, removeMenu;
     menu.addSectionHeader ("EFFECT LIST");
@@ -797,6 +806,7 @@ void TriadEditor::showGearMenu()
     menu.addSectionHeader ("WINDOW SIZE");
     for (int percent : { 75, 90, 100, 125, 150 })
         menu.addItem (scaleBase + percent, juce::String (percent) + "%", true, juce::roundToInt (scale * 100.0) == percent);
+    triad::ui::addThemeItems (menu, themeBase);
     menu.addSectionHeader ("TRIAD TIME");
     {
         juce::PopupMenu labels;
@@ -837,6 +847,7 @@ void TriadEditor::showGearMenu()
             return;
         }
         if (choice == startupUseCurrent) { self.useCurrentSettingsAtStartup(); return; }
+        if (triad::ui::handleThemeChoice (choice, themeBase, [&self] { self.openThemePanel(); })) return;
         if (choice >= pitchLabelsBase && choice <= pitchLabelsBase + 2) { s.setPitchLabels ((TriadSettings::PitchLabels) (choice - pitchLabelsBase)); return; }
         if (choice == sortCompany) s.setSort (TriadSettings::Sort::company);
         else if (choice == sortAZ) s.setSort (TriadSettings::Sort::alphabetical);
