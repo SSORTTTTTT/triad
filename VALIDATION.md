@@ -1,5 +1,18 @@
 # Validation — Triad
 
+## Triad v11 (0.12.0), Triad Time and Triad Split on macOS — 2026-10-21
+
+Commit `8c0a318`, run 39596029864 (macos-14 runner, virtual Apple M1), passed on its first attempt. New in 0.12.0:
+colour themes (six ready-made, custom, saved by name, random colourways) in all three plug-ins, the Edit colours panel
+with a colour picker, and theme colours kept clear of the ten band colours.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v11-0.12.0`, `Triad-Time-0.12.0`, `Triad-Split-0.12.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (Triad v11 over simulated Triad ... v10 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| Themes | Ready-made themes readable, their colours at least 23.6 (delta E) from every band colour (the bands are 18.1 apart), every band at contrast 4.4 or more on their panels, grids and buttons; Triad's own theme drawn exactly as before; a band's own colour picked for a theme colour is moved clear of it; open windows of Triad, Triad Time and Triad Split follow a theme change at once, and one made in another plug-in through Triad.settings; Custom and saved themes read back the same; CANCEL restores the previous theme |
+| Random colourways | 300 rolls: all readable, all at least 20 from every band colour, accent and lines at least 27 apart, 297 different backgrounds |
+| Real plug-ins (57) | 5 x 3,000 random edits (each in its own process) all passed: PASS, no crashes, no NaN/Inf output, all checks held |
+
 ## Triad v10 (0.11.0), Triad Time and Triad Split on macOS — 2026-10-20
 
 Commit `73de26a`, run 39518825780 attempt 2 (macos-14 runner, virtual Apple M1). New in 0.11.0: Triad Time's grid with
