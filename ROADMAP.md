@@ -231,8 +231,9 @@ color of the lines specifically but keep the band colors in triad the same".
   shown at once in open windows; a theme could also be saved as a file to keep or share.
 - Readability guard: text, lines and labels stay readable on the chosen background (a warning, or lighter / darker
   automatically).
-- To settle with Thomas when it starts: in the LFO tab the lines take their band's colour today; should they keep
-  it, or take the theme's line colour (with the band colour kept elsewhere)?
+- Settled (Thomas, 2026-10-21): "They will stay the same color for each respective band on the bands plugin but for
+  triad time you can make the background any color and the line any color". In Triad, the LFO tab's lines keep their
+  band's colour. In Triad Time, the background and the line colour (TIME and VOLUME) can be any colour.
 - Built on the theme system planned in "Look and feel" below, and can come before the full redesign.
 
 ### Ideas from this work (later)
