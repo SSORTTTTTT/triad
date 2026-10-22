@@ -78,11 +78,14 @@ and also installed as a plug-in of its own (**Triad Time**, VST3 and AU) for any
   under it), so a line drawn at ShaperBox's angle bends the pitch as much: from 0 down to -1/16 over 1/8 is an octave
   down (-12 st). As in ShaperBox, the triangle under the corner-to-corner diagonal is striped.
 - **TIME folders** (new in 0.13.0): with TIME shown, the palette opens Triad Time's own folders (first in its folder
-  menu): **OCTAVE DOWN**, **OCTAVE UP**, **REVERSE**, **CHOPS** and **PITCH + CHOPS**, 24 patterns each. They come
-  from a generator trained on the time envelopes of Thomas's Gross Beat banks (2,183 different patterns from 220
-  banks), leaning on what Triad Time does best: repitching forwards or backwards by an octave or two, and 90-degree
-  chops. Every pattern is new (none is a copy of a bank pattern), on the grid and within one bar back; each is named
-  for what its lines do ("Down 01: FWD -12, TAPE"). VOLUME keeps Triad's folders; each envelope remembers its folder.
+  menu): **OCTAVE DOWN**, **OCTAVE UP**, **REVERSE**, **CHOPS** and **PITCH + CHOPS**, 200 patterns each (1,000 in
+  all). They come from a generator trained on the time envelopes of Thomas's Gross Beat banks (2,183 different
+  patterns from 220 banks), leaning on what Triad Time does best: repitching forwards or backwards by an octave or
+  two, and 90-degree chops. Every pattern is new (none is a copy of a bank pattern, no two the same), on the grid and
+  within one bar back; each is named for what its lines do ("Down 001: FWD -12, TAPE"). VOLUME and Triad's LFOs list
+  the TIME folders too (after Triad's own); each envelope remembers its folder.
+- **ALL** (new in 0.13.0, top of the folder menu, in Triad and Triad Time): every preset together, Triad's shapes and
+  the 1,000 TIME patterns (2,049). Click the page number to jump to a page, or in ALL to where a folder starts.
 - **Pitch labels** (new in 0.11.0): each straight TIME line can read which way it plays and how far the pitch moves:
   "FWD -12 st" (half speed), "FWD -24 st" (a quarter speed), "FWD +12 st" (double), "REV 0 st" (backwards at normal
   speed), "REV -12 st" (backwards at half speed), "FREEZE" (the diagonal). The gear at the top right of Triad Time's

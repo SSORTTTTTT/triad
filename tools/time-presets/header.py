@@ -33,7 +33,7 @@ for b in batch:
         elif kind == 'curve': m = 'TAPE'
         else: continue
         if m not in moves: moves.append(m)
-    name = '%s %02d' % (short[b['folder']], counter[f]) + (': ' + ', '.join(moves) if moves else '')
+    name = '%s %03d' % (short[b['folder']], counter[f]) + (': ' + ', '.join(moves) if moves else '')
     first = len(pts)
     for (x, y, c) in b['shape']:
         pts.append((x, y, c))

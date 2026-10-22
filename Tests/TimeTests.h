@@ -3,6 +3,7 @@
 #include "../Source/ShapePanel.h"
 #include "../Source/TimePresets.h"
 #include <cmath>
+#include <set>
 #include <iostream>
 
 // Triad Time: the time / volume gate (built into Triad, and a plug-in of its own), and Triad's band MUTE.
@@ -197,10 +198,10 @@ inline void run (const juce::File& screenshotFolder)
     // ---- The TIME folders trained on the Gross Beat banks: octave repitches forwards and backwards, and chops ---------------
     {
         namespace tp = triad::timePresets;
-        require (tp::numFolders == 5 && tp::numPresets == 120, "Five TIME folders, 120 patterns");
+        require (tp::numFolders == 5 && tp::numPresets == 1000, "Five TIME folders, 1,000 patterns");
         const auto minus = juce::String::fromUTF8 ("\xe2\x88\x92");
         int onGrid = 0, inRange = 0;
-        std::array<int, 5> good {};
+        std::array<int, 5> good {}, perFolder {};
         struct Line { double speed; float from, to; };
         std::vector<std::pair<int, Line>> octaveLines;   // (preset, its longest octave line)
         for (int i = 0; i < tp::numPresets; ++i)
@@ -230,18 +231,20 @@ inline void run (const juce::File& screenshotFolder)
             onGrid += grid ? 1 : 0;
             inRange += range ? 1 : 0;
             const int folder = tp::entries[i].folder;
+            ++perFolder[(size_t) folder];
             const bool ok = folder == 0 ? down : folder == 1 ? up : folder == 2 ? rev : folder == 3 ? chops >= 3 : (chops >= 2 && (down || up || rev));
             good[(size_t) folder] += ok ? 1 : 0;
             if (longest.to - longest.from >= 0.124f) octaveLines.push_back ({ i, longest });
         }
-        std::cout << "TIME folders: " << onGrid << " of 120 on the grid, " << inRange << " in range; octave down " << good[0] << "/24, octave up " << good[1]
-                  << "/24, reverse " << good[2] << "/24, chops " << good[3] << "/24, pitch + chops " << good[4] << "/24" << std::endl;
-        require (onGrid == 120 && inRange == 120, "Every TIME folder pattern is on Triad Time's grid (1/64 bar, 1/16 bar back) and within one bar back");
-        require (good[0] == 24 && good[1] == 24 && good[2] == 24 && good[3] == 24 && good[4] == 24,
+        std::cout << "TIME folders: " << onGrid << " of " << tp::numPresets << " on the grid, " << inRange << " in range; octave down " << good[0] << "/" << perFolder[0]
+                  << ", octave up " << good[1] << "/" << perFolder[1] << ", reverse " << good[2] << "/" << perFolder[2] << ", chops " << good[3] << "/" << perFolder[3]
+                  << ", pitch + chops " << good[4] << "/" << perFolder[4] << std::endl;
+        require (onGrid == tp::numPresets && inRange == tp::numPresets, "Every TIME folder pattern is on Triad Time's grid (1/64 bar, 1/16 bar back) and within one bar back");
+        require (perFolder == std::array<int, 5> { 200, 200, 200, 200, 200 } && good == perFolder,
                  "Each folder has what it is named for: a straight FWD -12 / -24, FWD +12 / +24, REV line; 3 chops; or 2 chops and an octave or reverse line");
         // Played: the octave lines bend a 440 Hz tone by an octave (forwards or backwards).
         int checked = 0, right = 0;
-        for (size_t k = 0; k < octaveLines.size() && checked < 12; k += juce::jmax ((size_t) 1, octaveLines.size() / 12), ++checked)
+        for (size_t k = 0; k < octaveLines.size() && checked < 20; k += juce::jmax ((size_t) 1, octaveLines.size() / 20), ++checked)
         {
             const auto& [index, line] = octaveLines[k];
             TriadTime t;
@@ -258,7 +261,18 @@ inline void run (const juce::File& screenshotFolder)
             else std::cout << "  " << tp::entries[index].name << ": expected " << expected << " Hz, got " << f << std::endl;
         }
         std::cout << "TIME folders played: " << right << " of " << checked << " octave / reverse lines bend 440 Hz as labelled" << std::endl;
-        require (checked >= 10 && right == checked, "The folders' octave and reverse lines bend the pitch as labelled when played");
+        require (checked >= 18 && right == checked, "The folders' octave and reverse lines bend the pitch as labelled when played");
+        {
+            // Every pattern different from every other (and so from the first batch too).
+            std::set<juce::String> seen;
+            for (int i = 0; i < tp::numPresets; ++i)
+            {
+                juce::String key;
+                for (const auto& p : tp::shape (i)) key << p.x << "," << p.y << "," << p.curve << ";";
+                seen.insert (key);
+            }
+            require ((int) seen.size() == tp::numPresets, "1,000 different TIME patterns");
+        }
     }
     // ---- SMOOTHING: repeats do not click ---------------------------------------------------------------------------------
     {
@@ -451,7 +465,8 @@ inline void run (const juce::File& screenshotFolder)
         require (shapes->getPaletteCategory() >= ShapePanel::timeFolder || shapes->getPaletteCategory() < 1000 || shapes->getPaletteCategory() == ShapePanel::userFolder,
                  "TIME opens a folder");
         shapes->setPaletteCategory (ShapePanel::timeFolder + 2);
-        require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2 && shapes->getNumPaletteButtons() == 11, "TIME has its own folders (REVERSE: 24 patterns, 11 a page)");
+        require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2 && shapes->getNumPaletteButtons() == 11 && shapes->getNumPalettePages() == 19,
+                 "TIME has its own folders (REVERSE: 200 patterns, 11 a page)");
         {
             const auto beforeFolder = t.getShape (TriadTime::timeEnvelope, 0);
             shapes->getPaletteButton (0)->onClick();
@@ -460,8 +475,20 @@ inline void run (const juce::File& screenshotFolder)
             t.setShape (TriadTime::timeEnvelope, 0, beforeFolder, false);
             shapes->getEditor().reload();
         }
+        {
+            // ALL: every preset together (Triad's shapes and the 1,000 TIME patterns).
+            shapes->setPaletteCategory (ShapePanel::allFolder);
+            const int everything = triad::mod::numPresets() + triad::timePresets::numPresets;
+            std::cout << "ALL folder: " << everything << " presets, " << shapes->getNumPalettePages() << " pages" << std::endl;
+            require (shapes->getPaletteCategory() == ShapePanel::allFolder && shapes->getNumPalettePages() == (everything + 10) / 11 && everything > 2000,
+                     "ALL has every preset together, page by page");
+            shapes->setPalettePage (shapes->getNumPalettePages() - 1);
+            shapes->getPaletteButton (shapes->getNumPaletteButtons() - 1)->onClick();
+            require (t.getShape (TriadTime::timeEnvelope, 0) == triad::timePresets::shape (triad::timePresets::numPresets - 1), "...the last page ends with the last TIME pattern");
+            shapes->setPaletteCategory (ShapePanel::timeFolder + 2);
+        }
         editorShowEnvelope (*editor, TriadTime::volumeEnvelope);
-        require (shapes->getPaletteCategory() < ShapePanel::timeFolder, "VOLUME shows Triad's folders (the TIME folders are TIME's)");
+        require (shapes->getPaletteCategory() != ShapePanel::timeFolder + 2, "VOLUME keeps its own folder (TIME remembers its own)");
         editorShowEnvelope (*editor, TriadTime::timeEnvelope);
         require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2, "...and back on TIME, the TIME folder chosen there");
         shapes->setPaletteCategory (1);

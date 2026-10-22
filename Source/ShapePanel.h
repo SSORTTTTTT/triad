@@ -138,7 +138,8 @@ public:
     // big folders have several pages (< and >, or the mouse wheel over the palette).
     static constexpr int paletteSize = 11;
     static constexpr int userFolder = 1000;   // the USER folder (saved shapes), after the preset folders
-    static constexpr int timeFolder = 2000;   // Triad Time's TIME folders: timeFolder + 0 ... (only for a host that offers them)
+    static constexpr int timeFolder = 2000;   // Triad Time's TIME folders: timeFolder + 0 ... (first in the menu for TIME)
+    static constexpr int allFolder = 3000;    // ALL: every preset together (Triad's shapes and the TIME patterns)
     void setPaletteCategory (int);            // a preset category, or userFolder
     int getPaletteCategory() const noexcept { return paletteCategory; }
     void setPalettePage (int);
@@ -154,6 +155,8 @@ public:
     std::function<void()> onChange;           // the shape or the length changed
     juce::String lengthTooltip { "Length: one cycle of the shape (synced to your song's tempo)" };
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+    void mouseUp (const juce::MouseEvent&) override;   // on the page number: jump to a page (or, in ALL, to a folder)
+    void showPageMenu();
     void resized() override;
     void paint (juce::Graphics&) override;
 private:
@@ -165,7 +168,7 @@ private:
     struct PaletteShape { juce::String name; triad::mod::Shape shape; juce::File file; };
     std::vector<PaletteShape> paletteShapes() const;   // the shapes in the open folder
     juce::String paletteFolderName() const;
-    bool isTimeFolder (int category) const noexcept { return category >= timeFolder; }
+    bool isTimeFolder (int category) const noexcept { return category >= timeFolder && category < allFolder; }
     bool timeHost() const { return host != nullptr && host->offersTimePresets(); }
     int validCategory (int category) const;
 

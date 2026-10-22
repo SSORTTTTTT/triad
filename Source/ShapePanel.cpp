@@ -776,7 +776,9 @@ ShapePanel::ShapePanel()
     nextPage.onClick = [this] { setPalettePage (palettePage + 1); };
     pageLabel.setJustificationType (juce::Justification::centred);
     pageLabel.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    pageLabel.setTooltip ("Page (the mouse wheel over the shapes turns the pages)");
+    pageLabel.setTooltip ("Page: click to jump to a page (in ALL, to a folder); the mouse wheel over the shapes turns the pages");
+    pageLabel.setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    pageLabel.addMouseListener (this, false);
     for (auto* c : std::initializer_list<juce::Component*> { &prevPage, &nextPage, &pageLabel }) addAndMakeVisible (*c);
     rebuildPalette();
 }
@@ -787,7 +789,7 @@ void ShapePanel::setHost (ShapeHost* h)
     host = h;
     editor.setHost (h);
     // Triad Time's TIME envelope opens its own folders (and remembers the one chosen there); everything else Triad's.
-    if (timeHost() != wasTime || (! timeHost() && isTimeFolder (paletteCategory)))
+    if (timeHost() != wasTime)
     {
         const int wanted = timeHost() ? settings->getTimePaletteCategory (timeFolder) : settings->getPaletteCategory();
         const int category = validCategory (wanted);
@@ -797,8 +799,8 @@ void ShapePanel::setHost (ShapeHost* h)
 }
 int ShapePanel::validCategory (int category) const
 {
-    if (category == userFolder) return userFolder;
-    if (isTimeFolder (category)) return timeHost() ? juce::jlimit (timeFolder, timeFolder + triad::timePresets::numFolders - 1, category) : 0;
+    if (category == userFolder || category == allFolder) return category;
+    if (isTimeFolder (category)) return juce::jlimit (timeFolder, timeFolder + triad::timePresets::numFolders - 1, category);
     return juce::jlimit (0, mod::numPresetCategories() - 1, category);
 }
 std::vector<ShapePanel::PaletteShape> ShapePanel::paletteShapes() const
@@ -809,6 +811,15 @@ std::vector<ShapePanel::PaletteShape> ShapePanel::paletteShapes() const
     else if (isTimeFolder (paletteCategory))
         for (const int i : triad::timePresets::presetsIn (paletteCategory - timeFolder))
             list.push_back ({ triad::timePresets::entries[i].name, triad::timePresets::shape (i), {} });
+    else if (paletteCategory == allFolder)
+    {
+        // Every preset in one place: Triad's folders in order, then the TIME patterns (each named with its folder).
+        for (int c = 0; c < mod::numPresetCategories(); ++c)
+            for (const int i : mod::presetsIn (c)) list.push_back ({ mod::presetCategoryName (c) + " / " + mod::presetName (i), mod::preset (i), {} });
+        for (int f = 0; f < triad::timePresets::numFolders; ++f)
+            for (const int i : triad::timePresets::presetsIn (f))
+                list.push_back ({ juce::String (triad::timePresets::folderNames[f]) + " / " + triad::timePresets::entries[i].name, triad::timePresets::shape (i), {} });
+    }
     else
         for (const int i : mod::presetsIn (paletteCategory)) list.push_back ({ mod::presetName (i), mod::preset (i), {} });
     return list;
@@ -816,6 +827,7 @@ std::vector<ShapePanel::PaletteShape> ShapePanel::paletteShapes() const
 juce::String ShapePanel::paletteFolderName() const
 {
     if (isTimeFolder (paletteCategory)) return triad::timePresets::folderNames[juce::jlimit (0, triad::timePresets::numFolders - 1, paletteCategory - timeFolder)];
+    if (paletteCategory == allFolder) return "ALL";
     return paletteCategory == userFolder ? juce::String ("USER") : mod::presetCategoryName (paletteCategory);
 }
 void ShapePanel::rebuildPalette()
@@ -865,6 +877,44 @@ void ShapePanel::setPalettePage (int page)
     if (page == palettePage) return;
     palettePage = page;
     rebuildPalette();
+}
+void ShapePanel::mouseUp (const juce::MouseEvent& e)
+{
+    if (e.eventComponent == &pageLabel && getNumPalettePages() > 1) showPageMenu();
+}
+void ShapePanel::showPageMenu()
+{
+    juce::PopupMenu menu;
+    const int pages = getNumPalettePages();
+    if (paletteCategory == allFolder)
+    {
+        // ALL: where each folder starts.
+        menu.addSectionHeader ("JUMP TO A FOLDER");
+        int start = 0;
+        const auto addFolder = [&] (const juce::String& name, int count)
+        {
+            if (count <= 0) return;
+            const int page = start / paletteSize;
+            menu.addItem (page + 1, name + "  (page " + juce::String (page + 1) + ")", true, palettePage >= page && palettePage <= (start + count - 1) / paletteSize);
+            start += count;
+        };
+        for (int c = 0; c < mod::numPresetCategories(); ++c) addFolder (mod::presetCategoryName (c), (int) mod::presetsIn (c).size());
+        for (int f = 0; f < triad::timePresets::numFolders; ++f) addFolder (juce::String ("TIME: ") + triad::timePresets::folderNames[f], (int) triad::timePresets::presetsIn (f).size());
+    }
+    else
+    {
+        menu.addSectionHeader ("PAGE");
+        for (int p = 0; p < pages; ++p)
+        {
+            if (p > 0 && p % 20 == 0) menu.addColumnBreak();
+            menu.addItem (p + 1, juce::String (p + 1), true, p == palettePage);
+        }
+    }
+    juce::Component::SafePointer<ShapePanel> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&pageLabel), [safe] (int choice)
+    {
+        if (safe != nullptr && choice > 0) safe->setPalettePage (choice - 1);
+    });
 }
 void ShapePanel::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
 {
@@ -925,12 +975,15 @@ void ShapePanel::showCategoryMenu()
         const int pages = (count + paletteSize - 1) / paletteSize;
         menu.addItem (id, name + "  (" + juce::String (count) + (pages > 1 ? ", " + juce::String (pages) + " pages)" : ")"), true, ticked);
     };
-    if (timeHost())
+    menu.addSectionHeader ("EVERYTHING");
+    add (allFolder + 1, "ALL", mod::numPresets() + triad::timePresets::numPresets, paletteCategory == allFolder);
+    const auto addTimeFolders = [&]
     {
         menu.addSectionHeader ("TRIAD TIME: PITCH AND CHOPS (TRAINED ON GROSS BEAT BANKS)");
         for (int f = 0; f < triad::timePresets::numFolders; ++f)
             add (timeFolder + f + 1, triad::timePresets::folderNames[f], (int) triad::timePresets::presetsIn (f).size(), paletteCategory == timeFolder + f);
-    }
+    };
+    if (timeHost()) addTimeFolders();   // TIME: its own folders first
     menu.addSectionHeader ("SHAPES BY TYPE");
     bool generatedHeader = false;
     for (int c = 0; c < mod::numPresetCategories(); ++c)
@@ -939,6 +992,7 @@ void ShapePanel::showCategoryMenu()
         if (mod::isExtraCategory (c)) menu.addSectionHeader ("EXTRA (EVERY PREVIEW SHAPE)");
         add (c + 1, mod::presetCategoryName (c), (int) mod::presetsIn (c).size(), c == paletteCategory);
     }
+    if (! timeHost()) addTimeFolders();
     menu.addSectionHeader ("YOUR SHAPES");
     add (userId, "USER", (int) triad::userShapes::load().size(), paletteCategory == userFolder);
     menu.addItem (saveId, "Save this shape to USER...");
@@ -1062,7 +1116,7 @@ void ShapePanel::resized()
     paletteArea = palette;
     categoryButton.setBounds (palette.removeFromLeft (132).withTrimmedRight (4));
     prevPage.setBounds (palette.removeFromLeft (24));
-    pageLabel.setBounds (palette.removeFromLeft (34));
+    pageLabel.setBounds (palette.removeFromLeft (50));
     nextPage.setBounds (palette.removeFromLeft (24));
     palette.removeFromLeft (6);
     const int width = juce::jmin (52, palette.getWidth() / paletteSize);

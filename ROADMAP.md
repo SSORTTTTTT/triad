@@ -14,10 +14,15 @@ octave or two up or down and also the 90 degree square shaped parts of the prese
   (678), an octave up (199), reverse an octave down (171) or up (141), two octaves down (95); about 8,500 jumps (back to
   live 58%, further back 17%, replaying the run just played 15%).
 - A generator trained only on those (lengths of the runs between jumps, what each run does, how the jumps go) made
-  **120 new TIME patterns** in five folders shown with TIME in Triad Time: OCTAVE DOWN, OCTAVE UP, REVERSE, CHOPS,
-  PITCH + CHOPS (24 each). Each is checked to be new (no copy of a bank pattern: at least 0.12 beats from every one),
-  on Triad Time's grid, within one bar back, and to have what its folder is named for. Tested: their octave and
-  reverse lines bend a 440 Hz tone as labelled.
+  **1,000 new TIME patterns** (Thomas: "make 1000 unique presets ... for the triad time banks") in five folders shown
+  first with TIME in Triad Time: OCTAVE DOWN, OCTAVE UP, REVERSE, CHOPS, PITCH + CHOPS (200 each). Each is checked to
+  be new (no copy of a bank pattern: at least 0.12 beats from every one; at least 0.2 from each other), on Triad
+  Time's grid, within one bar back, and to have what its folder is named for. Tested: their octave and reverse lines
+  bend a 440 Hz tone as labelled.
+- **ALL** (Thomas: "add all these other presets to the existing batch of LFOs ... so that there's just 1,000 presets
+  damn near all together"): a folder with every preset (Triad's 1,049 shapes and the 1,000 TIME patterns: 2,049),
+  top of the folder menu in Triad's LFO tab and Triad Time; the TIME folders are listed in the LFO tab too. Click the
+  page number to jump to a page, or in ALL to where a folder starts.
 - Not copied as they are: the banks are mostly other producers' and sample companies' paid packs (DrumSelect,
   DrumVault, TM88, The Kit Plug ...), and Triad is going to be released; they were used to learn the style only.
 
