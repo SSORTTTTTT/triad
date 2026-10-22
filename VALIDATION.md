@@ -1,5 +1,20 @@
 # Validation — Triad
 
+## Triad v13 (0.14.0), Triad Time and Triad Split on macOS — 2026-10-22
+
+Commit `7915886`, run 39804911083 attempt 4 (macos-15 runner, virtual Apple M1; GitHub is retiring macos-14 and gave
+no runner to the four earlier attempts or to run 39782245668, so they never started). New in 0.14.0: plug-in search in
+the add / replace effect menu (no Cmd+F), TRIGGER: SONG / AUDIO for each band's LFOs, and 2,000 more TIME patterns
+(3,000).
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v13-0.14.0`, `Triad-Time-0.14.0`, `Triad-Split-0.14.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (Triad v13 over simulated Triad ... v12 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| Plug-in search | Names starting with what is typed, then a word in the name, then anywhere (spaces and dashes ignored: "proq3" finds Pro-Q 3), the maker, several words; favourites first among equals; crashed plug-ins left out; in Triad's window it narrows as you type, Down / Return load the chosen one into a new slot, no match loads nothing |
+| Audio trigger | Waits at the start until sound comes in; starts within the band filter's delay (a 60 Hz tone in band 1) and on the very sample with LISTEN: FULL (1300 for 1300); plays at the song's tempo; restarts after 100 ms of quiet; back to waiting after two bars of quiet; a square LFO on the band's volume switches it off an eighth after the sound (RMS 0.354 / 0.001 / 0.354); LISTEN BAND / FULL, every hit (8 of 8) / after a pause (1), the threshold; saved with the project, undo and redo |
+| TIME patterns | 3,000 (600 a folder), all on the grid and within a bar back, each with what its folder is named for, all different; the first 1,000 unchanged; 20 of 20 octave / reverse lines bend 440 Hz as labelled; ALL: 4,049 presets, 369 pages |
+| Real plug-ins (43) | 5 x 3,000 random edits (each in its own process; now also switching bands between SONG and AUDIO) all passed: PASS, no crashes, no NaN/Inf output, all checks held. Fewer effects than before (43, was 57): GitHub's API gave no release list for six free plug-ins in this run (Surge XT, Dragonfly, ChowCentaur, GATE-12, TIME-12, REEV-R); the install script now asks up to 4 times |
+
 ## Triad v12 (0.13.0), Triad Time and Triad Split on macOS — 2026-10-21
 
 Commit `2f0ca59`, run 39701905878 (macos-14 runner, virtual Apple M1), passed on its first attempt. New in 0.13.0:

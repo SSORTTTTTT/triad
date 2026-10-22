@@ -32,7 +32,15 @@ direct=(
 
 asset_url()   # repository regex
 {
-  curl -fsSL "${auth[@]}" "https://api.github.com/repos/$1/releases?per_page=6" 2>/dev/null | python3 -c '
+  # The release list, asked up to 4 times: GitHub's API now and then answers a busy runner with an error (0.14.0's run
+  # skipped six plug-ins that way).
+  local json=""
+  for try in 1 2 3 4; do
+    json=$(curl -fsSL "${auth[@]}" "https://api.github.com/repos/$1/releases?per_page=6" 2>/dev/null) && [ "${json:0:1}" = "[" ] && break
+    json=""
+    sleep $((try * 10))
+  done
+  printf '%s' "$json" | python3 -c '
 import json, re, sys
 pattern = re.compile(sys.argv[1], re.I)
 try:
