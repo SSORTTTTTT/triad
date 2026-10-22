@@ -1228,7 +1228,7 @@ Shape splice (const Shape& base, const Shape& donor, float x0, float x1)
     normalise (out);
     return removeRedundant (out);
 }
-// TIME PRESETS: one of the 1,000 TIME patterns (curved ones more with Soft, straight ones with Angular); Chaos splices in
+// TIME PRESETS: one of the 3,000 TIME patterns (curved ones more with Soft, straight ones with Angular); Chaos splices in
 // quarters (eighths too, with more chaos) of other patterns, so it moves further from the ones there are.
 Shape fromTimePresets (const Style& style, const GridInfo& grid, juce::Random& r)
 {

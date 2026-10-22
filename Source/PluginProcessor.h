@@ -170,6 +170,27 @@ public:
     bool removeLfo (int band, int lfo);                          // extra LFOs only
     float getLfoPhase (int band, int lfo) const;                 // 0..1, or < 0 when not running
     float getLfoPhaseNow (int band, int lfo) const;              // the same, carried on to this moment (for the screen)
+    // Audio trigger (0.14.0, a band's TRIGGER: SONG / AUDIO): with AUDIO, the band's LFOs wait at their start until sound
+    // comes in, then play from their start at the song's tempo for their length (and loop while it plays on). A new
+    // sound restarts them once it has been quiet in between: for 30 ms ("every hit") or for a beat ("after a pause").
+    // They listen to the band's own sound (before its effects) or to the full sound (all bands, after PRE). After two
+    // bars of quiet they go back to their start and wait. With SONG (the default) they follow the song as before.
+    struct TriggerSettings
+    {
+        bool audio = false;           // AUDIO (else SONG)
+        bool listenFull = false;      // the full sound (else the band's own)
+        bool afterPause = false;      // restart after a beat of quiet (else on every hit)
+        float thresholdDb = -24.0f;   // the level that counts as sound coming in
+        bool operator== (const TriggerSettings& o) const
+        {
+            return audio == o.audio && listenFull == o.listenFull && afterPause == o.afterPause && juce::exactlyEqual (thresholdDb, o.thresholdDb);
+        }
+    };
+    static constexpr float minTriggerDb = -60.0f, maxTriggerDb = 0.0f;
+    TriggerSettings getTrigger (int band) const;
+    void setTrigger (int band, const TriggerSettings&);           // undoable
+    struct TriggerStatus { bool waiting = true; float levelDb = -100.0f; int count = 0; };
+    TriggerStatus getTriggerStatus (int band) const;             // the level: the loudest since the last call
 
     // ---- Matrix (message thread) -----------------------------------------------------------------
     struct Destination
@@ -290,7 +311,17 @@ private:
         double runPhase = 0.0, blockPhase = 0.0, increment = 0.0;
         std::atomic<float> displayPhase { -1.0f };
         triad::PhaseClock clock;         // the same, for the screen to move on smoothly between audio blocks
-        float value (int frame) const noexcept { return table.lookup (blockPhase + increment * frame); }
+        // Audio trigger: the frames of this block where the LFO starts again from its start (in order).
+        static constexpr int maxRestarts = 16;
+        int numRestarts = 0;
+        std::array<int, maxRestarts> restarts {};
+        double restartIncrement = 0.0;
+        float value (int frame) const noexcept
+        {
+            for (int k = numRestarts; --k >= 0;)
+                if (frame >= restarts[(size_t) k]) return table.lookup (restartIncrement * (frame - restarts[(size_t) k]));
+            return table.lookup (blockPhase + increment * frame);
+        }
     };
     struct Route
     {
@@ -349,6 +380,20 @@ private:
         triad::StereoDelay dryDelay, alignDelay;
         juce::SmoothedValue<float> mix, gain;
         juce::AudioBuffer<float> dry, slotDry;
+        struct Trigger
+        {
+            std::atomic<bool> audio { false }, listenFull { false }, afterPause { false };
+            std::atomic<float> thresholdDb { -24.0f };
+            // Audio thread.
+            bool wasAudio = false, armed = true, waiting = true, waitingAtStart = true;
+            float envelope = 0.0f;
+            int quiet = 0, numHits = 0;
+            std::array<int, Lfo::maxRestarts> hits {};
+            // For the screen.
+            std::atomic<float> level { 0.0f };
+            std::atomic<int> count { 0 };
+            std::atomic<bool> idle { true };
+        } trigger;
         Slot& appendSlot();
         Lfo& appendLfo (int slotId, bool bandLfo);
         void ensureModulation();     // band LFO, and an LFO + route for every slot
@@ -381,6 +426,7 @@ private:
     void handleInvalidAudio();   // message thread: reset (or bypass) effects that produced NaN/Inf
     std::array<juce::AudioBuffer<float>, triad::maxBands> split;
     juce::AudioBuffer<float> wide;   // for effects with an extra bus that cannot be switched off (e.g. a sidechain)
+    juce::AudioBuffer<float> fullSound;   // the full sound as it reaches the bands (after PRE): what LISTEN: FULL hears
     triad::Splitter splitter;
     triad::StereoDelay bypassDelay;
     juce::MidiBuffer childMidi;
@@ -444,6 +490,8 @@ private:
     bool findPending (juce::int64 request, int& band, int& slot) const;
     void readSongPosition();
     void advanceLfos (Band&, int offset, int frames);
+    // Audio trigger: finds where sound comes in (in `frames` samples of `source` from `start`) for the band's LFOs.
+    void detectTrigger (Band&, const juce::AudioBuffer<float>& source, int start, int frames);
     void process (juce::AudioBuffer<float>&);
     // Undo history: snapshots of createPresetXml (history), the one showing now at `historyCursor`.
     struct HistorySignal;            // changes reported from other threads (gestures on knobs)

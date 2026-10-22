@@ -12,7 +12,7 @@ namespace triad::mod
 //   INFILTRATOR    Triad's LFO dice as it was: tuned on his Infiltrator favourites (846 drawn shapes).
 //   SHAPERBOX      his ShaperBox presets (4,001 LFO waves): their cells (motifs) and how they repeat them.
 //   GROSS BEAT     (TIME) the time envelopes of his Gross Beat banks: runs, octave / reverse lines, chops.
-//   TIME PRESETS   (TIME) one of Triad Time's 1,000 TIME patterns; Chaos splices in parts of others.
+//   TIME PRESETS   (TIME) one of Triad Time's 3,000 TIME patterns; Chaos splices in parts of others.
 //   GROSS BEAT     (VOLUME) the volume envelopes of the banks: their cells and how they repeat them.
 enum class Source { infiltrator = 0, shaperBox, grossBeatTime, timePresets, grossBeatVolume };
 juce::String sourceName (Source);

@@ -670,6 +670,7 @@ void TriadProcessor::prepareToPlay (double sr, int block)
     splitter.setBandCount (numBands, cuts.data(), slopes.data());
     for (auto& buffer : split) buffer.setSize (2, capacity);
     wide.setSize (maxEffectChannels, capacity);
+    fullSound.setSize (2, capacity);
     childMidi.ensureSize (4096);
     for (int b = 0; b <= postBand; ++b) prepareBand (b, true);
     fadeLength = juce::jmax (1, (int) (sr * 0.01));
@@ -921,16 +922,87 @@ void TriadProcessor::readSongPosition()
             }
         }
 }
+void TriadProcessor::detectTrigger (Band& band, const juce::AudioBuffer<float>& source, int start, int frames)
+{
+    auto& t = band.trigger;
+    t.numHits = 0;
+    if (! t.audio.load (std::memory_order_relaxed)) { t.wasAudio = false; return; }
+    if (! t.wasAudio)
+    {
+        // Just switched to AUDIO: wait for sound.
+        t.wasAudio = true;
+        t.armed = true;
+        t.waiting = true;
+        t.envelope = 0.0f;
+        t.quiet = 0;
+    }
+    t.waitingAtStart = t.waiting;
+    const double sr = rate.load();
+    const double secondsPerBeat = 60.0 / blockBpm;
+    const float threshold = juce::Decibels::decibelsToGain (juce::jlimit (minTriggerDb, maxTriggerDb, t.thresholdDb.load (std::memory_order_relaxed)));
+    const float quietBelow = threshold * 0.5f;   // 6 dB under: quiet again (so a level hovering at the threshold is one sound)
+    const float release = (float) std::exp (-1.0 / (0.01 * sr));   // the level falls back over about 10 ms
+    const int rearm = (int) (sr * (t.afterPause.load (std::memory_order_relaxed) ? juce::jmax (0.1, secondsPerBeat) : 0.03));
+    const int idle = (int) (sr * 2.0 * blockBeatsPerBar * secondsPerBeat);
+    const float* left = source.getReadPointer (0, start);
+    const float* right = source.getReadPointer (juce::jmin (1, source.getNumChannels() - 1), start);
+    float loudest = 0.0f;
+    for (int i = 0; i < frames; ++i)
+    {
+        const float x = juce::jmax (std::abs (left[i]), std::abs (right[i]));
+        t.envelope = x > t.envelope ? x : t.envelope * release;
+        loudest = juce::jmax (loudest, t.envelope);
+        if (t.envelope >= threshold)
+        {
+            t.quiet = 0;
+            if (t.armed)
+            {
+                t.armed = false;
+                t.waiting = false;
+                if (t.numHits < Lfo::maxRestarts) t.hits[(size_t) t.numHits++] = i;
+                else t.hits[(size_t) Lfo::maxRestarts - 1] = i;
+                t.count.fetch_add (1, std::memory_order_relaxed);
+            }
+        }
+        else if (t.envelope < quietBelow)
+        {
+            if (t.quiet < std::numeric_limits<int>::max()) ++t.quiet;
+            if (t.quiet >= rearm) t.armed = true;
+            if (t.quiet >= idle) t.waiting = true;   // two bars of quiet: back to the start, waiting
+        }
+    }
+    if (loudest > t.level.load (std::memory_order_relaxed)) t.level.store (loudest, std::memory_order_relaxed);
+    t.idle.store (t.waiting, std::memory_order_relaxed);
+}
 void TriadProcessor::advanceLfos (Band& band, int offset, int frames)
 {
     // While the song plays, LFOs follow the song position; when stopped they keep running at its tempo.
+    // With the audio trigger they start from their start where sound comes in (detectTrigger), at the song's tempo.
     const double sr = rate.load();
     const double beatsPerSample = blockBpm / 60.0 / sr;
+    const auto& t = band.trigger;
+    const bool audioTrigger = t.wasAudio;
     for (auto& lfoPtr : band.lfos)
     {
         auto& l = *lfoPtr;
         const int length = l.length.load (std::memory_order_relaxed);
         const double beats = triad::mod::lengthInBeats (length, blockBeatsPerBar);
+        l.numRestarts = 0;
+        if (audioTrigger)
+        {
+            const double speed = beats > 0.0 ? beatsPerSample / beats : triad::mod::lengthInHz (length) / sr;
+            l.increment = t.waitingAtStart ? 0.0 : speed;           // waiting: held at its start
+            l.blockPhase = t.waitingAtStart ? 0.0 : l.runPhase;
+            l.restartIncrement = speed;
+            l.numRestarts = t.numHits;
+            for (int k = 0; k < t.numHits; ++k) l.restarts[(size_t) k] = t.hits[(size_t) k];
+            double end = t.numHits > 0 ? speed * (frames - t.hits[(size_t) t.numHits - 1]) : l.blockPhase + l.increment * frames;
+            if (t.waiting) end = 0.0;
+            l.runPhase = end - std::floor (end);
+            l.displayPhase.store ((float) l.runPhase, std::memory_order_relaxed);
+            l.clock.set ((float) l.runPhase, t.waiting ? 0.0 : speed * sr);
+            continue;
+        }
         if (beats > 0.0)
         {
             l.increment = beatsPerSample / beats;
@@ -1092,17 +1164,20 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
         auto& pre = *bands[(size_t) preBand];
         if (std::any_of (pre.slots.begin(), pre.slots.end(), [] (const auto& slotPtr) { return slotPtr->isActive(); }))
         {
+            detectTrigger (pre, audio, offset, n);   // PRE listens to Triad's input (BAND and FULL alike)
             advanceLfos (pre, offset, n);
             for (int ch = 0; ch < 2; ++ch) pre.dry.copyFrom (ch, 0, audio, ch, offset, n);
             if (! runChain (pre, pre.dry, n)) { audio.clear(); return; }
             for (int ch = 0; ch < 2; ++ch) audio.copyFrom (ch, offset, pre.dry, ch, 0, n);
         }
+        for (int ch = 0; ch < 2; ++ch) fullSound.copyFrom (ch, 0, audio, ch, offset, n);   // what LISTEN: FULL hears
         splitter.process (audio, offset, n, split);
         for (int ch = 0; ch < 2; ++ch) audio.clear (ch, offset, n);
         for (int b = 0; b < numBands; ++b)
         {
             auto& band = *bands[(size_t) b];
             auto& buffer = split[(size_t) b];
+            detectTrigger (band, band.trigger.listenFull.load (std::memory_order_relaxed) ? fullSound : buffer, 0, n);
             advanceLfos (band, offset, n);
             for (int ch = 0; ch < 2; ++ch) band.dry.copyFrom (ch, 0, buffer, ch, 0, n);
             // The band's chain: each active slot processes the output of the one above it.
@@ -1147,6 +1222,8 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
         auto& post = *bands[(size_t) postBand];
         if (std::any_of (post.slots.begin(), post.slots.end(), [] (const auto& slotPtr) { return slotPtr->isActive(); }))
         {
+            if (post.trigger.listenFull.load (std::memory_order_relaxed)) detectTrigger (post, fullSound, 0, n);
+            else detectTrigger (post, audio, offset, n);   // POST's own sound: the bands added together
             advanceLfos (post, offset, n);
             for (int ch = 0; ch < 2; ++ch) post.dry.copyFrom (ch, 0, audio, ch, offset, n);
             if (! runChain (post, post.dry, n)) { audio.clear(); return; }
@@ -1998,6 +2075,37 @@ bool TriadProcessor::removeLfo (int band, int index)
     stateChanged();
     return true;
 }
+TriadProcessor::TriggerSettings TriadProcessor::getTrigger (int band) const
+{
+    TriggerSettings s;
+    if (! isValidBand (band)) return s;
+    const auto& t = bands[(size_t) band]->trigger;
+    s.audio = t.audio.load();
+    s.listenFull = t.listenFull.load();
+    s.afterPause = t.afterPause.load();
+    s.thresholdDb = t.thresholdDb.load();
+    return s;
+}
+void TriadProcessor::setTrigger (int band, const TriggerSettings& s)
+{
+    if (! isValidBand (band) || getTrigger (band) == s) return;
+    auto& t = bands[(size_t) band]->trigger;
+    t.listenFull.store (s.listenFull);
+    t.afterPause.store (s.afterPause);
+    t.thresholdDb.store (juce::jlimit (minTriggerDb, maxTriggerDb, s.thresholdDb));
+    t.audio.store (s.audio);
+    stateChanged();
+}
+TriadProcessor::TriggerStatus TriadProcessor::getTriggerStatus (int band) const
+{
+    TriggerStatus s;
+    if (! isValidBand (band)) return s;
+    auto& t = bands[(size_t) band]->trigger;
+    s.waiting = ! t.audio.load() || t.idle.load();
+    s.levelDb = juce::Decibels::gainToDecibels (t.level.exchange (0.0f), -100.0f);
+    s.count = t.count.load();
+    return s;
+}
 float TriadProcessor::getLfoPhase (int band, int index) const
 {
     auto* l = lfoAt (band, index);
@@ -2291,6 +2399,15 @@ void TriadProcessor::writeBand (juce::XmlElement& node, const Band& band, bool f
     node.setAttribute ("slots", (int) band.slots.size());
     node.setAttribute ("nextSlot", band.nextSlotId);
     node.setAttribute ("nextLfo", band.nextLfoId);
+    // TRIGGER (0.14.0): only when it is not the default (SONG), so older Triads read the band as before.
+    const auto& t = band.trigger;
+    if (t.audio.load() || t.listenFull.load() || t.afterPause.load() || ! juce::exactlyEqual (t.thresholdDb.load(), -24.0f))
+    {
+        node.setAttribute ("trigger", t.audio.load() ? "audio" : "song");
+        node.setAttribute ("listen", t.listenFull.load() ? "full" : "band");
+        node.setAttribute ("restart", t.afterPause.load() ? "pause" : "hit");
+        node.setAttribute ("threshold", (double) t.thresholdDb.load());
+    }
     for (int i = 0; i < (int) band.slots.size(); ++i)
     {
         auto& s = *band.slots[(size_t) i];
@@ -2358,6 +2475,13 @@ std::unique_ptr<TriadProcessor::Band> TriadProcessor::readBand (const juce::XmlE
 {
     auto band = std::make_unique<Band> (false, extra);
     if (node != nullptr && node->hasAttribute ("serial")) band->serial = node->getIntAttribute ("serial");
+    if (node != nullptr && node->hasAttribute ("trigger"))
+    {
+        band->trigger.audio.store (node->getStringAttribute ("trigger") == "audio");
+        band->trigger.listenFull.store (node->getStringAttribute ("listen") == "full");
+        band->trigger.afterPause.store (node->getStringAttribute ("restart") == "pause");
+        band->trigger.thresholdDb.store (juce::jlimit (minTriggerDb, maxTriggerDb, (float) node->getDoubleAttribute ("threshold", -24.0)));
+    }
     int count = node != nullptr ? juce::jlimit (1, 4096, node->getIntAttribute ("slots", 1)) : 1;
     if (node != nullptr)
         for (auto* s : node->getChildWithTagNameIterator ("Slot"))

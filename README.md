@@ -1,8 +1,8 @@
 # Triad — multiband effects host
 
-Version 0.13.0 ("Triad v12") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
+Version 0.14.0 ("Triad v13") for Thomas Ross. Split your sound into up to 10 bands and run a chain of as many VST3 or Audio Unit effects as you like on each band, FL Studio mixer style, with a mix knob on every slot, a mix and volume on every band, and LFOs you draw on a grid to move them in time with your song.
 
-**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v12-0.13.0-macOS-AppleSilicon.pkg`), **Triad Time** (its time / volume gate) as a plug-in of its own (`Installer/Triad-Time-0.13.0-macOS-AppleSilicon.pkg`), and **Triad Split** (split mode: one band per mixer insert or track) as a plug-in of its own (`Installer/Triad-Split-0.13.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
+**This package is source code.** `Build-Mac.command` compiles the Apple Silicon AU and VST3 and wraps them in a standard macOS installer package (`Installer/Triad-v13-0.14.0-macOS-AppleSilicon.pkg`), **Triad Time** (its time / volume gate) as a plug-in of its own (`Installer/Triad-Time-0.14.0-macOS-AppleSilicon.pkg`), and **Triad Split** (split mode: one band per mixer insert or track) as a plug-in of its own (`Installer/Triad-Split-0.14.0-macOS-AppleSilicon.pkg`). DAW validation on your Mac is still required.
 
 ## What it does
 
@@ -30,6 +30,7 @@ Three tabs at the top: **BANDS**, **LFO** and **MATRIX**.
 - **Move a band's effects to another band:** press and hold a band's header and drag it left or right. The frequency ranges stay put; the chain (effects, knobs, LFOs, mix, volume) moves. The **...** menu on each band does the same one step at a time.
 - **Effect slots per band, as many as you need**, in processing order (Slot 1 runs first). Each band starts with one slot; **+ ADD SLOT** adds another and picks its effect in one go.
   - **Click an empty slot** to choose an effect. The list shows **effects only** (no instruments), with your **favourites** at the top, then VST3 and Audio Units by company (or A-Z, in settings).
+  - **Search plug-ins** (new in 0.14.0): the magnifying glass at the top of the add / replace effect menu (or just start typing while that menu is open) opens a search box over Triad's window. Type part of a plug-in's name (or its maker): the list narrows as you type, best matches first (names starting with what you typed, then a word in the name, then anywhere in it; spaces and dashes don't matter, so "proq3" finds Pro-Q 3), favourites first among equals, VST3 and AU tagged. **Up / Down** to choose, **Return** (or a double-click) loads it into the slot, **Esc** closes. No Cmd+F, so it never gets in the way of your DAW's own search.
   - **The effect's window opens as soon as it loads, in front of Triad.** Keys the effect does not use (the spacebar for play/stop) go back to your DAW.
   - **Each slot's knob** is that effect's dry/wet mix (double-click: 100%). The small **~** opens its LFO; it lights up while an LFO is moving the knob, and a white dot rides round the knob.
   - **The green light** bypasses the slot. **The ▸ arrow (or right-click)**: open, replace, edit LFO, add to favourites, copy / paste plugin state, move, bypass, remove. Drag a slot up or down to move it.
@@ -78,17 +79,17 @@ and also installed as a plug-in of its own (**Triad Time**, VST3 and AU) for any
   under it), so a line drawn at ShaperBox's angle bends the pitch as much: from 0 down to -1/16 over 1/8 is an octave
   down (-12 st). As in ShaperBox, the triangle under the corner-to-corner diagonal is striped.
 - **TIME folders** (new in 0.13.0): with TIME shown, the palette opens Triad Time's own folders (first in its folder
-  menu): **OCTAVE DOWN**, **OCTAVE UP**, **REVERSE**, **CHOPS** and **PITCH + CHOPS**, 200 patterns each (1,000 in
-  all). They come from a generator trained on the time envelopes of Thomas's Gross Beat banks (2,183 different
+  menu): **OCTAVE DOWN**, **OCTAVE UP**, **REVERSE**, **CHOPS** and **PITCH + CHOPS**, 600 patterns each (3,000 in
+  all: 1,000 in 0.13.0, 2,000 more in 0.14.0, the first 1,000 as they were). They come from a generator trained on the time envelopes of Thomas's Gross Beat banks (2,183 different
   patterns from 220 banks), leaning on what Triad Time does best: repitching forwards or backwards by an octave or
   two, and 90-degree chops. Every pattern is new (none is a copy of a bank pattern, no two the same), on the grid and
   within one bar back; each is named for what its lines do ("Down 001: FWD -12, TAPE"). VOLUME and Triad's LFOs list
   the TIME folders too (after Triad's own); each envelope remembers its folder.
 - **ALL** (new in 0.13.0, top of the folder menu, in Triad and Triad Time): every preset together, Triad's shapes and
-  the 1,000 TIME patterns (2,049). Click the page number to jump to a page, or in ALL to where a folder starts.
+  the 3,000 TIME patterns (4,049). Click the page number to jump to a page, or in ALL to where a folder starts.
 - **The dice's sources** (new in 0.13.0, the FROM chips under NEW SHAPE): each dice draws from one set of presets at a
   time, kept apart so they don't blur together. TIME: **GROSS BEAT** (trained on the Gross Beat banks' time patterns:
-  octave and reverse lines, tape stops and chops; Chaos adds runs and jumps) or **TIME PRESETS** (the 1,000 TIME
+  octave and reverse lines, tape stops and chops; Chaos adds runs and jumps) or **TIME PRESETS** (the 3,000 TIME
   patterns; Chaos splices in parts of others, further from them as it goes up). VOLUME: **GROSS BEAT** (the banks'
   volume gates) or **INFILTRATOR**. Each dice remembers its source.
 - **Pitch labels** (new in 0.11.0): each straight TIME line can read which way it plays and how far the pitch moves:
@@ -113,6 +114,15 @@ and also installed as a plug-in of its own (**Triad Time**, VST3 and AU) for any
 
 - Every effect's mix knob, and every Band Mix, already has its own LFO, linked and waiting: it switches on as soon as you draw on it. More LFOs can be added (**+**) and sent anywhere in the band.
 - Pick a band, then an LFO tab (each is labelled with the effect it moves).
+- **TRIGGER: SONG / AUDIO** (new in 0.14.0, right of the LFO tabs; for all of a band's LFOs, in every band, PRE and POST):
+  **SONG** (the default) runs the LFOs with the song, as before. **AUDIO** makes them wait at their start until sound
+  comes in, then play from their start at the song's tempo for their length (1/4, 1 bar, 2 bars ...; they loop while the
+  sound goes on), whether the song is playing or not, as ShaperBox's audio trigger does. In its menu: **LISTEN TO** the
+  band's own sound (before its effects, so a kick in the low band restarts only that band's LFOs) or **the full sound**;
+  **a new sound restarts them** on every hit (after 30 ms of quiet) or only after a pause (a beat of quiet); and the
+  **threshold** (-60 to -3 dB, -24 by default). The button shows the level, the threshold and a light that flashes at
+  each restart (dim while waiting). After two bars of quiet the LFOs go back to their start and wait. Saved with the
+  project, presets, chains and copy / paste band; undoable. MIDI triggering is not included.
 - **The grid** (in the spirit of ShaperBox, Gross Beat and Serum): top is 100%, bottom 0%. Double-click to add a point, drag to move (snaps to the grid; hold Alt or Cmd to place freely), double-click a point to delete it, drag the small dot in a line to curve it, drag in empty space to select several. Right-click: select all, move points to grid, flip horizontal/vertical, copy/paste wave, triplet grid, snap.
 - **Toolbar:** length (triplet / straight / dotted, 1/128 to 32 bars, or free-running Hz), grid size, snap, **SAVE** (keep this shape in your USER folder), clear, **2x** (repeat the pattern twice; Shift-click for 3x), **1/2** (the opposite), reverse, flip, undo/redo.
 - **Preset shapes**, under the grid, in folders: the folder button opens the list, **<** and **>** (or the mouse wheel over the shapes) turn its pages, and a click replaces the LFO's shape (undoable). About 1,000 shapes:
@@ -161,7 +171,7 @@ Split on the computer (new windows open in it too); **CANCEL** goes back to the 
 - **Startup preset** (new in 0.5.0): gear menu → **Change startup preset** chooses what every new Triad opens with: Init (an empty Triad), any saved preset, or your own settings saved with **Use the current settings as the startup preset**. Projects that already have Triad keep their own settings. The PRESET menu's **Initialize** turns the current Triad back into an empty one.
 - **Presets:** the **PRESET** menu saves and loads the whole Triad (`~/Music/Triad/Presets`). Each band's **...** menu saves or loads a **chain preset** (that band's effects with their settings, LFOs, mix and volume; `~/Music/Triad/Chains`).
 - **Settings (gear):** sort the effect list by company or A-Z, look for new plug-ins each time Triad opens (or only when you press Rescan), add your own plug-in folders, window size (75-150%).
-- Hosts **VST3 and Audio Unit** effects. Triad installs as AU and VST3, named **Triad v12**; projects made with Triad, Triad v2 ... v11 open in it. Each new release gets the next name (v12, v13, ...) and replaces the earlier ones.
+- Hosts **VST3 and Audio Unit** effects. Triad installs as AU and VST3, named **Triad v13**; projects made with Triad, Triad v2 ... v12 open in it. Each new release gets the next name (v13, v14, ...) and replaces the earlier ones.
 - Compensates each effect's latency, aligns all bands to the slowest chain, and reports the total to the DAW.
 - **Recording vocals through Triad:** Triad itself adds no latency (0 samples at every slope and band count), so it
   is safe to monitor through while recording; put a pitch corrector in **PRE** (once, on the whole voice) in its low-latency mode, not in each band.
@@ -183,18 +193,18 @@ Split on the computer (new windows open in it too); **CANCEL** goes back to the 
    - **CMake 3.22+**: uses one from Homebrew or `/Applications/CMake.app` if present; otherwise it downloads the official CMake 3.31.9 into `deps/` (checksum-verified) for this build only.
    - **JUCE 8.0.12**: downloaded into `deps/JUCE` at the pinned commit on the first run.
    - An internet connection is needed for the first run. A full log is written to `build-mac.log`.
-4. When it finishes, Finder shows `Installer/Triad-v12-0.13.0-macOS-AppleSilicon.pkg` (and `Installer/Triad-Time-0.13.0-macOS-AppleSilicon.pkg` and `Installer/Triad-Split-0.13.0-macOS-AppleSilicon.pkg`, Triad Time and Triad Split on their own). Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
-   - `/Library/Audio/Plug-Ins/Components/Triad v12.component` (AU)
-   - `/Library/Audio/Plug-Ins/VST3/Triad v12.vst3` (VST3)
+4. When it finishes, Finder shows `Installer/Triad-v13-0.14.0-macOS-AppleSilicon.pkg` (and `Installer/Triad-Time-0.14.0-macOS-AppleSilicon.pkg` and `Installer/Triad-Split-0.14.0-macOS-AppleSilicon.pkg`, Triad Time and Triad Split on their own). Quit your DAWs, double-click the package and follow the installer. It installs, for all users:
+   - `/Library/Audio/Plug-Ins/Components/Triad v13.component` (AU)
+   - `/Library/Audio/Plug-Ins/VST3/Triad v13.vst3` (VST3)
 
-   It shows up in your DAW as **Triad v12**. It replaces an earlier "Triad", "Triad v2" ... "Triad v11" (the installer removes those bundles first, so hosts never see two copies of the same plug-in), and projects made with them open in Triad v12. The Triad Time and Triad Split packages install `Triad Time.component` / `Triad Time.vst3` and `Triad Split.component` / `Triad Split.vst3` the same way. Quit your DAW completely before installing: macOS keeps an already-loaded plug-in running until the app quits.
+   It shows up in your DAW as **Triad v13**. It replaces an earlier "Triad", "Triad v2" ... "Triad v12" (the installer removes those bundles first, so hosts never see two copies of the same plug-in), and projects made with them open in Triad v13. The Triad Time and Triad Split packages install `Triad Time.component` / `Triad Time.vst3` and `Triad Split.component` / `Triad Split.vst3` the same way. Quit your DAW completely before installing: macOS keeps an already-loaded plug-in running until the app quits.
 
    Use **Customize** in the installer to install only one format.
 
    **Size.** Triad is built to stay small: it links only the JUCE modules it uses (plugin hosting and UI; no audio-device or audio-file-codec code), uses its own compact Linkwitz–Riley crossover instead of the `juce_dsp` module, compiles framework/UI code for size with link-time optimisation while the audio path stays at full `-O3` speed, and dead-strips and symbol-strips the shipped binaries. `cmake -DTRIAD_SIZE_OPTIMISED=OFF` restores a plain `-O3` build.
 
    After building, the `build-mac` and `deps` folders (roughly 1 GB) can be deleted to free space; they are recreated by the next build.
-5. Reopen your DAW and rescan plugins. Load **Triad v12** on a stereo track or mixer insert.
+5. Reopen your DAW and rescan plugins. Load **Triad v13** on a stereo track or mixer insert.
 
 `Install-Mac.command` is still included as an alternative: it copies the built bundles into your *user* plugin folders (`~/Library/Audio/Plug-Ins/...`) without an installer, backing up any previous copy to `~/Library/Application Support/Triad/Backups/`. Use one method or the other so your DAW does not find two copies of Triad.
 
@@ -202,7 +212,7 @@ If macOS refuses to launch a `.command` file or the ZIP extractor loses its exec
 
 The package and plugins are signed ad hoc on the Mac that built them (no Apple Developer ID, no notarization). That is fine on your own Mac. A copy downloaded onto another Mac will be blocked by Gatekeeper until it is allowed under System Settings > Privacy & Security > Open Anyway, or until it is signed with a Developer ID Installer certificate (`productsign`) and notarized.
 
-To uninstall, quit your DAWs and delete the two Triad v12 bundles listed above, then run `sudo pkgutil --forget audio.thomasross.triad.au` and `sudo pkgutil --forget audio.thomasross.triad.vst3` in Terminal.
+To uninstall, quit your DAWs and delete the two Triad v13 bundles listed above, then run `sudo pkgutil --forget audio.thomasross.triad.au` and `sudo pkgutil --forget audio.thomasross.triad.vst3` in Terminal.
 
 Your hosted effects must have native Apple Silicon VST3 versions installed. Triad does not bridge Intel-only binaries. Their existing licenses/authorizations still apply.
 
@@ -212,7 +222,7 @@ If you would rather not install Apple's developer tools, push this folder to a G
 
 ## Use
 
-1. Load **Triad v12** on a stereo track or mixer insert. It starts with 3 bands.
+1. Load **Triad v13** on a stereo track or mixer insert. It starts with 3 bands.
 2. Drag the dividers to set the band edges, or click a strip's start/end frequency to type one. Need another band? Double-click the display where you want the split, or press **+ BAND**.
 3. Click **Slot 1** in a band and choose an effect. Its window opens straight away. Click **+ ADD SLOT** to add more effects; they run top to bottom. The arrow on a slot moves, bypasses or removes it.
 4. Use each slot's knob for that effect's dry/wet, the green light to bypass it, **Band Mix** and **Volume** for the whole band.
@@ -271,7 +281,7 @@ build/TriadTests_artefacts/Release/TriadTests \
   "$PWD/build/fixtures/Triad Crash Fixture.vst3" \
   "$PWD/build/TriadScanner_artefacts/Release/TriadScanner" \
   "$PWD/Triad-preview.png" \
-  "$PWD/build/Triad_artefacts/Release/VST3/Triad v12.vst3" \
+  "$PWD/build/Triad_artefacts/Release/VST3/Triad v13.vst3" \
   "/Library/Audio/Plug-Ins/VST3/Triad Split.vst3"
 build/TriadStress_artefacts/Release/TriadStress \
   "$PWD/build/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \

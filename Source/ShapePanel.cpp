@@ -1221,7 +1221,7 @@ void GeneratorPanel::setSources (const std::vector<mod::Source>& list)
         b->setTooltip (s == mod::Source::infiltrator ? "From your Infiltrator presets: hard gates, steps, stairs and angles (the dice as it was)"
                        : s == mod::Source::shaperBox ? "From your ShaperBox presets: their motifs and how they repeat them (AAAB, ABAB ...)"
                        : s == mod::Source::grossBeatTime ? "From your Gross Beat banks' time patterns: octave and reverse lines, tape stops and chops"
-                       : s == mod::Source::timePresets ? "From Triad Time's 1,000 TIME patterns; Chaos splices in parts of others"
+                       : s == mod::Source::timePresets ? "From Triad Time's 3,000 TIME patterns; Chaos splices in parts of others"
                                                        : "From your Gross Beat banks' volume patterns: their gates and how they repeat them");
         b->onClick = [this, s] { setSource (s); };
         addAndMakeVisible (*b);

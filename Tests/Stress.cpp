@@ -869,8 +869,19 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
             }
             else if (choice < 117)
             {
-                begin ("LFO length");
+                begin ("LFO length / trigger");
                 p.setLfoLength (band, r.nextInt (juce::jmax (1, p.getLfoCount (band))), r.nextInt ((int) triad::mod::lengths().size()));
+                // TRIGGER (0.14.0): SONG / AUDIO now and then (its own random numbers, so the edits after it stay the same).
+                juce::Random t ((juce::int64) op * 7919 + 13);
+                if (t.nextInt (3) == 0)
+                {
+                    TriadProcessor::TriggerSettings trigger;
+                    trigger.audio = t.nextBool();
+                    trigger.listenFull = t.nextBool();
+                    trigger.afterPause = t.nextBool();
+                    trigger.thresholdDb = -6.0f * (float) (1 + t.nextInt (10));
+                    p.setTrigger (band, trigger);
+                }
             }
             else if (choice < 120)
             {

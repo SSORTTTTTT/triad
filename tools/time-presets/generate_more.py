@@ -2,9 +2,14 @@
 # runs between jumps, what each run does (stay, an octave down or up, reverse, tape stop...), how the jumps go (back to
 # live, replay, further back). Each folder leans on one thing Thomas likes; every pattern is checked to be new (not a
 # copy of any pattern in the banks), on Triad Time's grid (1/64 bar across, 1/16 bar of delay down), within one bar back.
-import json, math, random, collections
+import json, math, random, collections, sys
 from model import envs, polyline, model, speed_class
-R = random.Random(20261021 + 360)   # a second batch: 72 more a folder, on top of the first 24
+# python3 generate_more.py [kept.json] [per folder] [seed]
+#   0.13.0: batch-120.json 200 20261381   (880 more on top of generate.py's 120: 1,000)
+#   0.14.0: batch-1000.json 600 20261022  (2,000 more on top of those: 3,000)
+KEPT = sys.argv[1] if len(sys.argv) > 1 else 'batch-120.json'
+PER_FOLDER = int(sys.argv[2]) if len(sys.argv) > 2 else 200
+R = random.Random(int(sys.argv[3]) if len(sys.argv) > 3 else 20261021 + 360)
 BEATS = 4.0
 GRID_D = 0.25           # one row of Triad Time's grid: 1/16 of a bar back
 GRID_T = 0.0625         # one column: 1/64 of a bar
@@ -132,8 +137,7 @@ FOLDERS = [
     ('CHOPS', {('flat', 1.0): 2}, lambda c: c['chop'] >= 3),
     ('PITCH + CHOPS', {('ramp', 0.5): 3, ('ramp', -1.0): 3, ('ramp', 2.0): 4, ('ramp', 0.25): 2, ('ramp', -0.5): 2}, lambda c: c['chop'] >= 2 and (c['down'] + c['up'] + c['rev']) >= 1),
 ]
-PER_FOLDER = 200
-first = json.load(open('batch-120.json'))   # the first batch (generate.py, 120), kept as it is
+first = json.load(open(KEPT))   # the patterns there already, kept as they are (and the new ones kept clear of them)
 batch = [dict(m, curve=delay_curve([tuple(x) for x in m['segs']])) for m in first]
 stats = collections.Counter()
 for name, weights, crit in FOLDERS:

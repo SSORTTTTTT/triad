@@ -4,6 +4,7 @@
 #include "LfoPage.h"
 #include "MatrixPage.h"
 #include "PluginCatalog.h"
+#include "PluginSearch.h"
 #include "Settings.h"
 #include "Theme.h"
 
@@ -90,6 +91,14 @@ public:
     triad::ui::IconButton& getUndoButton() noexcept { return undoButton; }
     triad::ui::IconButton& getRedoButton() noexcept { return redoButton; }
     bool loadChain (int band, const juce::File&);
+    // Plug-in search (0.14.0): the magnifying glass at the top of the effect menu, or typing while it is open (no Cmd+F:
+    // Thomas, so it never clashes with Ableton's). Opens over the window, for `band` / `slot` (a slot past the last: a new
+    // one); `typed` starts the search.
+    void openPluginSearch (int band, int slot, const juce::String& typed = {});
+    triad::search::Panel& getPluginSearch() noexcept { return pluginSearch; }
+    // Every plug-in the effect menu offers (Triad Time built in first); `builtIns` gets how many are built in.
+    std::shared_ptr<std::vector<EffectEntry>> effectList (int* builtIns = nullptr) const;
+    void loadEntry (int band, int slot, const EffectEntry&);
     // Colours (the gear menu's THEME: Edit colours...), laid over the whole window.
     void openThemePanel() { themePanel.open(); }
     triad::ui::ThemePanel& getThemePanel() noexcept { return themePanel; }
@@ -155,6 +164,7 @@ private:
     juce::Label status;
     NamePrompt prompt;
     triad::ui::ThemePanel themePanel;
+    triad::search::Panel pluginSearch;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::TooltipWindow tooltips { this, 700 };
     Tab tab = Tab::bands;

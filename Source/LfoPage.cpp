@@ -41,9 +41,79 @@ private:
 
 }
 
+// TRIGGER: SONG / AUDIO for the band's LFOs. With AUDIO: a level meter, the threshold on it, and a light that flashes
+// when the LFOs start again (dim while they wait for sound).
+class LfoPage::TriggerButton final : public juce::Button, private juce::Timer
+{
+public:
+    explicit TriggerButton (LfoPage& p) : Button ("Trigger"), page (p)
+    {
+        setTooltip ("TRIGGER: SONG (the LFOs follow the song) or AUDIO (they start from their start when sound comes in, at the "
+                    "song's tempo, for their length)");
+        startTimerHz (30);
+    }
+    void paintButton (juce::Graphics& g, bool over, bool) override
+    {
+        const auto settings = page.processor.getTrigger (page.band);
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        g.setColour (settings.audio ? currentPalette.controlsOn : over ? slotRowHover : slotRow);
+        g.fillRoundedRectangle (r, 5.0f);
+        auto area = getLocalBounds().reduced (10, 4);
+        auto top = area.removeFromTop (14);
+        g.setColour (dimTextColour);
+        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+        g.drawText ("TRIGGER", top, juce::Justification::centredLeft);
+        juce::Path arrow;
+        const float ax = (float) getWidth() - 14.0f, ay = 11.0f;
+        arrow.addTriangle (ax - 4.0f, ay - 2.0f, ax + 4.0f, ay - 2.0f, ax, ay + 3.0f);
+        g.fillPath (arrow);
+        g.setColour (settings.audio ? accent : textColour);
+        g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+        if (! settings.audio)
+        {
+            g.drawText ("SONG", area, juce::Justification::centredLeft);
+            return;
+        }
+        g.drawText ("AUDIO", area.removeFromLeft (46), juce::Justification::centredLeft);
+        // The light: flashes at every restart, dim while waiting for sound.
+        const auto light = area.removeFromLeft (12).toFloat().withSizeKeepingCentre (8.0f, 8.0f);
+        const float flash = juce::jlimit (0.0f, 1.0f, 1.0f - (float) (juce::Time::getMillisecondCounterHiRes() - lastHit) / 250.0f);
+        g.setColour (waiting ? currentPalette.ledOff : ledColour.withAlpha (0.45f + 0.55f * flash));
+        g.fillEllipse (light.expanded (flash * 1.5f));
+        area.removeFromLeft (6);
+        // The level (-60 .. 0 dB) and the threshold on it.
+        auto meter = area.withSizeKeepingCentre (area.getWidth(), 6).toFloat();
+        g.setColour (currentPalette.meterBack);
+        g.fillRoundedRectangle (meter, 3.0f);
+        const auto toX = [&meter] (float db) { return meter.getX() + meter.getWidth() * juce::jlimit (0.0f, 1.0f, (db - TriadProcessor::minTriggerDb) / (TriadProcessor::maxTriggerDb - TriadProcessor::minTriggerDb)); };
+        g.setColour (shownLevel >= settings.thresholdDb ? ledColour : dimTextColour);
+        g.fillRoundedRectangle (meter.withRight (toX (shownLevel)), 3.0f);
+        g.setColour (textColour);
+        g.fillRect (juce::Rectangle<float> (toX (settings.thresholdDb) - 1.0f, meter.getY() - 3.0f, 2.0f, meter.getHeight() + 6.0f));
+    }
+private:
+    void timerCallback() override
+    {
+        if (! isShowing()) return;
+        const auto status = page.processor.getTriggerStatus (page.band);
+        shownLevel = juce::jmax (status.levelDb, shownLevel - 2.0f);   // falls back smoothly
+        if (status.count != lastCount) { lastCount = status.count; lastHit = juce::Time::getMillisecondCounterHiRes(); }
+        waiting = status.waiting;
+        if (page.processor.getTrigger (page.band).audio) repaint();
+    }
+    LfoPage& page;
+    float shownLevel = -100.0f;
+    int lastCount = 0;
+    double lastHit = 0.0;
+    bool waiting = true;
+};
+
 // ---- LFO page -----------------------------------------------------------------------------------------
 LfoPage::LfoPage (TriadProcessor& p) : processor (p)
 {
+    triggerButton = std::make_unique<TriggerButton> (*this);
+    triggerButton->onClick = [this] { showTriggerMenu(); };
+    addAndMakeVisible (*triggerButton);
     setTitle ("LFO");
     tabView.setViewedComponent (&tabHolder, false);
     tabView.setScrollBarsShown (false, true);
@@ -97,6 +167,48 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
     select (0, processor.getBandLfo (0));
 }
 LfoPage::~LfoPage() = default;
+juce::Button& LfoPage::getTriggerButton() noexcept { return *triggerButton; }
+void LfoPage::showTriggerMenu()
+{
+    enum { songId = 1, audioId, bandId, fullId, hitId, pauseId, thresholdBase = 100 };
+    const auto s = processor.getTrigger (band);
+    const auto name = TriadProcessor::isExtraChain (band) ? TriadProcessor::chainName (band) : "BAND " + juce::String (band + 1);
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("TRIGGER  " + name + u8 (" Â· ALL ITS LFOS"));
+    menu.addItem (songId, "SONG: follow the song (as before)", true, ! s.audio);
+    menu.addItem (audioId, "AUDIO: start when sound comes in", true, s.audio);
+    menu.addSectionHeader ("LISTEN TO");
+    menu.addItem (bandId, TriadProcessor::isExtraChain (band) ? name + "'s own sound" : juce::String ("This band's sound"), s.audio, ! s.listenFull);
+    menu.addItem (fullId, "The full sound (all bands)", s.audio, s.listenFull);
+    menu.addSectionHeader ("A NEW SOUND RESTARTS THEM");
+    menu.addItem (hitId, "On every hit", s.audio, ! s.afterPause);
+    menu.addItem (pauseId, "After a pause (a beat of quiet)", s.audio, s.afterPause);
+    juce::PopupMenu thresholds;
+    for (int db = -60; db <= -6; db += 6)
+        thresholds.addItem (thresholdBase - db, juce::String (db) + " dB", true, std::abs (s.thresholdDb - (float) db) < 0.5f);
+    thresholds.addItem (thresholdBase + 3, "-3 dB", true, std::abs (s.thresholdDb + 3.0f) < 0.5f);
+    menu.addSubMenu ("Threshold: " + juce::String (juce::roundToInt (s.thresholdDb)) + " dB", thresholds, s.audio);
+    juce::Component::SafePointer<LfoPage> safe (this);
+    const int forBand = band;
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (triggerButton.get()), [safe, forBand] (int choice)
+    {
+        if (safe == nullptr || choice == 0) return;
+        auto t = safe->processor.getTrigger (forBand);
+        if (choice == songId) t.audio = false;
+        else if (choice == audioId) t.audio = true;
+        else if (choice == bandId) t.listenFull = false;
+        else if (choice == fullId) t.listenFull = true;
+        else if (choice == hitId) t.afterPause = false;
+        else if (choice == pauseId) t.afterPause = true;
+        else if (choice >= thresholdBase) t.thresholdDb = (float) (thresholdBase - choice);   // ids 103 .. 160: -3 .. -60 dB
+        safe->processor.setTrigger (forBand, t);
+        safe->processor.setStatus ((TriadProcessor::isExtraChain (forBand) ? TriadProcessor::chainName (forBand) : "Band " + juce::String (forBand + 1))
+                                   + (t.audio ? "'s LFOs start when sound comes in (" + juce::String (juce::roundToInt (t.thresholdDb)) + " dB, "
+                                                    + (t.listenFull ? "the full sound" : "its own sound") + ", " + (t.afterPause ? "after a pause" : "every hit") + ")"
+                                              : juce::String ("'s LFOs follow the song")));
+        safe->triggerButton->repaint();
+    });
+}
 
 juce::String LfoPage::signature() const
 {
@@ -219,6 +331,8 @@ void LfoPage::resized()
     for (auto& b : bandButtons) { b->setBounds (bandRow.removeFromLeft (chipWidth()).withTrimmedRight (4)); }
     r.removeFromTop (6);
     auto tabRow = r.removeFromTop (44);
+    triggerButton->setBounds (tabRow.removeFromRight (176).withSizeKeepingCentre (176, 38));
+    tabRow.removeFromRight (8);
     addLfoButton.setBounds (tabRow.removeFromRight (30).withSizeKeepingCentre (28, 28));
     tabRow.removeFromRight (6);
     tabView.setBounds (tabRow);

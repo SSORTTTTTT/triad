@@ -22,6 +22,8 @@ void require (bool b, const char* message) { if (! b) throw std::runtime_error (
 #include "SplitTests.h"
 #include "FrameTests.h"
 #include "ThemeTests.h"
+#include "SearchTests.h"
+#include "TriggerTests.h"
 
 namespace
 {
@@ -381,6 +383,10 @@ int main (int argc, char** argv)
         frameTests::run();
         testStage = "colour themes";
         themeTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
+        testStage = "plug-in search";
+        searchTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
+        testStage = "audio trigger";
+        triggerTests::run();
         testStage = "running the tests";
 
         // ---- Built-in Linkwitz-Riley filter equals JUCE's -----------------------------------

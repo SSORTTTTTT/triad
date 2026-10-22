@@ -7,7 +7,7 @@ namespace
 {
 constexpr int margin = 24, headerHeight = 52, stripGap = 10, minStripWidth = 196, maxStripWidth = 420;
 constexpr int displayHeight = 210;
-enum MenuIds { scanningId = 1000001, noneId, browseId, refreshId, rescanId, emptySlotId };
+enum MenuIds { scanningId = 1000001, noneId, browseId, refreshId, rescanId, emptySlotId, searchId };
 juce::Array<juce::File> filesIn (const juce::File& folder, const juce::String& pattern)
 {
     auto files = folder.findChildFiles (juce::File::findFiles, false, pattern);
@@ -172,6 +172,7 @@ TriadEditor::TriadEditor (TriadProcessor& p)
     content.addAndMakeVisible (status);
     content.addChildComponent (prompt);
     content.addChildComponent (themePanel);
+    content.addChildComponent (pluginSearch);
     catalog->addChangeListener (this);
     rebuildStrips();
     setTab (Tab::bands);
@@ -231,6 +232,7 @@ void TriadEditor::layoutContent()
     status.setBounds (margin, logicalHeight - 28, logicalWidth - 2 * margin, 24);
     prompt.setBounds (0, 0, logicalWidth, logicalHeight);
     themePanel.setBounds (0, 0, logicalWidth, logicalHeight);
+    pluginSearch.setBounds (0, 0, logicalWidth, logicalHeight);
     layoutStrips();
 }
 void TriadEditor::setTab (Tab t)
@@ -475,7 +477,7 @@ void TriadEditor::setFavourite (const juce::String& format, const juce::String& 
     settings->setFavourite (TriadSettings::favouriteKey (format, name), on);
     processor.setStatus ((on ? "Added to favourites: " : "Removed from favourites: ") + name);
 }
-void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
+std::shared_ptr<std::vector<EffectEntry>> TriadEditor::effectList (int* builtIns) const
 {
     // Triad's built-in effect first (Triad Time), then everything installed (an installed Triad Time is the same
     // effect: only the built-in one is listed).
@@ -489,14 +491,52 @@ void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
         e.format = TriadTime::formatName;
         list->push_back (e);
     }
-    const int builtIns = (int) list->size();
+    if (builtIns != nullptr) *builtIns = (int) list->size();
     for (auto& e : catalog->getEffects())
         if (! (e.name == "Triad Time" && e.manufacturer == "Thomas Ross")) list->push_back (std::move (e));
+    return list;
+}
+void TriadEditor::loadEntry (int band, int slot, const EffectEntry& e)
+{
+    // Loading opens the effect's window straight away: one less click.
+    if (e.loadByFile) processor.loadFile (band, slot, juce::File (e.description.fileOrIdentifier), true, e.name);
+    else processor.loadEffect (band, slot, e.description, true);
+    timerCallback();
+}
+void TriadEditor::openPluginSearch (int band, int slot, const juce::String& typed)
+{
+    if (! TriadProcessor::isExtraChain (band)) band = juce::jlimit (0, juce::jmax (0, processor.getBandCount() - 1), band);
+    const bool newSlot = slot >= processor.getSlotCount (band);
+    const auto target = (TriadProcessor::isExtraChain (band) ? TriadProcessor::chainName (band) : "Band " + juce::String (band + 1)) + "  /  "
+                        + (newSlot ? juce::String ("new slot") : "slot " + juce::String (slot + 1));
+    auto list = effectList();
+    juce::Component::SafePointer<TriadEditor> safe (this);
+    pluginSearch.open (list, target, typed,
+                       [safe] (const EffectEntry& e) { return safe != nullptr && safe->isFavourite (e.format, e.name); },
+                       [safe, list, band, slot] (int index)
+                       {
+                           if (safe == nullptr || index < 0 || index >= (int) list->size()) return;
+                           safe->loadEntry (band, slot, (*list)[(size_t) index]);
+                       });
+}
+void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
+{
+    int builtIns = 0;
+    auto list = effectList (&builtIns);
     const bool newSlot = slot >= processor.getSlotCount (band);
     const bool alphabetical = settings->getSort() == TriadSettings::Sort::alphabetical;
     juce::PopupMenu menu;
     menu.addSectionHeader ((TriadProcessor::isExtraChain (band) ? TriadProcessor::chainName (band) : "Band " + juce::String (band + 1)) + "  /  "
                            + (newSlot ? juce::String ("New slot") : "Slot " + juce::String (slot + 1)));
+    // The search first (the magnifying glass; or just start typing while the menu is open).
+    {
+        juce::Component::SafePointer<TriadEditor> safe (this);
+        menu.addCustomItem (searchId, std::make_unique<triad::search::MenuItem> ([safe, band, slot] (const juce::String& typed)
+        {
+            if (safe != nullptr) safe->openPluginSearch (band, slot, typed);
+        }), nullptr, "Search plug-ins");
+        menu.addSeparator();
+    }
     // Favourites first: one click away.
     const auto favourites = settings->getFavourites();
     std::vector<int> favouriteItems;
@@ -581,16 +621,13 @@ void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
     {
         if (safe == nullptr || choice == 0) return;
         auto& self = *safe;
+        if (choice == searchId) { self.openPluginSearch (band, slot); return; }
         if (choice == browseId) { self.browse (band, slot); return; }
         if (choice == emptySlotId) { self.processor.addSlot (band); self.timerCallback(); return; }
         if (choice == refreshId) { self.catalog->refresh(); return; }
         if (choice == rescanId) { self.catalog->rescanAll(); return; }
         if (choice < 1 || choice > (int) list->size()) return;
-        const auto& e = (*list)[(size_t) choice - 1];
-        // Loading opens the effect's window straight away: one less click.
-        if (e.loadByFile) self.processor.loadFile (band, slot, juce::File (e.description.fileOrIdentifier), true, e.name);
-        else self.processor.loadEffect (band, slot, e.description, true);
-        self.timerCallback();
+        self.loadEntry (band, slot, (*list)[(size_t) choice - 1]);
     });
 }
 void TriadEditor::browse (int band, int slot)

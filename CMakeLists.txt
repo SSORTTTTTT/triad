@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
-project(Triad VERSION 0.13.0 LANGUAGES C CXX)
-# Installed as "Triad v12.vst3" / "Triad v12.component"; the plug-in IDs are unchanged from Triad 0.1,
-# so projects made with the earlier "Triad", "Triad v2" ... "Triad v11" open with Triad v12.
+project(Triad VERSION 0.14.0 LANGUAGES C CXX)
+# Installed as "Triad v13.vst3" / "Triad v13.component"; the plug-in IDs are unchanged from Triad 0.1,
+# so projects made with the earlier "Triad", "Triad v2" ... "Triad v12" open with Triad v13.
 # Each new release gets the next name (v9, v10, ...) and replaces the earlier ones when installed.
-set(TRIAD_PRODUCT_NAME "Triad v12")
+set(TRIAD_PRODUCT_NAME "Triad v13")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(TRIAD_BUILD_TESTS "Build integration tests and a test effect" ON)
@@ -36,7 +36,7 @@ juce_add_plugin(Triad
 target_sources(Triad PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp Source/CrossoverDisplay.cpp
     Source/BandStrip.cpp Source/PluginCatalog.cpp Source/AudioUnitList.cpp Source/Modulation.cpp Source/Settings.cpp
     Source/Widgets.cpp Source/Look.cpp Source/ShapePanel.cpp Source/LfoPage.cpp Source/MatrixPage.cpp Source/PlatformWindows.cpp
-    Source/Generator.cpp Source/ShapeLibrary.cpp Source/TriadTime.cpp Source/Theme.cpp)
+    Source/Generator.cpp Source/ShapeLibrary.cpp Source/TriadTime.cpp Source/Theme.cpp Source/PluginSearch.cpp)
 if(APPLE)
     target_sources(Triad PRIVATE Source/PlatformWindowsMac.mm)
 endif()

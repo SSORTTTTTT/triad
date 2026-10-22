@@ -58,6 +58,10 @@ public:
     void showUserShapeMenu (const juce::File& file) { shapes.showUserShapeMenu (file); }
     void startLearn();   // LEARN: the next knob moved in one of the band's effect windows is linked to this LFO
     juce::Button& getAddRouteButton() noexcept { return addRouteButton; }
+    // TRIGGER (0.14.0), right of the LFO tabs: SONG or AUDIO for this band's LFOs (with what it listens to, the threshold
+    // and when a new sound restarts them); while AUDIO it shows the level, the threshold and a light at every restart.
+    juce::Button& getTriggerButton() noexcept;
+    void showTriggerMenu();
     int getNumPaletteButtons() const noexcept { return shapes.getNumPaletteButtons(); }
     juce::Button* getPaletteButton (int i) const { return shapes.getPaletteButton (i); }
     void resized() override;
@@ -81,6 +85,8 @@ private:
     juce::Component tabHolder;
     std::vector<std::unique_ptr<juce::Button>> tabs;
     triad::ui::IconButton addLfoButton { triad::ui::IconButton::Icon::plus, "Add an LFO to this band" };
+    class TriggerButton;
+    std::unique_ptr<TriggerButton> triggerButton;
     LfoShapeHost host { processor };
     ShapePanel shapes;
     GeneratorPanel generator;

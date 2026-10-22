@@ -4,7 +4,34 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.13.0 ("Triad v12"): TIME folders trained on Gross Beat banks
+## Current testing version — 0.14.0 ("Triad v13"): plug-in search, audio trigger, 3,000 TIME patterns
+
+0.14.0 (2026-10-22), Thomas:
+- **Plug-in search** ("a little search bar where we can search just the plugin name ... similar ... like at Ableton
+  when you press Command F ... a magnifying glass icon ... when you go to add an effect in Triad or replace an
+  effect"): the magnifying glass at the top of the add / replace effect menu (or typing while that menu is open)
+  opens a search box over Triad's window; the list narrows as you type (name, a word in it, anywhere in it, spaces and
+  dashes ignored; the maker too), favourites first among equals; Up / Down, Return loads, Esc closes. The A-Z and
+  by-company lists stay. **No Cmd+F** (Thomas: "make sure ... command F does not open the plugin search ... that could
+  get confusing for when you're using Ableton").
+- **Audio trigger for the LFOs** ("the actual LFO clock starts when the audio input comes in, and you can set the bar
+  amount ... on each band"): TRIGGER: SONG / AUDIO for each band (and PRE / POST), right of the LFO tabs. With AUDIO
+  the band's LFOs wait at their start until sound comes in, then play from their start at the song's tempo for their
+  length (the LFO length menu: 1/4, 1 bar, 2 bars ...), looping while the sound goes on; sample-accurate. Listens to
+  the band's own sound (before its effects) or the full sound; restarts on every hit (after 30 ms of quiet) or after a
+  pause (a beat of quiet); threshold -60 to -3 dB (-24). After two bars of quiet they go back to their start and wait.
+  Saved with projects, presets, chains and band copy / paste; undoable. Audio only (no MIDI trigger), as asked.
+- **2,000 more TIME patterns** ("another 1,000 presets ... same as before" then "can you do 2,000 more?"): the same
+  generator trained on the Gross Beat banks, 400 more in each folder (OCTAVE DOWN, OCTAVE UP, REVERSE, CHOPS, PITCH +
+  CHOPS: 600 each, 3,000 in all; ALL now 4,049). Each new one is at least 0.12 beats from every bank pattern and 0.2
+  from every other pattern, the first 1,000 included (kept as they were, names 001-200; the new ones 201-600).
+
+### Next big step: aesthetics (Thomas, 2026-10-22)
+
+"The next big step will be working on ... the aesthetics of the plugin": the look and feel of Triad, Triad Time and
+Triad Split (see "Look and feel" below), when Thomas sends his references.
+
+### 0.13.0 ("Triad v12"): TIME folders trained on Gross Beat banks
 
 0.13.0 (2026-10-21), Thomas: "make another batch of presets trained only upon the lfos from the grossbeat presets I
 sent ... the best part about ... triad time is the repitching of melody either reversed or fwd being repitched an
