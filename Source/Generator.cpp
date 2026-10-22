@@ -1,6 +1,11 @@
 #include "Generator.h"
+#include "GeneratorData.h"
+#include "TimePresets.h"
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <set>
+#include <cstring>
 
 namespace triad::mod
 {
@@ -76,6 +81,7 @@ struct Cell
     float duty = 0.5f;                   // the part of the cell a gate is on, a decay falls, ...
     float bend = -4.0f;                  // curve amount (sign picks the flavour)
     int count = 2;                       // steps, teeth, waves
+    int pulses = 1;                      // a gate's squares (more with Chaos in Triad's LFOs)
     bool flag = false;                   // direction / variant
     int shade = 0;                       // soft gestures: 0 rise from the floor, 1 hang from the top, 2 swing around the middle
 };
@@ -269,6 +275,16 @@ private:
         return i - 1;
     }
 
+    // Chaos (Thomas): more triangles and more squares, each with more points.
+    float chaosBoost (Kind k) const
+    {
+        if (! style.lfoChaos) return 1.0f;
+        const float c = style.chaos;
+        if (k == Kind::triangle || k == Kind::trapezoid) return 1.0f + 2.0f * c * c;
+        if (k == Kind::zigzag) return 1.0f + 8.0f * c * c;
+        if (k == Kind::gate || k == Kind::step || k == Kind::stairs) return 1.0f + 1.4f * c * c;
+        return 1.0f;
+    }
     Kind pickKind (int width)
     {
         std::array<float, (size_t) Kind::count> weights {};
@@ -277,7 +293,7 @@ private:
         for (int k = 1; k < (int) Kind::count; ++k)
         {
             const auto f = (size_t) familyOf ((Kind) k);
-            if (minWidth ((Kind) k) <= width && sums[f] > 0.0f) weights[(size_t) k] = family[f] * baseWeight ((Kind) k) / sums[f];
+            if (minWidth ((Kind) k) <= width && sums[f] > 0.0f) weights[(size_t) k] = family[f] * baseWeight ((Kind) k) / sums[f] * chaosBoost ((Kind) k);
         }
         const int k = pickWeighted (weights);
         return k <= 0 ? (softOnly ? Kind::swell : Kind::step) : (Kind) k;
@@ -439,6 +455,8 @@ private:
         else if (roll < keep + 0.75f * (1.0f - keep)) c.kind = secondary;
         else c.kind = pickKind (width);
         if (c.kind != Kind::rest && minWidth (c.kind) > width) c.kind = pickKind (width);
+        // Chaos: a triangle becomes a run of triangles (more peaks, more points).
+        if (style.lfoChaos && c.kind == Kind::triangle && width >= 3 && random.nextFloat() < (style.chaos - 0.35f) * 1.5f) c.kind = Kind::zigzag;
         // A line squeezed into a short cell would have to be steep: mostly make it a square instead.
         if (isLine (c.kind) && width < roomFor (c.kind) && random.nextFloat() < 0.95f)
             c.kind = std::array<Kind, 3> { Kind::gate, Kind::rest, Kind::step }[(size_t) pickWeighted (std::array<float, 3> { width >= 2 ? 0.5f : 0.0f, 0.3f, 0.2f })];
@@ -460,6 +478,10 @@ private:
             {
                 const std::array<float, 4> duties { 0.5f, 0.25f, 0.75f, c.width % 3 == 0 ? 0.3334f : 0.5f };
                 c.duty = duties[(size_t) pickWeighted (std::array<float, 4> { 0.45f, 0.2f, 0.25f, 0.1f })];
+                // Chaos: a train of squares in the cell instead of one.
+                c.pulses = 1;
+                if (style.lfoChaos && c.width >= 4 && random.nextFloat() < (style.chaos - 0.35f) * 1.4f)
+                    c.pulses = juce::jlimit (2, c.width / 2, 2 + random.nextInt (1 + juce::roundToInt (style.chaos * 3.0f)));
                 break;
             }
             case Kind::stairs:
@@ -482,7 +504,8 @@ private:
                 c.duty = 0.35f + 0.4f * random.nextFloat();
                 break;
             case Kind::zigzag:
-                c.count = juce::jlimit (1, c.width, juce::roundToInt ((float) c.width * (0.15f + 0.35f * style.chaos)));
+                c.count = style.lfoChaos ? juce::jlimit (1, c.width, juce::jmax (2, juce::roundToInt ((float) c.width * (0.15f + 0.45f * style.chaos))))
+                                         : juce::jlimit (1, c.width, juce::roundToInt ((float) c.width * (0.15f + 0.35f * style.chaos)));
                 break;
             case Kind::glide:
                 c.duty = -1.0f;   // the middle level, set with the heights
@@ -652,10 +675,17 @@ private:
                 break;
             case Kind::gate:
             {
-                const double on = juce::jlimit (1.0, juce::jmax (1.0, w - 1.0), std::round (w * c.duty));
-                b.jump (top);
-                b.hold (c0 + on);
-                b.jump (bottom);
+                const int pulses = juce::jmax (1, c.pulses);
+                for (int i = 0; i < pulses; ++i)
+                {
+                    const double start = c0 + std::round (w * i / pulses), end = c0 + std::round (w * (i + 1) / pulses);
+                    const double each = end - start;
+                    const double on = juce::jlimit (1.0, juce::jmax (1.0, each - 1.0), std::round (each * c.duty));
+                    b.hold (start);
+                    b.jump (top);
+                    b.hold (start + on);
+                    b.jump (bottom);
+                }
                 b.hold (c1);
                 break;
             }
@@ -904,8 +934,354 @@ private:
 };
 }
 
+// ---- The dice's other sources -------------------------------------------------------------------------------------------
+juce::String sourceName (Source s)
+{
+    switch (s)
+    {
+        case Source::infiltrator:     return "INFILTRATOR";
+        case Source::shaperBox:       return "SHAPERBOX";
+        case Source::grossBeatTime:   return "GROSS BEAT";
+        case Source::timePresets:     return "TIME PRESETS";
+        case Source::grossBeatVolume: return "GROSS BEAT";
+    }
+    return {};
+}
+namespace
+{
+template <typename T, typename Weight>
+int pickIndex (const T* items, int count, juce::Random& r, Weight&& weight)
+{
+    double total = 0.0;
+    for (int i = 0; i < count; ++i) total += juce::jmax (0.0, (double) weight (items[i], i));
+    if (total <= 0.0) return r.nextInt (juce::jmax (1, count));
+    double x = r.nextDouble() * total;
+    for (int i = 0; i < count; ++i)
+        if ((x -= juce::jmax (0.0, (double) weight (items[i], i))) <= 0.0) return i;
+    return count - 1;
+}
+Shape tidy (Shape s, const GridInfo& grid)
+{
+    // On the grid, left to right, no repeated points.
+    for (auto& p : s)
+    {
+        p.x = juce::jlimit (0.0f, 1.0f, std::round (p.x * (float) grid.columns) / (float) grid.columns);
+        p.y = juce::jlimit (0.0f, 1.0f, std::round (p.y * (float) grid.rows) / (float) grid.rows);
+    }
+    std::stable_sort (s.begin(), s.end(), [] (const Point& a, const Point& b) { return a.x < b.x; });
+    normalise (s);
+    return removeRedundant (s);
+}
+
+// A cell's make-up (worked out once per library): how much of it curves, its steps, its points.
+struct CellLook { float soft = 0.0f; int steps = 0, points = 2, peaks = 0, lines = 0; bool flat = true; };
+const std::vector<CellLook>& looksOf (const sources::Library& lib, int resolution)
+{
+    static std::map<std::pair<const sources::Library*, int>, std::vector<CellLook>> cache;
+    auto& looks = cache[{ &lib, resolution }];
+    if (looks.empty())
+        for (int i = 0; i < lib.numCells[resolution]; ++i)
+        {
+            const auto& c = lib.cells[resolution][i];
+            CellLook l;
+            l.points = c.count;
+            int slope = 0;   // the last sloped segment's direction, for counting peaks (triangles)
+            for (int k = 0; k + 1 < c.count; ++k)
+            {
+                const auto& a = lib.points[c.first + k];
+                const auto& b = lib.points[c.first + k + 1];
+                if (std::abs (b.y - a.y) > 1.0e-4f) l.flat = false;
+                if (b.x - a.x < 1.0e-6f && std::abs (b.y - a.y) > 1.0e-4f) ++l.steps;
+                else if (std::abs (a.curve) > 1.0e-3f && std::abs (b.y - a.y) > 1.0e-4f) l.soft += b.x - a.x;
+                if (b.x - a.x > 1.0e-6f && std::abs (b.y - a.y) > 1.0e-4f)
+                {
+                    if (std::abs (a.curve) <= 1.0e-3f) ++l.lines;   // a straight slope: a triangle's or a saw's side
+                    const int dir = b.y > a.y ? 1 : -1;
+                    if (slope != 0 && dir != slope) ++l.peaks;
+                    slope = dir;
+                }
+            }
+            looks.push_back (l);
+        }
+    return looks;
+}
+
+// SHAPERBOX and GROSS BEAT VOLUME: a repeat scheme the presets use (AAAB, ABAB ...), each letter a cell (motif) from
+// them, chosen to suit Angular / Soft; Chaos: eighths more often, more different cells, cells varied. For Triad's LFOs
+// (SHAPERBOX; Thomas, 0.13.0) Chaos also favours triangles and squares and busier cells, and plays some cells two or
+// four times in their place: more peaks, more steps, more points.
+Shape fromCells (const sources::Library& lib, const Style& style, const GridInfo& grid, juce::Random& r)
+{
+    const bool lfo = style.lfoChaos && &lib == &sources::shaperBox;
+    const float wild = style.chaos * style.chaos;
+    const int resolution = r.nextFloat() < 0.2f + 0.55f * style.chaos ? 1 : 0;
+    const int n = resolution == 0 ? 4 : 8;
+    const auto* schemes = lib.schemes[resolution];
+    const int scheme = pickIndex (schemes, lib.numSchemes[resolution], r, [&] (const sources::Scheme& s, int)
+    {
+        std::set<char> letters (s.letters, s.letters + std::strlen (s.letters));
+        const float variety = (float) letters.size() / (float) n;
+        return std::pow (s.weight, 1.0f - 0.5f * style.chaos) * (1.0f + 3.0f * style.chaos * variety) * (1.0f + 2.0f * (1.0f - style.chaos) * (1.0f - variety));
+    });
+    const juce::String letters (schemes[scheme].letters);
+    const auto& looks = looksOf (lib, resolution);
+    std::map<juce::juce_wchar, int> cellFor;
+    std::map<juce::juce_wchar, bool> flipped;
+    std::map<juce::juce_wchar, int> repeatsOf;
+    for (int i = 0; i < letters.length(); ++i)
+    {
+        const auto letter = letters[i];
+        if (cellFor.count (letter)) continue;
+        cellFor[letter] = pickIndex (lib.cells[resolution], lib.numCells[resolution], r, [&] (const sources::Cell& c, int k)
+        {
+            const auto& l = looks[(size_t) k];
+            const float span = 1.0f;
+            const float softness = juce::jlimit (0.0f, 1.0f, l.soft / span);
+            const float fit = 0.08f + style.angular * (1.0f - softness) * (l.steps > 0 || ! l.flat ? 1.0f : 0.5f) + style.soft * softness * 1.6f;
+            const float busy = (float) juce::jmax (0, l.points - 2);
+            const float complexity = (1.0f + style.chaos * busy * 0.35f) / (1.0f + (1.0f - style.chaos) * busy * 0.15f);
+            const float shapes = lfo ? (1.0f + wild * (3.0f * (float) juce::jmin (l.peaks, 6) + 1.2f * (float) juce::jmin (l.lines, 8)
+                                                        + 0.9f * (float) juce::jmin (l.steps, 8) + 0.25f * busy))
+                                         * (l.peaks + l.steps + l.lines == 0 ? 1.0f - 0.8f * wild : 1.0f)
+                                     : 1.0f;
+            // (With Triad's LFO Chaos the presets' favourite cells count for less, so the busier ones come up.)
+            return std::pow (c.weight, lfo ? 0.6f - 0.35f * wild : 0.6f) * fit * complexity * shapes * (l.flat ? 0.5f : 1.0f);
+        });
+        flipped[letter] = r.nextFloat() < style.chaos * 0.3f;
+        // How many times the cell plays in its place (Triad's LFOs, with Chaos).
+        int times = 1;
+        if (lfo && style.chaos > 0.35f && r.nextFloat() < (style.chaos - 0.35f) * 0.9f)
+            times = style.chaos > 0.75f && r.nextBool() ? 4 : 2;
+        while (times > 1 && grid.columns / (n * times) < 2) times /= 2;
+        repeatsOf[letter] = times;
+    }
+    Shape s;
+    for (int i = 0; i < n; ++i)
+    {
+        const auto letter = letters[juce::jmin (i, letters.length() - 1)];
+        const auto& c = lib.cells[resolution][cellFor[letter]];
+        const bool flip = flipped[letter] != (i > 0 && style.chaos > 0.6f && r.nextFloat() < (style.chaos - 0.6f) * 0.5f);
+        const int times = juce::jmax (1, repeatsOf[letter]);
+        for (int t = 0; t < times; ++t)
+            for (int k = 0; k < c.count; ++k)
+            {
+                const auto& p = lib.points[c.first + k];
+                const float x = ((float) i + ((float) t + p.x) / (float) times) / (float) n, y = flip ? 1.0f - p.y : p.y;
+                if (! s.empty() && std::abs (s.back().x - x) < 1.0e-6f && std::abs (s.back().y - y) < 1.0e-6f) { s.back().curve = flip ? -p.curve : p.curve; continue; }
+                s.push_back ({ x, y, flip ? -p.curve : p.curve });
+            }
+    }
+    s = tidy (std::move (s), grid);
+    if (s.size() < 2) return { { 0.0f, 1.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } };
+    return s;
+}
+
+// GROSS BEAT (TIME): runs between jumps, as long as the banks' runs; each run stays, bends the pitch (mostly an octave
+// down, reversed, an octave up), or tape-stops; the jumps go back to live, replay the run, or further back (chops).
+// Angular: straight lines and chops; Soft: tape stops and starts; Chaos: more runs, rarer moves and jumps.
+Shape timeRuns (const Style& style, const GridInfo& grid, juce::Random& r)
+{
+    constexpr float beats = 4.0f;
+    const float column = beats / (float) juce::jmax (1, grid.columns), row = beats / (float) juce::jmax (1, grid.rows);
+    const float chaos = style.chaos;
+    const auto onGrid = [] (float v, float unit) { return std::abs (v / unit - std::round (v / unit)) < 1.0e-4f; };
+    for (int attempt = 0; attempt < 600; ++attempt)
+    {
+        const int runs = (int) sources::timeRunsPerBar[pickIndex (sources::timeRunsPerBar, (int) std::size (sources::timeRunsPerBar), r, [&] (const sources::Weighted& w, int)
+        {
+            return w.weight * std::pow (w.value, (chaos - 0.35f) * 2.2f);
+        })].value;
+        // Lengths: learned, each starting where it would in a bar of its kind, on the editor's grid.
+        std::vector<float> lengths;
+        float t = 0.0f;
+        bool ok = true;
+        for (int i = 0; i < runs && ok; ++i)
+        {
+            const float left = beats - t;
+            if (i == runs - 1) { lengths.push_back (left); t = beats; break; }
+            const int k = pickIndex (sources::timeRunBeats, (int) std::size (sources::timeRunBeats), r, [&] (const sources::Weighted& w, int)
+            {
+                const float d = w.value, unit = juce::jmin (d, 1.0f);
+                if (d > left - 0.0625f * (float) (runs - 1 - i) || ! onGrid (t, unit) || ! onGrid (d, column)) return 0.0f;
+                return std::pow (w.weight, 1.0f - 0.4f * chaos) * (d < 0.25f ? 0.5f + chaos : 1.0f);
+            });
+            const float d = sources::timeRunBeats[k].value;
+            if (d > left - 1.0e-6f || ! onGrid (d, column)) { ok = false; break; }
+            lengths.push_back (d);
+            t += d;
+        }
+        if (! ok || lengths.empty() || std::abs (t - beats) > 1.0e-4f || ! onGrid (lengths.back(), column)) continue;
+        struct Run { float t0, t1, d0, d1; int kind; };
+        std::vector<Run> made;
+        float at = 0.0f, d = r.nextFloat() < 0.1f + 0.2f * chaos ? row * (float) (1 + r.nextInt (4)) * 2.0f : 0.0f;
+        for (size_t i = 0; i < lengths.size() && ok; ++i)
+        {
+            const float len = lengths[i];
+            if (i > 0)
+            {
+                const auto& prev = made.back();
+                const float further = sources::timeFurther[pickIndex (sources::timeFurther, (int) std::size (sources::timeFurther), r,
+                                                                      [] (const sources::Weighted& w, int) { return w.weight; })].value;
+                const auto target = [&] (int jump)
+                {
+                    switch (jump)
+                    {
+                        case sources::jumpLive:    return 0.0f;
+                        case sources::jumpRepeat:  return prev.d0 + (prev.t1 - prev.t0);
+                        case sources::jumpFurther: return prev.d1 + further;
+                        case sources::jumpTowards: return juce::jmax (0.0f, prev.d1 - further);
+                        case sources::jumpSame:    return prev.d0;
+                        default:                   return prev.d1;
+                    }
+                };
+                // Only jumps that land on the grid and within reach.
+                const int jump = (int) sources::timeJumps[pickIndex (sources::timeJumps, (int) std::size (sources::timeJumps), r, [&] (const sources::Weighted& w, int)
+                {
+                    const int kind = (int) w.value;
+                    const float to = target (kind);
+                    if (! onGrid (to, row) || to > beats - 1.0e-4f) return 0.0f;
+                    return w.weight * (kind == sources::jumpLive ? 1.0f - 0.5f * chaos : kind == sources::jumpFurther || kind == sources::jumpRepeat ? 0.6f + chaos + 0.5f * style.angular : 1.0f);
+                })].value;
+                d = target (jump);
+            }
+            // Only moves that end on the grid and within reach (one bar back).
+            const int content = pickIndex (sources::timeContents, (int) std::size (sources::timeContents), r, [&] (const sources::TimeContent& c, int)
+            {
+                const float end = d + (1.0f - (c.kind == 0 ? 1.0f : c.speed)) * len;
+                if (! onGrid (end, row) || end < -1.0e-4f || end > beats + 1.0e-4f) return 0.0f;
+                // Staying live is the most common run in the banks; with Chaos less of it.
+                const float stay = d < 1.0e-4f ? 1.0f - 0.6f * chaos : 1.0f;
+                const float kindWeight = c.kind == 0 ? stay : c.kind == 1 ? 0.3f + 1.2f * style.angular : 0.08f + 2.0f * style.soft;
+                // What Triad Time is best at (Thomas): an octave or two down or up, forwards or reversed.
+                const bool octave = std::abs (c.speed - 0.5f) < 1.0e-3f || std::abs (c.speed - 0.25f) < 1.0e-3f || std::abs (c.speed - 2.0f) < 1.0e-3f
+                                    || std::abs (c.speed - 4.0f) < 1.0e-3f || std::abs (c.speed + 1.0f) < 1.0e-3f || std::abs (c.speed + 0.5f) < 1.0e-3f
+                                    || std::abs (c.speed + 2.0f) < 1.0e-3f;
+                const float pitchBias = c.kind == 0 ? 1.0f : octave ? 1.6f : 0.5f;
+                // Long runs mostly play on (or slow to half speed); the bending happens in the short ones.
+                const float longRun = len > 1.0f + 1.0e-4f && c.kind != 0 && std::abs (c.speed - 0.5f) > 1.0e-3f ? 0.25f : 1.0f;
+                return std::pow (c.weight, 1.0f - 0.45f * chaos) * kindWeight * pitchBias * longRun;
+            });
+            const auto& c = sources::timeContents[content];
+            const float speed = c.kind == 0 ? 1.0f : c.speed;
+            const float d1 = d + (1.0f - speed) * len;
+            if (! onGrid (d, row) || ! onGrid (d1, row) || d < -1.0e-4f || d1 < -1.0e-4f || d > beats + 1.0e-4f || d1 > beats + 1.0e-4f) { ok = false; break; }
+            made.push_back ({ at, at + len, d, d1, c.kind });
+            at += len;
+        }
+        if (! ok) continue;
+        // Something to hear (a bent line, a chop, a tape stop), and with Chaos more of it: runs that are not just live.
+        bool bends = false;
+        int active = 0;
+        for (size_t i = 0; i < made.size(); ++i)
+        {
+            const bool chop = i > 0 && made[i].d0 > made[i - 1].d1 + 1.0e-4f;
+            bends |= (made[i].kind != 0 && std::abs (made[i].d1 - made[i].d0) > 1.0e-4f) || chop;
+            active += made[i].kind != 0 || made[i].d0 > 1.0e-4f || chop ? 1 : 0;
+        }
+        if (! bends || made.size() < 2 || active < juce::jmin ((int) made.size(), 2 + juce::roundToInt (chaos * 3.0f))) continue;
+        Shape s;
+        const float tape = 2.0f * std::log (1.0f / 0.25f - 1.0f);
+        for (const auto& run : made)
+        {
+            const Point a { run.t0 / beats, 1.0f - run.d0 / beats, run.kind == 2 ? (r.nextFloat() < 0.7f ? tape : -tape) : 0.0f };
+            const Point b { run.t1 / beats, 1.0f - run.d1 / beats, 0.0f };
+            if (! s.empty() && std::abs (s.back().x - a.x) < 1.0e-6f && std::abs (s.back().y - a.y) < 1.0e-6f) s.back().curve = a.curve;
+            else s.push_back (a);
+            s.push_back (b);
+        }
+        return tidy (std::move (s), grid);
+    }
+    return timePresets::shape (r.nextInt (timePresets::numPresets));
+}
+
+// The value just before / just after x (at a vertical step these differ).
+float valueBefore (const Shape& s, float x)
+{
+    for (size_t i = 0; i < s.size(); ++i)
+        if (std::abs (s[i].x - x) < 1.0e-6f) return s[i].y;
+    return evaluate (s, x);
+}
+float valueAfter (const Shape& s, float x)
+{
+    for (size_t i = s.size(); i-- > 0;)
+        if (std::abs (s[i].x - x) < 1.0e-6f) return s[i].y;
+    return evaluate (s, x);
+}
+// `base` with its part from x0 to x1 replaced by the same part of `donor` (vertical steps where they meet).
+Shape splice (const Shape& base, const Shape& donor, float x0, float x1)
+{
+    Shape out;
+    for (const auto& p : base) if (p.x < x0 - 1.0e-6f) out.push_back (p);
+    if (out.empty() || out.back().x < x0 - 1.0e-6f) out.push_back ({ x0, valueBefore (base, x0), 0.0f });
+    if (! out.empty() && std::abs (out.back().x - x0) < 1.0e-6f) out.back().curve = 0.0f;
+    float curveAt = 0.0f;
+    for (size_t i = 0; i + 1 < donor.size(); ++i)
+        if (donor[i].x <= x0 + 1.0e-6f && donor[i + 1].x > x0 + 1.0e-6f) curveAt = donor[i].curve;
+    out.push_back ({ x0, valueAfter (donor, x0), curveAt });
+    for (const auto& p : donor) if (p.x > x0 + 1.0e-6f && p.x < x1 - 1.0e-6f) out.push_back (p);
+    out.push_back ({ x1, valueBefore (donor, x1), 0.0f });
+    float curveBase = 0.0f;
+    for (size_t i = 0; i + 1 < base.size(); ++i)
+        if (base[i].x <= x1 + 1.0e-6f && base[i + 1].x > x1 + 1.0e-6f) curveBase = base[i].curve;
+    out.push_back ({ x1, valueAfter (base, x1), curveBase });
+    for (const auto& p : base) if (p.x > x1 + 1.0e-6f) out.push_back (p);
+    normalise (out);
+    return removeRedundant (out);
+}
+// TIME PRESETS: one of the 1,000 TIME patterns (curved ones more with Soft, straight ones with Angular); Chaos splices in
+// quarters (eighths too, with more chaos) of other patterns, so it moves further from the ones there are.
+Shape fromTimePresets (const Style& style, const GridInfo& grid, juce::Random& r)
+{
+    static const std::vector<bool> curved = []
+    {
+        std::vector<bool> v;
+        for (int i = 0; i < timePresets::numPresets; ++i)
+        {
+            bool c = false;
+            for (const auto& p : timePresets::shape (i)) c |= std::abs (p.curve) > 1.0e-3f;
+            v.push_back (c);
+        }
+        return v;
+    }();
+    const auto choose = [&]
+    {
+        std::vector<int> all ((size_t) timePresets::numPresets);
+        for (int i = 0; i < timePresets::numPresets; ++i) all[(size_t) i] = i;
+        return pickIndex (all.data(), (int) all.size(), r, [&] (int, int i)
+        {
+            return curved[(size_t) i] ? 0.15f + 1.8f * style.soft : 0.15f + style.angular;
+        });
+    };
+    auto s = timePresets::shape (choose());
+    const int splices = juce::roundToInt (style.chaos * 4.0f + r.nextFloat() * style.chaos);
+    for (int k = 0; k < splices; ++k)
+    {
+        const bool eighth = r.nextFloat() < style.chaos * 0.6f;
+        const int parts = eighth ? 8 : 4;
+        const int at = r.nextInt (parts);
+        s = splice (s, timePresets::shape (choose()), (float) at / (float) parts, (float) (at + 1) / (float) parts);
+    }
+    return tidy (std::move (s), grid);
+}
+}
+
 Shape generate (const Style& style, const GridInfo& grid, juce::Random& random)
 {
+    switch (style.source)
+    {
+        case Source::shaperBox:
+        {
+            auto shape = fromCells (sources::shaperBox, style, grid, random);
+            // Triad's LFOs: never a flat line (a still LFO) from the dice.
+            for (int retry = 0; style.lfoChaos && retry < 8 && std::all_of (shape.begin(), shape.end(), [&] (const Point& p) { return juce::exactlyEqual (p.y, shape.front().y); }); ++retry)
+                shape = fromCells (sources::shaperBox, style, grid, random);
+            return shape;
+        }
+        case Source::grossBeatVolume: return fromCells (sources::grossBeatVolume, style, grid, random);
+        case Source::grossBeatTime:   return timeRuns (style, grid, random);
+        case Source::timePresets:     return fromTimePresets (style, grid, random);
+        case Source::infiltrator:     break;
+    }
     return Generator (style, grid, random).run();
 }
 

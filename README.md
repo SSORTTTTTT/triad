@@ -86,6 +86,11 @@ and also installed as a plug-in of its own (**Triad Time**, VST3 and AU) for any
   the TIME folders too (after Triad's own); each envelope remembers its folder.
 - **ALL** (new in 0.13.0, top of the folder menu, in Triad and Triad Time): every preset together, Triad's shapes and
   the 1,000 TIME patterns (2,049). Click the page number to jump to a page, or in ALL to where a folder starts.
+- **The dice's sources** (new in 0.13.0, the FROM chips under NEW SHAPE): each dice draws from one set of presets at a
+  time, kept apart so they don't blur together. TIME: **GROSS BEAT** (trained on the Gross Beat banks' time patterns:
+  octave and reverse lines, tape stops and chops; Chaos adds runs and jumps) or **TIME PRESETS** (the 1,000 TIME
+  patterns; Chaos splices in parts of others, further from them as it goes up). VOLUME: **GROSS BEAT** (the banks'
+  volume gates) or **INFILTRATOR**. Each dice remembers its source.
 - **Pitch labels** (new in 0.11.0): each straight TIME line can read which way it plays and how far the pitch moves:
   "FWD -12 st" (half speed), "FWD -24 st" (a quarter speed), "FWD +12 st" (double), "REV 0 st" (backwards at normal
   speed), "REV -12 st" (backwards at half speed), "FREEZE" (the diagonal). The gear at the top right of Triad Time's
@@ -115,6 +120,12 @@ and also installed as a plug-in of its own (**Triad Time**, VST3 and AU) for any
   - **Generated** by the dice, sorted by what they are made of: GEN: SQUARES, GEN: ANGLES, GEN: HARD+CURVE, GEN: SOFT, GEN: TRIPLETS, GEN: CHAOS — 44 shapes each, 4 pages, plainest on page 1 and busiest on page 4.
   - **EXTRA** (new in 0.4.2): all 355 shapes from the generator's preview sheets, 33 pages, sorted by type.
   - **USER** (new in 0.4.2): the shapes you saved with **SAVE** (or "Save this LFO's shape to USER..." in the folder list). They are files in `~/Music/Triad/LFO Shapes`, so every Triad and every project sees them. Right-click one to rename or delete it.
+- **Dice sources and Chaos** (new in 0.13.0): Triad's LFO dice has two sources (the FROM chips): **INFILTRATOR** (the
+  dice as it was: hard gates, steps, stairs and angles) and **SHAPERBOX** (the ShaperBox presets' motifs and how they
+  repeat them, AAAB, ABAB ...), each trained on its own set. In Triad's LFO tab, **Chaos** also makes more triangles
+  (runs of them, saw and triangle teeth) and more squares (trains of gates, more stairs), each with more points, and
+  plays some cells two or four times in their place; it never draws a flat line. Triad Time's dice keeps its own
+  training (the Gross Beat banks; see Triad Time).
 - **GENERATE** (new in 0.4.1, right of the grid): **NEW SHAPE** (the dice) draws a new shape on the current grid. **Angular** = hard 90° steps, squares, triangles and 30/45/60° lines; **Soft** = curves and waves (with Angular too: hard jumps into curves); **Chaos** = more points and less regular rhythm (low Chaos repeats a simple pattern, so it is never too random). **HARD / MIX / SOFT** set the first two in one click. Studied from Thomas's Infiltrator favourites (how often they step, hold, ramp and curve, and where), never copied from them.
 - **Train the dice** (new in 0.10.0): under **NEW SHAPE**, the **green check** says you like the shape on the grid and the **red X** says you don't (and draws a new one). From then on the dice draws a batch of shapes and offers one of the best for your taste: closer to the shapes you liked, away from the ones you disliked made with similar Angular / Soft / Chaos settings, and never one nearly the same as a shape you disliked. Each shows how many you rated; right-click either to forget. Triad's LFOs, Triad Time's TIME and its VOLUME each learn their own taste (the newest 400 ratings are kept, next to Triad's settings).
 - LFOs follow the song position while the DAW plays (and keep running at its tempo when stopped).

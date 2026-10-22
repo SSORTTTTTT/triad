@@ -1,6 +1,6 @@
 // Development tool: prints LFO shapes as JSON, to look at the preset bank and the generator's output.
 //   TriadShapeDump presets
-//   TriadShapeDump generate <angular 0..1> <soft 0..1> <chaos 0..1> <count> [seed] [columns]
+//   TriadShapeDump generate <angular 0..1> <soft 0..1> <chaos 0..1> <count> [seed] [columns] [source 0..4] [lfo]
 //   TriadShapeDump library > Source/GeneratedShapes.h      (the GEN folders of the preset palette)
 //   TriadShapeDump extras <sheet.json>... > Source/ExtraShapes.h   (the EXTRA folder: shapes from the preview sheets)
 #include "../Source/Generator.h"
@@ -228,7 +228,9 @@ int main (int argc, char** argv)
     else if (argc >= 6)
     {
         const mod::Style style { (float) juce::String (argv[2]).getDoubleValue(), (float) juce::String (argv[3]).getDoubleValue(),
-                                 (float) juce::String (argv[4]).getDoubleValue() };
+                                 (float) juce::String (argv[4]).getDoubleValue(),
+                                 argc > 8 ? (mod::Source) juce::jlimit (0, 4, juce::String (argv[8]).getIntValue()) : mod::Source::infiltrator,
+                                 argc > 9 && juce::String (argv[9]) == "lfo" };
         const int count = juce::String (argv[5]).getIntValue();
         const auto seed = argc > 6 ? juce::String (argv[6]).getLargeIntValue() : (juce::int64) 1;
         mod::GridInfo grid;

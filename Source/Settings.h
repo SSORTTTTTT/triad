@@ -23,6 +23,8 @@ public:
     void setGenerator (float angular, float soft, float chaos);
     int getPaletteCategory() const;
     void setPaletteCategory (int);
+    int getDiceSource (const juce::String& tasteKey, int fallback) const;   // which presets each dice draws from
+    void setDiceSource (const juce::String& tasteKey, int source);
     int getTimePaletteCategory (int fallback) const;   // the folder open for Triad Time's TIME envelope
     void setTimePaletteCategory (int);
 

@@ -101,6 +101,18 @@ int TriadSettings::getPaletteCategory() const
     reload();
     return file->getIntValue ("lfoPalette", 0);
 }
+int TriadSettings::getDiceSource (const juce::String& key, int fallback) const
+{
+    reload();
+    return file->getIntValue ("diceSource." + key, fallback);
+}
+void TriadSettings::setDiceSource (const juce::String& key, int source)
+{
+    reload();
+    file->setValue ("diceSource." + key, source);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
 int TriadSettings::getTimePaletteCategory (int fallback) const
 {
     reload();

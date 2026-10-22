@@ -8,11 +8,24 @@
 // curves, waves) laid out on a musical rhythm, usually repeated with small variations and a fill.
 namespace triad::mod
 {
+// Which presets the dice learned from (Thomas: one set per dice, so each keeps its own style).
+//   INFILTRATOR    Triad's LFO dice as it was: tuned on his Infiltrator favourites (846 drawn shapes).
+//   SHAPERBOX      his ShaperBox presets (4,001 LFO waves): their cells (motifs) and how they repeat them.
+//   GROSS BEAT     (TIME) the time envelopes of his Gross Beat banks: runs, octave / reverse lines, chops.
+//   TIME PRESETS   (TIME) one of Triad Time's 1,000 TIME patterns; Chaos splices in parts of others.
+//   GROSS BEAT     (VOLUME) the volume envelopes of the banks: their cells and how they repeat them.
+enum class Source { infiltrator = 0, shaperBox, grossBeatTime, timePresets, grossBeatVolume };
+juce::String sourceName (Source);
 struct Style
 {
     float angular = 1.0f;   // 0..1  hard corners: vertical steps, gates, triangles, straight 30/45/60-degree lines
     float soft = 0.0f;      // 0..1  curves and waves; with Angular too, hard jumps into curves
     float chaos = 0.35f;    // 0..1  more points, faster and less regular rhythm, more levels, fewer repeats
+    Source source = Source::infiltrator;
+    // Triad's LFO dice (the multiband plug-ins'; Thomas, 0.13.0): Chaos also makes more triangles and more squares, each
+    // with more points (runs of triangles, trains of squares, busier cells played twice or four times in their place).
+    // Off for Triad Time, whose dice stays as trained on the Gross Beat banks.
+    bool lfoChaos = false;
 };
 
 struct GridInfo

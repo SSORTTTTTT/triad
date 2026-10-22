@@ -1209,6 +1209,46 @@ void GeneratorPanel::setTasteKey (const juce::String& key)
     tasteKey = key;
     updateRatingButtons();
 }
+void GeneratorPanel::setSources (const std::vector<mod::Source>& list)
+{
+    sources = list.empty() ? std::vector<mod::Source> { mod::Source::infiltrator } : list;
+    for (auto& b : sourceButtons) removeChildComponent (b.get());
+    sourceButtons.clear();
+    for (const auto s : sources)
+    {
+        auto b = std::make_unique<juce::TextButton> (mod::sourceName (s));
+        b->setClickingTogglesState (false);
+        b->setTooltip (s == mod::Source::infiltrator ? "From your Infiltrator presets: hard gates, steps, stairs and angles (the dice as it was)"
+                       : s == mod::Source::shaperBox ? "From your ShaperBox presets: their motifs and how they repeat them (AAAB, ABAB ...)"
+                       : s == mod::Source::grossBeatTime ? "From your Gross Beat banks' time patterns: octave and reverse lines, tape stops and chops"
+                       : s == mod::Source::timePresets ? "From Triad Time's 1,000 TIME patterns; Chaos splices in parts of others"
+                                                       : "From your Gross Beat banks' volume patterns: their gates and how they repeat them");
+        b->onClick = [this, s] { setSource (s); };
+        addAndMakeVisible (*b);
+        sourceButtons.push_back (std::move (b));
+    }
+    const int saved = settings->getDiceSource (tasteKey, (int) sources.front());
+    source = std::find (sources.begin(), sources.end(), (mod::Source) saved) != sources.end() ? (mod::Source) saved : sources.front();
+    updateSourceButtons();
+    resized();
+}
+void GeneratorPanel::setSource (mod::Source s)
+{
+    if (std::find (sources.begin(), sources.end(), s) == sources.end()) return;
+    source = s;
+    settings->setDiceSource (tasteKey, (int) s);
+    updateSourceButtons();
+}
+void GeneratorPanel::updateSourceButtons()
+{
+    for (size_t i = 0; i < sourceButtons.size(); ++i)
+    {
+        const bool on = sources[i] == source;
+        sourceButtons[i]->setToggleState (on, juce::dontSendNotification);
+        sourceButtons[i]->setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.85f));
+        sourceButtons[i]->setColour (juce::TextButton::textColourOnId, inkColour);
+    }
+}
 void GeneratorPanel::updateRatingButtons()
 {
     const auto taste = getTaste();
@@ -1256,7 +1296,8 @@ void GeneratorPanel::mouseDown (const juce::MouseEvent& e)
 }
 triad::mod::Style GeneratorPanel::getStyle() const
 {
-    return { (float) angularSlider.getValue() * 0.01f, (float) softSlider.getValue() * 0.01f, (float) chaosSlider.getValue() * 0.01f };
+    return { (float) angularSlider.getValue() * 0.01f, (float) softSlider.getValue() * 0.01f, (float) chaosSlider.getValue() * 0.01f, source,
+             tasteKey == "lfo" };   // Triad's LFOs: Chaos adds triangles, squares and points (not Triad Time's dice)
 }
 void GeneratorPanel::setStyle (float angular, float soft, float chaos)
 {
@@ -1300,6 +1341,12 @@ void GeneratorPanel::resized()
         header.removeFromRight (4);
     }
     gen.removeFromTop (6);
+    {
+        auto row = gen.removeFromTop (20).withTrimmedLeft (64);
+        const int width = sourceButtons.empty() ? 0 : (row.getWidth() - 4 * ((int) sourceButtons.size() - 1)) / (int) sourceButtons.size();
+        for (auto& b : sourceButtons) { b->setBounds (row.removeFromLeft (width)); row.removeFromLeft (4); }
+        gen.removeFromTop (4);
+    }
     for (auto* slider : { &angularSlider, &softSlider, &chaosSlider })
         slider->setBounds (gen.removeFromTop (24).withTrimmedLeft (64).withTrimmedRight (40));
     gen.removeFromTop (8);
@@ -1321,6 +1368,9 @@ void GeneratorPanel::paint (juce::Graphics& g)
     g.drawText ("GENERATE", top, juce::Justification::centredLeft);
     gen.removeFromTop (6);
     g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+    g.setColour (dimTextColour);
+    g.drawText ("FROM", gen.removeFromTop (20).removeFromLeft (64), juce::Justification::centredLeft);
+    gen.removeFromTop (4);
     const std::pair<const char*, const juce::Slider*> rows[] { { "ANGULAR", &angularSlider }, { "SOFT", &softSlider }, { "CHAOS", &chaosSlider } };
     for (const auto& row : rows)
     {

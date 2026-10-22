@@ -676,6 +676,9 @@ public:
     {
         envelope = e;
         generator.setTasteKey (e == TriadTime::timeEnvelope ? "time" : "volume");   // the check and the X train each its own taste
+        // TIME's dice draws from the Gross Beat banks' time patterns or Triad Time's TIME presets; VOLUME's from the banks' volume ones.
+        if (e == TriadTime::timeEnvelope) generator.setSources ({ mod::Source::grossBeatTime, mod::Source::timePresets });
+        else generator.setSources ({ mod::Source::grossBeatVolume, mod::Source::infiltrator });
         timeTab.setToggleState (e == TriadTime::timeEnvelope, juce::dontSendNotification);
         volumeTab.setToggleState (e == TriadTime::volumeEnvelope, juce::dontSendNotification);
         for (auto* tab : { &timeTab, &volumeTab })

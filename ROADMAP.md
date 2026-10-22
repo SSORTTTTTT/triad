@@ -25,6 +25,19 @@ octave or two up or down and also the 90 degree square shaped parts of the prese
   page number to jump to a page, or in ALL to where a folder starts.
 - Not copied as they are: the banks are mostly other producers' and sample companies' paid packs (DrumSelect,
   DrumVault, TM88, The Kit Plug ...), and Triad is going to be released; they were used to learn the style only.
+- **The dice's sources** (Thomas: "the LFO randomizer for triad time ... can it actually be from ... the old gross beat
+  banks I sent ... and the LFO randomizer for triad ... work off ... the shaper box and infiltrator set of LFOs ...
+  each set of LFOs it's training off of might be confusing it a bit"): a FROM row under NEW SHAPE picks one set at a
+  time. Triad's LFOs: INFILTRATOR (the dice as it was) or SHAPERBOX (motifs and repeat schemes learned from his
+  ShaperBox presets: 1,356 quarter and 985 eighth cells). Triad Time TIME: GROSS BEAT (runs, jumps and pitch moves
+  learned from the banks, leaning on octave and reverse lines) or TIME PRESETS (the 1,000 patterns; Chaos splices).
+  Triad Time VOLUME: GROSS BEAT (the banks' volume gates) or INFILTRATOR. Each dice remembers its source.
+- **Chaos on Triad's LFO dice** (Thomas: "have it make more like ... triangular things ... more points ... more
+  squares, but this is only for the LFO randomizer for triad ... not triad time"): in Triad's LFO tab Chaos now also
+  favours triangles (runs of triangles, more teeth), squares (trains of gates, more stairs) and busier cells, and plays
+  some cells two or four times in their place; at Chaos 100 about 6x the triangles, 4x the squares and 3.5x the points
+  of Chaos 10 (INFILTRATOR), 3x / 2x / 2x (SHAPERBOX). Triad Time's dice is unchanged (checked: the same shapes as
+  before, seed for seed).
 
 ### 0.12.0 ("Triad v11"): colour themes
 

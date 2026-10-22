@@ -200,7 +200,12 @@ class GeneratorPanel final : public juce::Component
 {
 public:
     GeneratorPanel();
-    static constexpr int preferredHeight = 192;
+    static constexpr int preferredHeight = 216;
+    // The presets the dice draws from (FROM: chips): Triad's LFOs INFILTRATOR or SHAPERBOX; Triad Time's TIME GROSS BEAT or
+    // TIME PRESETS; its VOLUME GROSS BEAT or INFILTRATOR. The first is the default; each dice (taste key) remembers its own.
+    void setSources (const std::vector<triad::mod::Source>&);
+    void setSource (triad::mod::Source);
+    triad::mod::Source getSource() const noexcept { return source; }
     void setTarget (ShapeEditor* e) { target = e; updateRatingButtons(); }
     void generate();
     // Which taste the check and the X train and the dice follows: "lfo" (Triad's LFOs), "time", "volume" (Triad Time).
@@ -229,6 +234,10 @@ private:
     std::unique_ptr<juce::Button> likeButton, dislikeButton;
     juce::Slider angularSlider, softSlider, chaosSlider;
     juce::TextButton hardStyleButton { "HARD" }, mixStyleButton { "MIX" }, softStyleButton { "SOFT" };
+    std::vector<triad::mod::Source> sources { triad::mod::Source::infiltrator };
+    triad::mod::Source source = triad::mod::Source::infiltrator;
+    std::vector<std::unique_ptr<juce::TextButton>> sourceButtons;
+    void updateSourceButtons();
     std::unique_ptr<juce::Button> generateButton;
     juce::Random random;
     juce::StringArray recentShapes;

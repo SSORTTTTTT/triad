@@ -64,6 +64,7 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
     };
     addAndMakeVisible (shapes);
     generator.setTarget (&shapes.getEditor());
+    generator.setSources ({ triad::mod::Source::infiltrator, triad::mod::Source::shaperBox });   // each trained on its own set
     addAndMakeVisible (generator);
     addRouteButton.setTooltip ("Send this LFO to another knob in this band: a mix, the band's volume, or a knob inside one of its effects "
                                "(from the list, or LEARN: move the knob in the effect's window)");

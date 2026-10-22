@@ -1,5 +1,7 @@
 #pragma once
 #include "../Source/Generator.h"
+#include "../Source/TimePresets.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream>
@@ -303,6 +305,176 @@ inline void run()
         for (int i = 0; i < mod::Taste::maxEntries + 50; ++i) many.add (mod::generate (mix, grid, r5), mix, i % 2 == 0);
         require (many.countLiked() + many.countDisliked() <= mod::Taste::maxEntries, "Only the newest ratings are kept");
         std::cout << "Generator taste: passed" << std::endl;
+    }
+    // ---- The dice's sources: each set of presets Thomas sent, kept apart (0.13.0) --------------------------------------------
+    {
+        const std::array<mod::Source, 5> all { mod::Source::infiltrator, mod::Source::shaperBox, mod::Source::grossBeatTime, mod::Source::timePresets,
+                                               mod::Source::grossBeatVolume };
+        juce::Random r (99);
+        int invalid = 0;
+        for (const auto source : all)
+            for (int i = 0; i < 400; ++i)
+            {
+                mod::GridInfo grid;
+                grid.columns = source == mod::Source::grossBeatTime || source == mod::Source::timePresets ? 64 : (i % 2 == 0 ? 16 : 32);
+                grid.aspect = source == mod::Source::grossBeatTime || source == mod::Source::timePresets ? 3.48f : mod::plotAspect;
+                const mod::Style style { r.nextFloat(), r.nextFloat(), r.nextFloat(), source };
+                if (! validShape (mod::generate (style, grid, r))) ++invalid;
+            }
+        require (invalid == 0, "Every source makes valid shapes in every style");
+        for (const auto source : all)
+        {
+            const mod::Style style { 0.7f, 0.3f, 0.5f, source };
+            require (mod::generate (style, mod::GridInfo(), (juce::int64) 4242) == mod::generate (style, mod::GridInfo(), (juce::int64) 4242), "...the same seed, the same shape");
+        }
+    }
+    {
+        // SHAPERBOX: repeats cells the way the ShaperBox presets do (less with Chaos), curves with Soft, and is not the Infiltrator dice.
+        const auto repeats = [] (const mod::Shape& s)
+        {
+            for (int a = 0; a < 4; ++a)
+                for (int b = a + 1; b < 4; ++b)
+                {
+                    float diff = 0.0f;
+                    for (int k = 0; k < 32; ++k)
+                    {
+                        const float t = ((float) k + 0.5f) / 32.0f * 0.25f;
+                        diff += std::abs (mod::evaluate (s, (float) a * 0.25f + t) - mod::evaluate (s, (float) b * 0.25f + t));
+                    }
+                    if (diff / 32.0f < 0.02f) return true;
+                }
+            return false;
+        };
+        juce::Random r (7);
+        int calmRepeats = 0, wildRepeats = 0, softCurves = 0, hardCurves = 0, softSegments = 0, hardSegments = 0;
+        std::set<juce::String> sb, inf;
+        for (int i = 0; i < 400; ++i)
+        {
+            calmRepeats += repeats (mod::generate ({ 0.7f, 0.3f, 0.0f, mod::Source::shaperBox }, mod::GridInfo(), r)) ? 1 : 0;
+            wildRepeats += repeats (mod::generate ({ 0.7f, 0.3f, 1.0f, mod::Source::shaperBox }, mod::GridInfo(), r)) ? 1 : 0;
+            const auto soft = look (mod::generate ({ 0.0f, 1.0f, 0.4f, mod::Source::shaperBox }, mod::GridInfo(), r));
+            const auto hard = look (mod::generate ({ 1.0f, 0.0f, 0.4f, mod::Source::shaperBox }, mod::GridInfo(), r));
+            softCurves += soft.curves; softSegments += soft.curves + soft.lines + soft.holds + soft.steps;
+            hardCurves += hard.curves; hardSegments += hard.curves + hard.lines + hard.holds + hard.steps;
+            sb.insert (mod::toText (mod::generate ({ 1.0f, 0.3f, 0.35f, mod::Source::shaperBox }, mod::GridInfo(), (juce::int64) i)));
+            inf.insert (mod::toText (mod::generate ({ 1.0f, 0.3f, 0.35f, mod::Source::infiltrator }, mod::GridInfo(), (juce::int64) i)));
+        }
+        int shared = 0;
+        for (const auto& t : sb) shared += inf.count (t) > 0 ? 1 : 0;
+        const float softShare = (float) softCurves / (float) juce::jmax (1, softSegments), hardShare = (float) hardCurves / (float) juce::jmax (1, hardSegments);
+        std::cout << "SHAPERBOX dice: a repeated quarter in " << calmRepeats / 4 << "% at Chaos 0, " << wildRepeats / 4 << "% at Chaos 100; curved segments "
+                  << juce::roundToInt (softShare * 100.0f) << "% at Soft 100, " << juce::roundToInt (hardShare * 100.0f) << "% at Angular 100; "
+                  << sb.size() << " different of 400, " << shared << " also made by the INFILTRATOR dice" << std::endl;
+        require (calmRepeats > 160 && calmRepeats > wildRepeats + 40, "SHAPERBOX repeats cells as the ShaperBox presets do, less with Chaos");
+        require (softShare > hardShare * 2.0f, "...curves more with Soft");
+        require (sb.size() > 390 && shared <= 4, "...and is its own dice, not the Infiltrator one (at most a simple gate in common)");
+    }
+    {
+        // GROSS BEAT (TIME): on Triad Time's grid, octave and reverse lines and chops as in the banks; Chaos: more going on.
+        mod::GridInfo grid;
+        grid.columns = 64;
+        grid.aspect = 3.48f;
+        juce::Random r (11);
+        int withMove = 0, octaveDown = 0, reverse = 0, octaveUp = 0, otherPitch = 0, calmPoints = 0, wildPoints = 0, softCurves = 0, hardCurves = 0;
+        for (int i = 0; i < 500; ++i)
+        {
+            const auto s = mod::generate ({ 0.8f, 0.2f, 0.35f, mod::Source::grossBeatTime }, grid, r);
+            bool move = false;
+            for (size_t k = 1; k < s.size(); ++k)
+            {
+                const auto& a = s[k - 1];
+                const auto& b = s[k];
+                if (juce::exactlyEqual (a.x, b.x)) { move |= b.y < a.y; continue; }   // a jump back: a chop
+                if (juce::exactlyEqual (a.y, b.y)) continue;
+                if (std::abs (a.curve) > 1.0e-3f) { move = true; continue; }          // a tape stop or start
+                const double speed = 1.0 + ((double) b.y - a.y) / ((double) b.x - a.x);
+                move = true;
+                if (std::abs (speed - 0.5) < 1.0e-3 || std::abs (speed - 0.25) < 1.0e-3) ++octaveDown;
+                else if (speed < 0.0) ++reverse;
+                else if (std::abs (speed - 2.0) < 1.0e-3 || std::abs (speed - 4.0) < 1.0e-3) ++octaveUp;
+                else ++otherPitch;
+            }
+            withMove += move ? 1 : 0;
+            calmPoints += (int) mod::generate ({ 0.8f, 0.2f, 0.0f, mod::Source::grossBeatTime }, grid, r).size();
+            wildPoints += (int) mod::generate ({ 0.8f, 0.2f, 1.0f, mod::Source::grossBeatTime }, grid, r).size();
+            softCurves += look (mod::generate ({ 0.2f, 1.0f, 0.35f, mod::Source::grossBeatTime }, grid, r), 3.48f).curves;
+            hardCurves += look (mod::generate ({ 1.0f, 0.0f, 0.35f, mod::Source::grossBeatTime }, grid, r), 3.48f).curves;
+        }
+        std::cout << "GROSS BEAT (TIME) dice: " << withMove / 5 << "% with a line or a chop; lines: octave down " << octaveDown << ", reverse " << reverse
+                  << ", octave up " << octaveUp << ", other " << otherPitch << "; points " << calmPoints / 500 << " at Chaos 0, " << wildPoints / 500
+                  << " at Chaos 100; curves " << softCurves << " (Soft) / " << hardCurves << " (Angular)" << std::endl;
+        require (withMove == 500, "GROSS BEAT (TIME) patterns bend, chop or tape-stop (none is flat)");
+        require (octaveDown > octaveUp && reverse > octaveUp && octaveDown + reverse + octaveUp > 4 * otherPitch,
+                 "...mostly octave-down and reversed lines (then up), as in the banks; other pitches far fewer");
+        require (wildPoints > calmPoints * 13 / 10 && softCurves > hardCurves * 3, "...more going on with Chaos, tape stops with Soft");
+    }
+    {
+        // TIME PRESETS: Chaos 0 is one of the 1,000 patterns as it is; Chaos 100 moves away from them.
+        mod::GridInfo grid;
+        grid.columns = 64;
+        std::set<juce::String> presets;
+        for (int i = 0; i < triad::timePresets::numPresets; ++i) presets.insert (mod::toText (triad::timePresets::shape (i)));
+        juce::Random r (5);
+        int calmSame = 0, wildSame = 0;
+        for (int i = 0; i < 200; ++i)
+        {
+            calmSame += presets.count (mod::toText (mod::generate ({ 0.7f, 0.3f, 0.0f, mod::Source::timePresets }, grid, r))) > 0 ? 1 : 0;
+            wildSame += presets.count (mod::toText (mod::generate ({ 0.7f, 0.3f, 1.0f, mod::Source::timePresets }, grid, r))) > 0 ? 1 : 0;
+        }
+        std::cout << "TIME PRESETS dice: " << calmSame / 2 << "% a TIME pattern as it is at Chaos 0, " << wildSame / 2 << "% at Chaos 100" << std::endl;
+        require (calmSame == 200 && wildSame < 20, "TIME PRESETS: the patterns themselves at Chaos 0, further from them with Chaos");
+    }
+    {
+        // GROSS BEAT (VOLUME): gates, as the banks' volume patterns.
+        juce::Random r (13);
+        int gated = 0;
+        for (int i = 0; i < 300; ++i) gated += look (mod::generate ({ 0.8f, 0.2f, 0.35f, mod::Source::grossBeatVolume }, mod::GridInfo(), r)).steps >= 2 ? 1 : 0;
+        std::cout << "GROSS BEAT (VOLUME) dice: " << gated / 3 << "% gates (2 or more steps)" << std::endl;
+        require (gated > 180, "GROSS BEAT (VOLUME) makes gates, as the banks' volume patterns");
+    }
+    {
+        // Triad's LFO dice (Thomas, 0.13.0): Chaos also makes more triangles and more squares, each with more points.
+        // Peaks: a rising line then a falling one (or the other way); squares: steps.
+        const auto peaks = [] (const mod::Shape& s)
+        {
+            int count = 0, slope = 0;
+            for (size_t k = 1; k < s.size(); ++k)
+            {
+                const auto& a = s[k - 1];
+                const auto& b = s[k];
+                if (juce::exactlyEqual (a.x, b.x) || juce::exactlyEqual (a.y, b.y)) continue;
+                const int dir = b.y > a.y ? 1 : -1;
+                if (slope != 0 && dir != slope) ++count;
+                slope = dir;
+            }
+            return count;
+        };
+        for (const auto source : { mod::Source::infiltrator, mod::Source::shaperBox })
+        {
+            juce::Random r (21);
+            int calmPeaks = 0, wildPeaks = 0, calmSteps = 0, wildSteps = 0, calmPoints = 0, wildPoints = 0, plainPeaks = 0, plainPoints = 0;
+            for (int i = 0; i < 400; ++i)
+            {
+                mod::GridInfo grid;
+                grid.columns = i % 2 == 0 ? 16 : 32;
+                const auto calm = mod::generate ({ 0.8f, 0.2f, 0.1f, source, true }, grid, r);
+                const auto wild = mod::generate ({ 0.8f, 0.2f, 1.0f, source, true }, grid, r);
+                const auto plain = mod::generate ({ 0.8f, 0.2f, 1.0f, source, false }, grid, r);
+                calmPeaks += peaks (calm); wildPeaks += peaks (wild); plainPeaks += peaks (plain);
+                calmSteps += look (calm).steps; wildSteps += look (wild).steps;
+                calmPoints += (int) calm.size(); wildPoints += (int) wild.size(); plainPoints += (int) plain.size();
+                require (validShape (calm) && validShape (wild) && validShape (plain), "...valid shapes");
+                for (const auto* shape : { &calm, &wild })
+                    require (std::any_of (shape->begin(), shape->end(), [shape] (const mod::Point& p) { return ! juce::exactlyEqual (p.y, shape->front().y); }),
+                             "...and never a flat line");
+            }
+            std::cout << "Triad's LFO dice, " << mod::sourceName (source) << ", Chaos 10 -> 100: peaks " << calmPeaks / 4 << " -> " << wildPeaks / 4
+                      << ", squares (steps) " << calmSteps / 4 << " -> " << wildSteps / 4 << ", points " << calmPoints / 4 << " -> " << wildPoints / 4
+                      << " a hundred shapes (without the LFO Chaos, as Triad Time's dice: peaks " << plainPeaks / 4 << ", points " << plainPoints / 4 << ")" << std::endl;
+            require (wildPeaks > calmPeaks * 2 && wildPeaks > plainPeaks * 13 / 10, ("Triad's LFO dice: Chaos makes more triangles (" + mod::sourceName (source) + ")").toRawUTF8());
+            require (wildSteps > calmSteps * 3 / 2, "...more squares");
+            require (wildPoints > calmPoints * 3 / 2 && wildPoints > plainPoints * 11 / 10, "...and more points");
+        }
     }
 }
 }

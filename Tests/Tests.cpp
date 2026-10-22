@@ -1982,6 +1982,7 @@ int main (int argc, char** argv)
                 const int lfoIndex = preview.getSlotLfo (0, 1);
                 auto& page = editor->getLfoPage();
                 require (editor->getTab() == TriadEditor::Tab::lfo && page.getBand() == 0 && page.getLfo() == lfoIndex, "The slot's LFO opens");
+                require (page.getGeneratorStyle().lfoChaos, "Triad's LFO dice: Chaos adds triangles, squares and points");
                 auto& shapeEditor = page.getEditor();
                 const auto plot = shapeEditor.plot();
                 const auto before = preview.getLfoInfo (0, lfoIndex).shape.size();

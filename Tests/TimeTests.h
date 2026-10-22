@@ -489,8 +489,10 @@ inline void run (const juce::File& screenshotFolder)
         }
         editorShowEnvelope (*editor, TriadTime::volumeEnvelope);
         require (shapes->getPaletteCategory() != ShapePanel::timeFolder + 2, "VOLUME keeps its own folder (TIME remembers its own)");
+        require (! generator->getStyle().lfoChaos, "Triad Time's VOLUME dice keeps its own training (not Triad's LFO Chaos)");
         editorShowEnvelope (*editor, TriadTime::timeEnvelope);
         require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2, "...and back on TIME, the TIME folder chosen there");
+        require (! generator->getStyle().lfoChaos, "...and its TIME dice keeps the Gross Beat training");
         shapes->setPaletteCategory (1);
         require (shapes->getNumPaletteButtons() > 0, "The preset palette shows Triad's shapes");
         const auto before = t.getShape (TriadTime::timeEnvelope, 0);
