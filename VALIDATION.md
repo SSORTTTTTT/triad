@@ -1,5 +1,20 @@
 # Validation — Triad
 
+## Triad v12 (0.13.0), Triad Time and Triad Split on macOS — 2026-10-21
+
+Commit `2f0ca59`, run 39701905878 (macos-14 runner, virtual Apple M1), passed on its first attempt. New in 0.13.0:
+1,000 TIME patterns trained on Thomas's Gross Beat banks (five TIME folders), the ALL folder (2,049 presets), page
+jump, the dice's sources (Triad: INFILTRATOR / SHAPERBOX; Triad Time TIME: GROSS BEAT / TIME PRESETS; VOLUME: GROSS
+BEAT / INFILTRATOR) and Chaos adding triangles, squares and points on Triad's LFO dice only.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v12-0.13.0`, `Triad-Time-0.13.0`, `Triad-Split-0.13.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (Triad v12 over simulated Triad ... v11 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| TIME folders and ALL | 1,000 patterns, 200 per folder, all on the grid and all different, none a copy of a bank pattern; their octave and reverse lines bend a 440 Hz tone as labelled; ALL: 2,049 presets, 187 pages |
+| Dice sources | GROSS BEAT (TIME): every pattern bends, chops or tape-stops; lines octave down 456, reverse 545, octave up 35, other 41 (500 patterns); TIME PRESETS: the patterns themselves at Chaos 0, none at Chaos 100; GROSS BEAT (VOLUME): 98% gates; SHAPERBOX: repeats cells as the presets do (74% at Chaos 0, 50% at 100), 400 different of 400 |
+| Chaos on Triad's LFO dice | Chaos 10 to 100 (100 shapes): INFILTRATOR peaks 251 to 1,471, squares 391 to 1,683, points 1,508 to 5,369; SHAPERBOX peaks 131 to 393, squares 619 to 1,370, points 1,644 to 3,364; never a flat line; Triad Time's dice gives the same shapes as before, seed for seed |
+| Real plug-ins | 5 x 3,000 random edits (each in its own process) all passed: PASS, no crashes, no NaN/Inf output, all checks held |
+
 ## Triad v11 (0.12.0), Triad Time and Triad Split on macOS — 2026-10-21
 
 Commit `8c0a318`, run 39596029864 (macos-14 runner, virtual Apple M1), passed on its first attempt. New in 0.12.0:
