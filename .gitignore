@@ -11,3 +11,5 @@ pluginval*
 auval.log
 test-results-mac.txt
 .DS_Store
+__pycache__/
+*.pyc
