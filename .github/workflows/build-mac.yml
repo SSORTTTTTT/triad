@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     name: Build, package and validate (Apple Silicon)
-    runs-on: macos-14            # Apple Silicon runner
+    runs-on: macos-15            # Apple Silicon runner (macos-14 is being retired by GitHub: 2026-11-02)
     timeout-minutes: 130
     steps:
       - uses: actions/checkout@v4
