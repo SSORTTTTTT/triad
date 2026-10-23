@@ -384,6 +384,7 @@ int main (int argc, char** argv)
     triadInstallCrashReport (describeTestCrash);
    #endif
     testStage = "running the tests";
+    std::cout << "Triad tests (Triad " TRIAD_VERSION ", " << juce::SystemStats::getOperatingSystemName() << ")" << std::endl;
     juce::ScopedJuceInitialiser_GUI gui;
     try
     {
