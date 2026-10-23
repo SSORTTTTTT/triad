@@ -81,6 +81,69 @@ Shape fromText (const juce::String&);
 
 namespace triad
 {
+// The sound across a cycle (0.15.0): its loudest sample in each of `bins` steps of the cycle, for the screen to draw
+// behind a grid (Triad's LFO tab, Triad Time). Each new cycle (the LFO wraps round, or a sound starts it again)
+// overwrites the old one step by step; every step is stamped with the cycle that wrote it, so the screen can show
+// this cycle bright and what is left of the one before faded. Lock-free: written by the audio thread, read by the screen.
+class WaveTrace
+{
+public:
+    static constexpr int bins = 400;
+    // Audio thread: a sample's level (0..1, |x|) at `phase` (0..1). A phase lower than the last one starts a new cycle.
+    void add (double phase, float level) noexcept
+    {
+        if (lastPhase >= 0.0 && phase + 1.0e-9 < lastPhase) newCycle();
+        lastPhase = phase;
+        const int b = juce::jlimit (0, bins - 1, (int) (phase * bins));
+        if (b != bin) { flush(); bin = b; peak = 0.0f; }
+        if (level > peak) peak = level;
+    }
+    void newCycle() noexcept
+    {
+        flush();
+        ++current;
+        cycle.store (current, std::memory_order_release);
+        bin = -1;
+        peak = 0.0f;
+    }
+    void endBlock() noexcept { flush(); }   // the step being written shows as it grows
+    void reset() noexcept                    // audio thread: start again (another LFO is shown)
+    {
+        current += 2;
+        cycle.store (current, std::memory_order_release);
+        bin = -1;
+        peak = 0.0f;
+        lastPhase = -1.0;
+    }
+    // Screen: each step's level, and how many cycles ago it was written (0: this one, 1: the one before, 2: older).
+    void read (std::array<float, bins>& level, std::array<int, bins>& age) const noexcept
+    {
+        const auto now = cycle.load (std::memory_order_acquire);
+        for (size_t i = 0; i < (size_t) bins; ++i)
+        {
+            level[i] = levels[i].load (std::memory_order_relaxed);
+            const auto stamp = stamps[i].load (std::memory_order_relaxed);
+            age[i] = stamp == 0 || stamp > now ? 2 : (int) juce::jmin ((uint32_t) 2, now - stamp);
+        }
+    }
+    uint32_t getCycle() const noexcept { return cycle.load (std::memory_order_acquire); }
+private:
+    void flush() noexcept
+    {
+        if (bin < 0) return;
+        levels[(size_t) bin].store (peak, std::memory_order_relaxed);
+        stamps[(size_t) bin].store (current, std::memory_order_relaxed);
+    }
+    std::array<std::atomic<float>, bins> levels {};
+    std::array<std::atomic<uint32_t>, bins> stamps {};
+    std::atomic<uint32_t> cycle { 1 };
+    // Audio thread.
+    uint32_t current = 1;
+    int bin = -1;
+    float peak = 0.0f;
+    double lastPhase = -1.0;
+};
+
 // A playing position as the audio thread last set it, stamped with the time it did and how fast it moves, so the
 // screen can carry it on smoothly between audio blocks, at the screen's own frame rate (60 or 120 a second), instead
 // of in block-sized steps. Phase and time are one atomic value, so the two always belong together.

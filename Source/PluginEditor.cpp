@@ -475,7 +475,7 @@ bool TriadEditor::isFavourite (const juce::String& format, const juce::String& n
 void TriadEditor::setFavourite (const juce::String& format, const juce::String& name, bool on)
 {
     settings->setFavourite (TriadSettings::favouriteKey (format, name), on);
-    processor.setStatus ((on ? "Added to favourites: " : "Removed from favourites: ") + name);
+    processor.setStatus ((on ? "Added to FAVORITES: " : "Removed from FAVORITES: ") + name);
 }
 std::shared_ptr<std::vector<EffectEntry>> TriadEditor::effectList (int* builtIns) const
 {
@@ -517,7 +517,8 @@ void TriadEditor::openPluginSearch (int band, int slot, const juce::String& type
                        {
                            if (safe == nullptr || index < 0 || index >= (int) list->size()) return;
                            safe->loadEntry (band, slot, (*list)[(size_t) index]);
-                       });
+                       },
+                       [safe] (const EffectEntry& e, bool on) { if (safe != nullptr) safe->setFavourite (e.format, e.name, on); });
 }
 void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
 {
@@ -545,7 +546,7 @@ void TriadEditor::chooseEffect (int band, int slot, juce::Component& target)
             favouriteItems.push_back (i);
     if (! favouriteItems.empty())
     {
-        menu.addSectionHeader ("FAVOURITES");
+        menu.addSectionHeader (u8 ("\xe2\x99\xa5 FAVORITES"));
         for (int i : favouriteItems) menu.addItem (i + 1, (*list)[(size_t) i].name + "  (" + (*list)[(size_t) i].format + ")");
         menu.addSeparator();
     }
@@ -827,7 +828,7 @@ void TriadEditor::showGearMenu()
 {
     enum { sortCompany = 1, sortAZ, autoCheck, refreshList, rescanAll, addFolder, presetsFolder, chainsFolder,
            startupUseCurrent, startupInit, startupCurrentSettings, scaleBase = 100, removeFolderBase = 200, startupBase = 1000,
-           pitchLabelsBase = 900000, themeBase = 800000 };
+           pitchLabelsBase = 900000, themeBase = 800000, backdropSongBase = 700000, backdropAudioBase = 700010, timeBackdropBase = 700020 };
     const auto folders = settings->getFolders();
     juce::PopupMenu menu, removeMenu;
     menu.addSectionHeader ("EFFECT LIST");
@@ -844,7 +845,30 @@ void TriadEditor::showGearMenu()
     for (int percent : { 75, 90, 100, 125, 150 })
         menu.addItem (scaleBase + percent, juce::String (percent) + "%", true, juce::roundToInt (scale * 100.0) == percent);
     triad::ui::addThemeItems (menu, themeBase);
+    menu.addSectionHeader ("LFO TAB: BEHIND THE GRID");
+    {
+        // What is drawn behind each LFO's grid: the sound coming into its band (0.15.0).
+        const auto addChoices = [&] (juce::PopupMenu& m, int base, TriadSettings::Backdrop now)
+        {
+            m.addItem (base + 0, "Nothing", true, now == TriadSettings::Backdrop::off);
+            m.addItem (base + 1, "The waveform (the sound across the LFO's cycle)", true, now == TriadSettings::Backdrop::waveform);
+            m.addItem (base + 2, "The spectrum (as on the BANDS tab, the band's range lit)", true, now == TriadSettings::Backdrop::spectrum);
+        };
+        juce::PopupMenu song, audio;
+        addChoices (song, backdropSongBase, settings->getLfoBackdrop (false));
+        addChoices (audio, backdropAudioBase, settings->getLfoBackdrop (true));
+        const auto name = [] (TriadSettings::Backdrop b) { return b == TriadSettings::Backdrop::waveform ? "waveform" : b == TriadSettings::Backdrop::spectrum ? "spectrum" : "nothing"; };
+        menu.addSubMenu (juce::String ("Bands on TRIGGER: SONG (now: ") + name (settings->getLfoBackdrop (false)) + ")", song);
+        menu.addSubMenu (juce::String ("Bands on TRIGGER: AUDIO (now: ") + name (settings->getLfoBackdrop (true)) + ")", audio);
+    }
     menu.addSectionHeader ("TRIAD TIME");
+    {
+        const auto now = settings->getTimeBackdrop();
+        juce::PopupMenu sound;
+        sound.addItem (timeBackdropBase + 0, "Nothing", true, now == TriadSettings::Backdrop::off);
+        sound.addItem (timeBackdropBase + 1, "The waveform (the sound coming in, across the pattern)", true, now == TriadSettings::Backdrop::waveform);
+        menu.addSubMenu ("Behind the grid", sound);
+    }
     {
         juce::PopupMenu labels;
         const auto mode = settings->getPitchLabels();
@@ -886,6 +910,9 @@ void TriadEditor::showGearMenu()
         if (choice == startupUseCurrent) { self.useCurrentSettingsAtStartup(); return; }
         if (triad::ui::handleThemeChoice (choice, themeBase, [&self] { self.openThemePanel(); })) return;
         if (choice >= pitchLabelsBase && choice <= pitchLabelsBase + 2) { s.setPitchLabels ((TriadSettings::PitchLabels) (choice - pitchLabelsBase)); return; }
+        if (choice >= backdropSongBase && choice <= backdropSongBase + 2) { s.setLfoBackdrop (false, (TriadSettings::Backdrop) (choice - backdropSongBase)); return; }
+        if (choice >= backdropAudioBase && choice <= backdropAudioBase + 2) { s.setLfoBackdrop (true, (TriadSettings::Backdrop) (choice - backdropAudioBase)); return; }
+        if (choice >= timeBackdropBase && choice <= timeBackdropBase + 1) { s.setTimeBackdrop ((TriadSettings::Backdrop) (choice - timeBackdropBase)); return; }
         if (choice == sortCompany) s.setSort (TriadSettings::Sort::company);
         else if (choice == sortAZ) s.setSort (TriadSettings::Sort::alphabetical);
         else if (choice == autoCheck)

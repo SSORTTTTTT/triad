@@ -179,7 +179,7 @@ void SlotRow::showMenu()
     menu.addItem (menuReplace, info.hasContent ? "Replace..." : "Load effect...");
     menu.addItem (menuLfo, "Edit LFO for this mix knob...");
     const bool favourite = info.loaded && host.isFavourite (info.format, info.name);
-    if (info.loaded) menu.addItem (menuFavourite, favourite ? "Remove from favourites" : "Add to favourites");
+    if (info.loaded) menu.addItem (menuFavourite, favourite ? u8 ("\xe2\x99\xa5 Remove from FAVORITES") : u8 ("\xe2\x99\xa1 Add to FAVORITES"));
     menu.addSeparator();
     // Copy plugin state: the effect with every knob as it is now, to paste into a slot of any band.
     menu.addItem (menuCopyEffect, "Copy plugin state", info.loaded && ! info.pending);

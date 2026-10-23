@@ -41,6 +41,121 @@ private:
 
 }
 
+// ---- Behind the grid: the sound coming in --------------------------------------------------------------------------
+bool LfoShapeHost::hasBackdrop() const { return page.hasBackdrop(); }
+void LfoShapeHost::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot) { page.paintBackdrop (g, plot); }
+
+struct LfoPage::Backdrop
+{
+    std::array<float, triad::WaveTrace::bins> level {};
+    std::array<int, triad::WaveTrace::bins> age {};
+    // The spectrum (as the BANDS tab's, from Triad's input): a 4096-point FFT, falling 36 dB a second.
+    static constexpr int fftSize = 4096;
+    std::vector<float> samples = std::vector<float> ((size_t) fftSize), window = std::vector<float> ((size_t) fftSize);
+    std::vector<std::complex<float>> bins = std::vector<std::complex<float>> ((size_t) fftSize);
+    std::vector<float> levels = std::vector<float> ((size_t) fftSize / 2 + 1, -200.0f);
+    float windowSum = 0.0f;
+    uint32_t lastWrite = 0;
+    double lastTime = 0.0;
+    Backdrop()
+    {
+        for (int i = 0; i < fftSize; ++i)
+        {
+            window[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / (float) (fftSize - 1));
+            windowSum += window[(size_t) i];
+        }
+    }
+    void updateSpectrum (triad::SpectrumTap& tap)
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        const float decay = (float) (36.0 * juce::jlimit (0.0, 0.25, now - lastTime));
+        lastTime = now;
+        const auto w = tap.getWriteIndex();
+        if (w != lastWrite && tap.read (samples.data(), fftSize))
+        {
+            lastWrite = w;
+            for (size_t i = 0; i < (size_t) fftSize; ++i) bins[i] = { samples[i] * window[i], 0.0f };
+            triad::fft (bins);
+            for (size_t k = 1; k < levels.size(); ++k)
+            {
+                const auto db = 20.0f * std::log10 (std::abs (bins[k]) * 2.0f / windowSum + 1.0e-9f);
+                levels[k] = juce::jmax (db, levels[k] - decay);
+            }
+        }
+        else for (auto& l : levels) l -= decay;
+    }
+};
+
+TriadSettings::Backdrop LfoPage::getBackdrop() const
+{
+    // The setting (changed in any Triad's gear menu) is read twice a second, not every frame.
+    const bool audio = processor.getTrigger (band).audio;
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    if (audio != backdropAudio || now - backdropChecked > 500.0)
+    {
+        backdropAudio = audio;
+        backdropChecked = now;
+        backdropMode = settings->getLfoBackdrop (audio);
+    }
+    return backdropMode;
+}
+void LfoPage::visibilityChanged()
+{
+    if (! isVisible()) processor.setTracedLfo (-1, -1);   // nothing traced while the tab is closed
+}
+void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
+{
+    if (backdrop == nullptr) backdrop = std::make_unique<Backdrop>();
+    const auto colour = bandColour (band);
+    if (getBackdrop() == TriadSettings::Backdrop::waveform)
+    {
+        processor.setTracedLfo (band, lfo);
+        processor.readLfoTrace (backdrop->level, backdrop->age);
+        const auto trigger = processor.getTrigger (band);
+        triad::ui::drawWaveTrace (g, plot, backdrop->level, backdrop->age, colour, trigger.audio ? trigger.thresholdDb : std::numeric_limits<float>::quiet_NaN());
+        return;
+    }
+    processor.setTracedLfo (-1, -1);
+    // The spectrum: 20 Hz .. 20 kHz across, -84 .. +6 dB up; the band's range in its colour, the rest faint.
+    backdrop->updateSpectrum (processor.getSpectrumTap());
+    const auto rate = (float) juce::jmax (8000.0, processor.getSampleRateForDisplay());
+    const float binHz = rate / (float) Backdrop::fftSize;
+    const auto xFor = [&plot] (float hz) { return plot.getX() + plot.getWidth() * std::log (hz / 20.0f) / std::log (1000.0f); };
+    const auto hzFor = [&plot] (float x) { return 20.0f * std::pow (1000.0f, (x - plot.getX()) / plot.getWidth()); };
+    const auto yFor = [&plot] (float db) { return juce::jmap (juce::jlimit (-84.0f, 6.0f, db), -84.0f, 6.0f, plot.getBottom(), plot.getY()); };
+    juce::Path fill, line;
+    fill.startNewSubPath (plot.getX(), plot.getBottom());
+    for (float x = plot.getX(); x <= plot.getRight() + 0.5f; x += 2.0f)
+    {
+        const float k0 = hzFor (x - 1.0f) / binHz, k1 = hzFor (x + 1.0f) / binHz;
+        float db = -200.0f;
+        for (auto k = (size_t) juce::jmax (1.0f, k0); k <= (size_t) juce::jmax (1.0f, k1) && k < backdrop->levels.size(); ++k)
+            db = juce::jmax (db, backdrop->levels[k] + 3.0f * std::log2 (juce::jmax (1.0f, (float) k * binHz) / 1000.0f));   // +3 dB/oct tilt, as the BANDS tab
+        const float y = yFor (db);
+        fill.lineTo (x, y);
+        if (line.isEmpty()) line.startNewSubPath (x, y); else line.lineTo (x, y);
+    }
+    fill.lineTo (plot.getRight(), plot.getBottom());
+    fill.closeSubPath();
+    float low = 20.0f, high = 20000.0f;
+    if (! TriadProcessor::isExtraChain (band))
+    {
+        const auto cuts = processor.effectiveCrossovers();
+        if (band > 0 && band - 1 < (int) cuts.size()) low = cuts[(size_t) band - 1];
+        if (band < (int) cuts.size()) high = cuts[(size_t) band];
+    }
+    g.setColour (textColour.withAlpha (0.10f));
+    g.fillPath (fill);
+    {
+        juce::Graphics::ScopedSaveState state (g);
+        g.reduceClipRegion (juce::Rectangle<float> (xFor (low), plot.getY(), xFor (high) - xFor (low), plot.getHeight()).toNearestInt());
+        g.setColour (colour.withAlpha (0.30f));
+        g.fillPath (fill);
+        g.setColour (colour.withAlpha (0.65f));
+        g.strokePath (line, juce::PathStrokeType (1.2f));
+    }
+}
+
 // TRIGGER: SONG / AUDIO for the band's LFOs. With AUDIO: a level meter, the threshold on it, and a light that flashes
 // when the LFOs start again (dim while they wait for sound).
 class LfoPage::TriggerButton final : public juce::Button, private juce::Timer
@@ -166,7 +281,7 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
     addChildComponent (removeLfoButton);
     select (0, processor.getBandLfo (0));
 }
-LfoPage::~LfoPage() = default;
+LfoPage::~LfoPage() { processor.setTracedLfo (-1, -1); }
 juce::Button& LfoPage::getTriggerButton() noexcept { return *triggerButton; }
 void LfoPage::showTriggerMenu()
 {

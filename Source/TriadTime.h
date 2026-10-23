@@ -51,6 +51,9 @@ public:
     bool canUndo (int envelope) const { return ! undoStack[(size_t) envelope].empty(); }
     bool canRedo (int envelope) const { return ! redoStack[(size_t) envelope].empty(); }
     int getJumpCount() const noexcept { return jumps.load(); }   // time jumps crossfaded so far (tests)
+    // The sound coming in across the pattern of `envelope` (-1: none), for the grid's background (0.15.0).
+    void setTracedEnvelope (int envelope);
+    void readTrace (std::array<float, triad::WaveTrace::bins>& level, std::array<int, triad::WaveTrace::bins>& age) const { trace.read (level, age); }
 
     // Parameters (automatable; Triad's LFOs can move them too).
     juce::AudioParameterInt* timeSlot = nullptr;
@@ -115,6 +118,9 @@ private:
     std::atomic<float> phases[2] { -1.0f, -1.0f };
     std::array<triad::PhaseClock, 2> clocks;
     std::atomic<int> jumps { 0 };
+    triad::WaveTrace trace;
+    std::atomic<int> tracedEnvelope { -1 };
+    int tracing = -1;   // audio thread: the envelope traced in the last block
     bool prepared = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TriadTime)
 };

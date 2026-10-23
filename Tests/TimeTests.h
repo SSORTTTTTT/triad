@@ -198,16 +198,17 @@ inline void run (const juce::File& screenshotFolder)
     // ---- The TIME folders trained on the Gross Beat banks: octave repitches forwards and backwards, and chops ---------------
     {
         namespace tp = triad::timePresets;
-        require (tp::numFolders == 5 && tp::numPresets == 3000, "Five TIME folders, 3,000 patterns (1,000 in 0.13.0, 2,000 more in 0.14.0)");
+        require (tp::numFolders == 5 && tp::numPresets == 10000, "Five TIME folders, 10,000 patterns (1,000 in 0.13.0, 2,000 in 0.14.0, 7,000 in 0.15.0)");
         {
-            // The first 1,000 keep their place and names (001 to 200 of each folder); the new ones follow (201 to 600).
+            // The earlier ones keep their place and names (001 to 200, then 201 to 600 of each folder); the new ones follow
+            // (601 to 2,000).
             bool kept = true;
             for (int i = 0; i < tp::numPresets; ++i)
             {
                 const int number = juce::String (tp::entries[i].name).upToFirstOccurrenceOf (":", false, false).getTrailingIntValue();
-                kept &= i < 1000 ? (number >= 1 && number <= 200) : (number >= 201 && number <= 600);
+                kept &= i < 1000 ? (number >= 1 && number <= 200) : i < 3000 ? (number >= 201 && number <= 600) : (number >= 601 && number <= 2000);
             }
-            require (kept, "...the first 1,000 as they were, the 2,000 new ones after them in each folder");
+            require (kept, "...the earlier 3,000 as they were, the 7,000 new ones after them in each folder");
         }
         const auto minus = juce::String::fromUTF8 ("\xe2\x88\x92");
         int onGrid = 0, inRange = 0;
@@ -250,7 +251,7 @@ inline void run (const juce::File& screenshotFolder)
                   << ", octave up " << good[1] << "/" << perFolder[1] << ", reverse " << good[2] << "/" << perFolder[2] << ", chops " << good[3] << "/" << perFolder[3]
                   << ", pitch + chops " << good[4] << "/" << perFolder[4] << std::endl;
         require (onGrid == tp::numPresets && inRange == tp::numPresets, "Every TIME folder pattern is on Triad Time's grid (1/64 bar, 1/16 bar back) and within one bar back");
-        require (perFolder == std::array<int, 5> { 600, 600, 600, 600, 600 } && good == perFolder,
+        require (perFolder == std::array<int, 5> { 2000, 2000, 2000, 2000, 2000 } && good == perFolder,
                  "Each folder has what it is named for: a straight FWD -12 / -24, FWD +12 / +24, REV line; 3 chops; or 2 chops and an octave or reverse line");
         // Played: the octave lines bend a 440 Hz tone by an octave (forwards or backwards).
         int checked = 0, right = 0;
@@ -281,7 +282,7 @@ inline void run (const juce::File& screenshotFolder)
                 for (const auto& p : tp::shape (i)) key << p.x << "," << p.y << "," << p.curve << ";";
                 seen.insert (key);
             }
-            require ((int) seen.size() == tp::numPresets, "3,000 different TIME patterns");
+            require ((int) seen.size() == tp::numPresets, "10,000 different TIME patterns");
         }
     }
     // ---- SMOOTHING: repeats do not click ---------------------------------------------------------------------------------
@@ -475,8 +476,8 @@ inline void run (const juce::File& screenshotFolder)
         require (shapes->getPaletteCategory() >= ShapePanel::timeFolder || shapes->getPaletteCategory() < 1000 || shapes->getPaletteCategory() == ShapePanel::userFolder,
                  "TIME opens a folder");
         shapes->setPaletteCategory (ShapePanel::timeFolder + 2);
-        require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2 && shapes->getNumPaletteButtons() == 11 && shapes->getNumPalettePages() == 55,
-                 "TIME has its own folders (REVERSE: 600 patterns, 11 a page)");
+        require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2 && shapes->getNumPaletteButtons() == 11 && shapes->getNumPalettePages() == 182,
+                 "TIME has its own folders (REVERSE: 2,000 patterns, 11 a page)");
         {
             const auto beforeFolder = t.getShape (TriadTime::timeEnvelope, 0);
             shapes->getPaletteButton (0)->onClick();
@@ -486,11 +487,11 @@ inline void run (const juce::File& screenshotFolder)
             shapes->getEditor().reload();
         }
         {
-            // ALL: every preset together (Triad's shapes and the 3,000 TIME patterns).
+            // ALL: every preset together (Triad's shapes and the 10,000 TIME patterns).
             shapes->setPaletteCategory (ShapePanel::allFolder);
             const int everything = triad::mod::numPresets() + triad::timePresets::numPresets;
             std::cout << "ALL folder: " << everything << " presets, " << shapes->getNumPalettePages() << " pages" << std::endl;
-            require (shapes->getPaletteCategory() == ShapePanel::allFolder && shapes->getNumPalettePages() == (everything + 10) / 11 && everything > 4000,
+            require (shapes->getPaletteCategory() == ShapePanel::allFolder && shapes->getNumPalettePages() == (everything + 10) / 11 && everything > 11000,
                      "ALL has every preset together, page by page");
             shapes->setPalettePage (shapes->getNumPalettePages() - 1);
             shapes->getPaletteButton (shapes->getNumPaletteButtons() - 1)->onClick();

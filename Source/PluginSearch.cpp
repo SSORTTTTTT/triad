@@ -177,16 +177,25 @@ Panel::Panel()
     addAndMakeVisible (rows);
     closeButton.onClick = [this] { close(); };
     addAndMakeVisible (closeButton);
+    favouritesButton.setButtonText (u8 ("\xe2\x99\xa5 FAVORITES"));
+    favouritesButton.setClickingTogglesState (true);
+    favouritesButton.setTooltip ("Show only your favourites (the hearts)");
+    favouritesButton.setColour (juce::TextButton::buttonOnColourId, heartColour.withAlpha (0.55f));
+    favouritesButton.onClick = [this] { update(); box.grabKeyboardFocus(); };
+    addAndMakeVisible (favouritesButton);
 }
 Panel::~Panel() { box.removeKeyListener (this); }
 
 void Panel::open (std::shared_ptr<std::vector<EffectEntry>> entries, const juce::String& target, const juce::String& initialText,
-                  std::function<bool (const EffectEntry&)> isFavourite, std::function<void (int)> choose)
+                  std::function<bool (const EffectEntry&)> isFavourite, std::function<void (int)> choose,
+                  std::function<void (const EffectEntry&, bool)> setFavourite)
 {
     list = std::move (entries);
     targetText = target;
     favourite = std::move (isFavourite);
     onChoose = std::move (choose);
+    markFavourite = std::move (setFavourite);
+    favouritesButton.setToggleState (false, juce::dontSendNotification);
     if (auto* parent = getParentComponent()) setBounds (parent->getLocalBounds());
     box.setTextToShowWhenEmpty ("Search plug-ins by name or maker", dimTextColour);
     box.setText (initialText, false);
@@ -210,10 +219,38 @@ void Panel::setQuery (const juce::String& text)
 void Panel::update()
 {
     results = list != nullptr ? match (*list, box.getText(), favourite) : std::vector<int>();
+    if (favouritesButton.getToggleState() && favourite != nullptr)
+        results.erase (std::remove_if (results.begin(), results.end(), [this] (int i) { return ! favourite ((*list)[(size_t) i]); }), results.end());
     rows.updateContent();
     rows.selectRow (results.empty() ? -1 : 0);
     rows.scrollToEnsureRowIsOnscreen (0);
     repaint();
+}
+bool Panel::isFavouriteRow (int row) const
+{
+    return list != nullptr && row >= 0 && row < (int) results.size() && favourite != nullptr && favourite ((*list)[(size_t) results[(size_t) row]]);
+}
+void Panel::toggleFavourite (int row)
+{
+    if (list == nullptr || row < 0 || row >= (int) results.size() || markFavourite == nullptr) return;
+    const int index = results[(size_t) row];
+    const bool now = ! isFavouriteRow (row);
+    markFavourite ((*list)[(size_t) index], now);
+    // The list again (favourites come first), the same plug-in still chosen.
+    results = match (*list, box.getText(), favourite);
+    if (favouritesButton.getToggleState())
+        results.erase (std::remove_if (results.begin(), results.end(), [this] (int i) { return ! favourite ((*list)[(size_t) i]); }), results.end());
+    rows.updateContent();
+    const auto at = std::find (results.begin(), results.end(), index);
+    if (at != results.end()) { rows.selectRow ((int) std::distance (results.begin(), at)); rows.scrollToEnsureRowIsOnscreen ((int) std::distance (results.begin(), at)); }
+    else rows.selectRow (results.empty() ? -1 : 0);
+    rows.repaint();
+    repaint();
+}
+void Panel::setFavouritesOnly (bool on)
+{
+    favouritesButton.setToggleState (on, juce::dontSendNotification);
+    update();
 }
 int Panel::getSelectedResult() const
 {
@@ -248,13 +285,15 @@ bool Panel::keyPressed (const juce::KeyPress& key, juce::Component*)
     if (key.isKeyCode (juce::KeyPress::pageUpKey))   { selectResult (row - page); return true; }
     return false;
 }
-void Panel::listBoxItemClicked (int row, const juce::MouseEvent&)
+void Panel::listBoxItemClicked (int row, const juce::MouseEvent& e)
 {
+    if (e.x < heartColumn + 8 && markFavourite != nullptr) { toggleFavourite (row); box.grabKeyboardFocus(); return; }   // the heart
     rows.selectRow (row);
     box.grabKeyboardFocus();
 }
-void Panel::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
+void Panel::listBoxItemDoubleClicked (int row, const juce::MouseEvent& e)
 {
+    if (e.x < heartColumn + 8 && markFavourite != nullptr) return;
     rows.selectRow (row);
     chooseSelected();
 }
@@ -281,7 +320,7 @@ void Panel::paint (juce::Graphics& g)
     g.drawText ("SEARCH PLUG-INS", title, juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (12.0f));
     g.setColour (dimTextColour);
-    g.drawText ("into " + targetText, title.withTrimmedLeft (150).withTrimmedRight (90), juce::Justification::centredLeft);
+    g.drawText ("into " + targetText, title.withTrimmedLeft (150).withTrimmedRight (210), juce::Justification::centredLeft);
     // How many match, and the keys.
     auto footer = frame().reduced (18, 10).removeFromBottom (18);
     const int total = list != nullptr ? (int) std::count_if (list->begin(), list->end(), [] (const EffectEntry& e) { return ! e.crashed; }) : 0;
@@ -326,14 +365,12 @@ void Panel::paintListBoxItem (int row, juce::Graphics& g, int width, int height,
         g.setFont (juce::FontOptions (10.5f));
         g.drawText ("not checked", r.removeFromRight (80), juce::Justification::centredRight);
     }
-    // A star for a favourite.
-    if (favourite != nullptr && favourite (e))
+    // The heart: an outline, filled red for a favourite (click it).
     {
-        juce::Path star;
-        const auto c = r.removeFromLeft (16).toFloat().getCentre();
-        star.addStar (c, 5, 2.6f, 6.4f, -juce::MathConstants<float>::halfPi * 0.0f);
-        g.setColour (accent);
-        g.fillPath (star);
+        auto heart = r.removeFromLeft (heartColumn - 10).toFloat();
+        const bool fav = favourite != nullptr && favourite (e);
+        if (markFavourite != nullptr || fav)
+            drawHeart (g, heart.withSizeKeepingCentre (13.0f, 13.0f), fav, false, dimTextColour.withAlpha (selected ? 0.9f : 0.5f));
         r.removeFromLeft (6);
     }
     // The name, the part that matches in the accent colour, then the maker.
@@ -359,6 +396,8 @@ void Panel::resized()
     auto inside = frame().reduced (18, 14);
     auto title = inside.removeFromTop (20);
     closeButton.setBounds (title.removeFromRight (80).withSizeKeepingCentre (80, 24));
+    title.removeFromRight (8);
+    favouritesButton.setBounds (title.removeFromRight (110).withSizeKeepingCentre (110, 24));
     inside.removeFromTop (10);
     box.setBounds (inside.removeFromTop (36));
     inside.removeFromTop (10);

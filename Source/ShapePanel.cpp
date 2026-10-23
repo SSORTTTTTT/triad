@@ -16,14 +16,25 @@ class ShapeButton final : public juce::Button
 public:
     ShapeButton (const juce::String& name, mod::Shape s, juce::Colour c) : Button (name), shape (std::move (s)), colour (c)
     {
-        setTooltip (name + " (replaces the shape)");
+        setTooltip (name + " (replaces the shape; the heart: FAVORITES)");
     }
     std::function<void()> onMenu;
+    std::function<void()> onHeart;   // the heart in the lower left corner (FAVORITES)
+    bool favourite = false;
+    juce::Rectangle<float> heartArea() const { return { 3.0f, (float) getHeight() - 15.0f, 12.0f, 12.0f }; }
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (e.mods.isPopupMenu() && onMenu) { onMenu(); return; }
+        if (onHeart && heartArea().expanded (3.0f).contains (e.position)) { onHeart(); return; }   // only the heart: the shape stays
         Button::mouseDown (e);
     }
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        const bool over = onHeart && heartArea().expanded (3.0f).contains (e.position);
+        if (over != overHeart) { overHeart = over; repaint(); }
+        Button::mouseMove (e);
+    }
+    void mouseExit (const juce::MouseEvent& e) override { overHeart = false; Button::mouseExit (e); }
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         const auto r = getLocalBounds().toFloat().reduced (1.0f);
@@ -49,10 +60,18 @@ public:
         }
         g.setColour (over ? colour : textColour.withAlpha (0.85f));
         g.strokePath (p, juce::PathStrokeType (shape.size() > 40 ? 1.1f : 1.6f, juce::PathStrokeType::beveled, juce::PathStrokeType::butt));
+        if (onHeart)
+        {
+            // A small patch of the button's own colour under the heart, so the shape's line does not run through it.
+            g.setColour ((down ? currentPalette.controlsOn : over ? slotRowHover : currentPalette.paletteButton).withAlpha (0.9f));
+            g.fillRoundedRectangle (heartArea().expanded (1.5f), 3.0f);
+            drawHeart (g, heartArea(), favourite, overHeart, dimTextColour.withAlpha (over ? 0.8f : 0.5f));
+        }
     }
 private:
     mod::Shape shape;
     juce::Colour colour;
+    bool overHeart = false;
 };
 
 // The generator's big button: a dice and NEW SHAPE.
@@ -252,6 +271,14 @@ void ShapeEditor::frame (double time)
     // the audio's updates.
     if (! pacer->due (lastFrame, time)) return;
     const auto next = host != nullptr ? host->getPhaseNow() : -1.0f;
+    if (host != nullptr && (host->hasBackdrop() || hadBackdrop))
+    {
+        // The sound behind the grid moves: the whole grid, at up to 60 frames a second.
+        hadBackdrop = host->hasBackdrop();
+        phase = next;
+        if (time - lastBackdrop >= 1.0 / 61.0) { lastBackdrop = time; repaint(); }
+        return;
+    }
     if (std::abs (next - phase) <= 1.0e-4f) return;
     // Repaint only the strips under the old and the new playing position.
     const auto strip = [this] (float p)
@@ -276,6 +303,8 @@ void ShapeEditor::paint (juce::Graphics& g)
     for (bool b : selected) mix (b ? 7 : 3);
     const int labelMode = host != nullptr ? host->segmentLabelMode() : 0;
     mix (labelMode);
+    const bool backdrop = host != nullptr && host->hasBackdrop();
+    mix (backdrop ? 11 : 13);
     if (labelMode == 2) { mix (drag == Drag::points ? dragIndex : -2); }
     if ((juce::int64) key != layerKey || ! layer.isValid())
     {
@@ -286,6 +315,15 @@ void ShapeEditor::paint (juce::Graphics& g)
         juce::Graphics lg (layer);
         lg.addTransform (juce::AffineTransform::scale (scale));
         paintLayer (lg);
+    }
+    if (host != nullptr && host->hasBackdrop())
+    {
+        // The sound coming in, under the grid (the picture over it is see-through where it shows the grid's background).
+        g.setColour (gridBackground);
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
+        juce::Graphics::ScopedSaveState state (g);
+        g.reduceClipRegion (plot().toNearestInt());
+        host->paintBackdrop (g, plot());
     }
     triad::ui::drawPixelExact (g, layer, scale);
     const auto colour = shapeColour();
@@ -313,8 +351,11 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
 {
     const auto r = plot();
     const auto colour = shapeColour();
-    g.setColour (gridBackground);
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
+    if (host == nullptr || ! host->hasBackdrop())   // with a backdrop, paint() fills it first and draws the sound on it
+    {
+        g.setColour (gridBackground);
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
+    }
     const int cols = columns();
     if (isSquareGrid())
     {
@@ -725,6 +766,134 @@ bool remove (const juce::File& f)
 }
 }
 
+// ---- The sound behind the grid -----------------------------------------------------------------------------------
+namespace triad::ui
+{
+float waveHeight (float level)
+{
+    // As a clip in the playlist (its amplitude), lifted a little so tails and quiet sounds still show.
+    return juce::jlimit (0.0f, 1.0f, std::pow (juce::jmax (0.0f, level), 0.6f));
+}
+void drawWaveTrace (juce::Graphics& g, juce::Rectangle<float> plot, const std::array<float, triad::WaveTrace::bins>& level,
+                    const std::array<int, triad::WaveTrace::bins>& age, juce::Colour colour, float thresholdDb)
+{
+    const float mid = plot.getCentreY(), half = plot.getHeight() * 0.5f;
+    const float step = plot.getWidth() / (float) triad::WaveTrace::bins;
+    // Two passes: what is left of the cycle before (faint), then this cycle (brighter), as filled columns.
+    for (int pass = 1; pass >= 0; --pass)
+    {
+        juce::Path wave;
+        bool open = false;
+        for (int i = 0; i < triad::WaveTrace::bins; ++i)
+        {
+            const bool shown = age[(size_t) i] == pass;
+            const float h = shown ? waveHeight (level[(size_t) i]) * half : 0.0f;
+            if (h < 0.5f) { open = false; continue; }
+            const float x0 = plot.getX() + step * (float) i, x1 = x0 + step + 0.35f;
+            wave.addRectangle (x0, mid - h, x1 - x0, 2.0f * h);
+            open = true;
+        }
+        juce::ignoreUnused (open);
+        g.setColour (colour.withAlpha (pass == 0 ? 0.30f : 0.11f));
+        g.fillPath (wave);
+    }
+    if (! std::isnan (thresholdDb))
+    {
+        const float h = waveHeight (juce::Decibels::decibelsToGain (thresholdDb)) * half;
+        g.setColour (colour.withAlpha (0.55f));
+        const float dashes[] { 4.0f, 4.0f };
+        for (float y : { mid - h, mid + h })
+            g.drawDashedLine (juce::Line<float> (plot.getX(), y, plot.getRight(), y), dashes, 2, 1.0f);
+    }
+}
+}
+
+// ---- FAVORITES: the shapes marked with the heart ---------------------------------------------------------------
+namespace triad::favouriteShapes
+{
+namespace
+{
+struct Cache { juce::Time modified; juce::int64 size = -1; std::vector<Entry> entries; juce::int64 version = 0; };
+Cache& cache()
+{
+    static Cache c;
+    return c;
+}
+std::vector<Entry>& current()
+{
+    // Read again only when the file changed (another window or plug-in may have marked a heart).
+    auto& c = cache();
+    const auto file = TriadSettings::favouriteShapesFile();
+    const auto modified = file.getLastModificationTime();
+    const auto size = file.existsAsFile() ? file.getSize() : 0;
+    if (modified != c.modified || size != c.size)
+    {
+        c.modified = modified;
+        c.size = size;
+        c.entries.clear();
+        if (auto xml = juce::XmlDocument::parse (file); xml != nullptr && xml->hasTagName ("TriadFavorites"))
+            for (auto* item : xml->getChildWithTagNameIterator ("Item"))
+            {
+                auto shape = mod::fromXml (item->getChildByName ("TriadLfoShape"));
+                if (shape.size() < 2) continue;
+                auto key = item->getStringAttribute ("key");
+                if (key.isEmpty()) key = keyOf (shape);
+                c.entries.push_back ({ item->getStringAttribute ("name"), std::move (shape), key });
+            }
+        ++c.version;
+    }
+    return c.entries;
+}
+bool write (const std::vector<Entry>& entries)
+{
+    juce::XmlElement root ("TriadFavorites");
+    for (const auto& e : entries)
+    {
+        auto* item = root.createNewChildElement ("Item");
+        item->setAttribute ("name", e.name);
+        item->setAttribute ("key", e.key);
+        item->addChildElement (mod::toXml (e.shape, "TriadLfoShape").release());
+    }
+    const auto file = TriadSettings::favouriteShapesFile();
+    file.getParentDirectory().createDirectory();
+    const bool ok = root.writeTo (file);
+    cache().size = -1;   // read again (the new list), whatever the file system's time resolution
+    current();
+    return ok;
+}
+}
+juce::String keyOf (const mod::Shape& shape) { return mod::toText (shape); }
+std::vector<Entry> load() { return current(); }
+bool contains (const mod::Shape& shape)
+{
+    const auto key = keyOf (shape);
+    for (const auto& e : current()) if (e.key == key) return true;
+    return false;
+}
+bool add (const juce::String& name, const mod::Shape& shape)
+{
+    if (shape.size() < 2 || contains (shape)) return false;
+    auto list = current();
+    list.insert (list.begin(), { name.isNotEmpty() ? name : juce::String ("Favorite"), shape, keyOf (shape) });   // newest first
+    return write (list);
+}
+bool remove (const mod::Shape& shape)
+{
+    const auto key = keyOf (shape);
+    auto list = current();
+    const auto before = list.size();
+    list.erase (std::remove_if (list.begin(), list.end(), [&key] (const Entry& e) { return e.key == key; }), list.end());
+    return list.size() != before && write (list);
+}
+bool toggle (const juce::String& name, const mod::Shape& shape)
+{
+    if (contains (shape)) { remove (shape); return false; }
+    add (name, shape);
+    return contains (shape);
+}
+juce::int64 version() { current(); return cache().version; }
+}
+
 // ---- Shape panel: the grid, its toolbar and the palette ---------------------------------------------------
 ShapePanel::ShapePanel()
 {
@@ -780,7 +949,24 @@ ShapePanel::ShapePanel()
     pageLabel.setMouseCursor (juce::MouseCursor::PointingHandCursor);
     pageLabel.addMouseListener (this, false);
     for (auto* c : std::initializer_list<juce::Component*> { &prevPage, &nextPage, &pageLabel }) addAndMakeVisible (*c);
+    favouritesSeen = triad::favouriteShapes::version();
     rebuildPalette();
+    startTimer (1000);
+}
+void ShapePanel::timerCallback()
+{
+    if (! isShowing()) return;
+    const auto v = triad::favouriteShapes::version();
+    if (v != favouritesSeen) { favouritesSeen = v; rebuildPalette(); }
+}
+void ShapePanel::toggleFavourite (int index)
+{
+    if (auto* b = dynamic_cast<ShapeButton*> (getPaletteButton (index)); b != nullptr && b->onHeart) b->onHeart();
+}
+bool ShapePanel::isPaletteFavourite (int index) const
+{
+    auto* b = dynamic_cast<ShapeButton*> (getPaletteButton (index));
+    return b != nullptr && b->favourite;
 }
 ShapePanel::~ShapePanel() = default;
 void ShapePanel::setHost (ShapeHost* h)
@@ -799,7 +985,7 @@ void ShapePanel::setHost (ShapeHost* h)
 }
 int ShapePanel::validCategory (int category) const
 {
-    if (category == userFolder || category == allFolder) return category;
+    if (category == userFolder || category == allFolder || category == favouritesFolder) return category;
     if (isTimeFolder (category)) return juce::jlimit (timeFolder, timeFolder + triad::timePresets::numFolders - 1, category);
     return juce::jlimit (0, mod::numPresetCategories() - 1, category);
 }
@@ -808,6 +994,8 @@ std::vector<ShapePanel::PaletteShape> ShapePanel::paletteShapes() const
     std::vector<PaletteShape> list;
     if (paletteCategory == userFolder)
         for (auto& e : triad::userShapes::load()) list.push_back ({ e.name, std::move (e.shape), e.file });
+    else if (paletteCategory == favouritesFolder)
+        for (auto& e : triad::favouriteShapes::load()) list.push_back ({ e.name, std::move (e.shape), {} });
     else if (isTimeFolder (paletteCategory))
         for (const int i : triad::timePresets::presetsIn (paletteCategory - timeFolder))
             list.push_back ({ triad::timePresets::entries[i].name, triad::timePresets::shape (i), {} });
@@ -828,6 +1016,7 @@ juce::String ShapePanel::paletteFolderName() const
 {
     if (isTimeFolder (paletteCategory)) return triad::timePresets::folderNames[juce::jlimit (0, triad::timePresets::numFolders - 1, paletteCategory - timeFolder)];
     if (paletteCategory == allFolder) return "ALL";
+    if (paletteCategory == favouritesFolder) return "FAVORITES";
     return paletteCategory == userFolder ? juce::String ("USER") : mod::presetCategoryName (paletteCategory);
 }
 void ShapePanel::rebuildPalette()
@@ -842,6 +1031,19 @@ void ShapePanel::rebuildPalette()
         const auto& entry = list[(size_t) k];
         auto b = std::make_unique<ShapeButton> (entry.name, entry.shape, accent);
         b->onClick = [this, shape = entry.shape] { editor.apply ([shape] (const mod::Shape&) { return shape; }); };
+        b->favourite = triad::favouriteShapes::contains (entry.shape);
+        b->onHeart = [this, name = entry.name, shape = entry.shape, button = b.get()]
+        {
+            const bool now = triad::favouriteShapes::toggle (name, shape);
+            favouritesSeen = triad::favouriteShapes::version();
+            if (host != nullptr) host->setStatus (now ? "Added \"" + name + "\" to FAVORITES" : "Removed \"" + name + "\" from FAVORITES");
+            if (paletteCategory == favouritesFolder)
+            {
+                juce::Component::SafePointer<ShapePanel> safe (this);
+                juce::MessageManager::callAsync ([safe] { if (safe != nullptr) safe->rebuildPalette(); });   // it leaves the folder (not while its button is busy)
+            }
+            else { button->favourite = now; button->repaint(); }
+        };
         if (entry.file != juce::File())
         {
             b->setTooltip (entry.name + " (replaces the shape; right-click to rename or delete)");
@@ -859,7 +1061,14 @@ void ShapePanel::rebuildPalette()
 }
 int ShapePanel::getNumPalettePages() const
 {
-    return juce::jmax (1, ((int) paletteShapes().size() + paletteSize - 1) / paletteSize);
+    // Counted without building the shapes (ALL has over 11,000).
+    int count = 0;
+    if (paletteCategory == userFolder) count = (int) triad::userShapes::load().size();
+    else if (paletteCategory == favouritesFolder) count = (int) triad::favouriteShapes::load().size();
+    else if (isTimeFolder (paletteCategory)) count = (int) triad::timePresets::presetsIn (paletteCategory - timeFolder).size();
+    else if (paletteCategory == allFolder) count = mod::numPresets() + triad::timePresets::numPresets;
+    else count = (int) mod::presetsIn (paletteCategory).size();
+    return juce::jmax (1, (count + paletteSize - 1) / paletteSize);
 }
 void ShapePanel::setPaletteCategory (int category)
 {
@@ -977,6 +1186,7 @@ void ShapePanel::showCategoryMenu()
     };
     menu.addSectionHeader ("EVERYTHING");
     add (allFolder + 1, "ALL", mod::numPresets() + triad::timePresets::numPresets, paletteCategory == allFolder);
+    add (favouritesFolder + 1, u8 ("\xe2\x99\xa5 FAVORITES"), (int) triad::favouriteShapes::load().size(), paletteCategory == favouritesFolder);
     const auto addTimeFolders = [&]
     {
         menu.addSectionHeader ("TRIAD TIME: PITCH AND CHOPS (TRAINED ON GROSS BEAT BANKS)");
@@ -1221,7 +1431,7 @@ void GeneratorPanel::setSources (const std::vector<mod::Source>& list)
         b->setTooltip (s == mod::Source::infiltrator ? "From your Infiltrator presets: hard gates, steps, stairs and angles (the dice as it was)"
                        : s == mod::Source::shaperBox ? "From your ShaperBox presets: their motifs and how they repeat them (AAAB, ABAB ...)"
                        : s == mod::Source::grossBeatTime ? "From your Gross Beat banks' time patterns: octave and reverse lines, tape stops and chops"
-                       : s == mod::Source::timePresets ? "From Triad Time's 3,000 TIME patterns; Chaos splices in parts of others"
+                       : s == mod::Source::timePresets ? "From Triad Time's 10,000 TIME patterns; Chaos splices in parts of others"
                                                        : "From your Gross Beat banks' volume patterns: their gates and how they repeat them");
         b->onClick = [this, s] { setSource (s); };
         addAndMakeVisible (*b);

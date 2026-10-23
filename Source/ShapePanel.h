@@ -41,7 +41,21 @@ struct ShapeHost
     virtual juce::String segmentLabel (const triad::mod::Point& from, const triad::mod::Point& to) const { juce::ignoreUnused (from, to); return {}; }
     virtual int segmentLabelMode() const { return 0; }
     virtual void setStatus (const juce::String&) {}
+    // Behind the grid, drawn every frame (0.15.0): the sound coming in, as a waveform across the cycle or as a spectrum.
+    // hasBackdrop: whether there is one now; paintBackdrop draws it in the grid's area (under the grid lines and the line).
+    virtual bool hasBackdrop() const { return false; }
+    virtual void paintBackdrop (juce::Graphics&, juce::Rectangle<float> plot) { juce::ignoreUnused (plot); }
 };
+
+namespace triad::ui
+{
+// The sound across a cycle (WaveTrace) drawn as a filled waveform, up and down from the middle of `plot`: this cycle in
+// `colour`, what is left of the one before fainter. Heights as a clip in the playlist (lifted a little: level^0.6).
+// thresholdDb (when not NaN): the trigger's threshold, as two faint lines.
+void drawWaveTrace (juce::Graphics&, juce::Rectangle<float> plot, const std::array<float, triad::WaveTrace::bins>& level,
+                    const std::array<int, triad::WaveTrace::bins>& age, juce::Colour colour, float thresholdDb);
+float waveHeight (float level);   // 0..1 of the half height
+}
 
 // The grid, in the spirit of ShaperBox / Gross Beat / Serum: points on a grid that snap by default,
 // segments you can bend, and the playing position shown as it moves.
@@ -109,7 +123,8 @@ private:
     juce::Image layer;
     juce::int64 layerKey = 0;
     int layerRenders = 0;
-    double lastFrame = 0.0;
+    double lastFrame = 0.0, lastBackdrop = 0.0;
+    bool hadBackdrop = false;
     juce::SharedResourcePointer<triad::ui::FramePacer> pacer;
     juce::VBlankAttachment frames { this, [this] (double t) { frame (t); } };
 };
@@ -125,8 +140,22 @@ bool rename (const juce::File&, const juce::String& newName);
 bool remove (const juce::File&);                                        // to the Trash when there is one
 }
 
+// FAVORITES (0.15.0): the shapes and patterns marked with the heart, in Triad and Triad Time (one list for the computer,
+// in TriadSettings::favouriteShapesFile()). A favourite is the shape itself, so it stays if a folder changes later.
+namespace triad::favouriteShapes
+{
+struct Entry { juce::String name; triad::mod::Shape shape; juce::String key; };
+std::vector<Entry> load();                                    // newest first
+juce::String keyOf (const triad::mod::Shape&);
+bool contains (const triad::mod::Shape&);
+bool add (const juce::String& name, const triad::mod::Shape&);
+bool remove (const triad::mod::Shape&);
+bool toggle (const juce::String& name, const triad::mod::Shape&);   // true: now a favourite
+juce::int64 version();                                         // changes whenever the list does (any window, any plug-in)
+}
+
 // The grid with its toolbar and the preset palette under it.
-class ShapePanel final : public juce::Component
+class ShapePanel final : public juce::Component, private juce::Timer
 {
 public:
     ShapePanel();
@@ -140,6 +169,10 @@ public:
     static constexpr int userFolder = 1000;   // the USER folder (saved shapes), after the preset folders
     static constexpr int timeFolder = 2000;   // Triad Time's TIME folders: timeFolder + 0 ... (first in the menu for TIME)
     static constexpr int allFolder = 3000;    // ALL: every preset together (Triad's shapes and the TIME patterns)
+    static constexpr int favouritesFolder = 4000;   // FAVORITES: the shapes marked with the heart (newest first)
+    // The heart in the corner of palette button i (as if clicked).
+    void toggleFavourite (int paletteButton);
+    bool isPaletteFavourite (int paletteButton) const;
     void setPaletteCategory (int);            // a preset category, or userFolder
     int getPaletteCategory() const noexcept { return paletteCategory; }
     void setPalettePage (int);
@@ -160,6 +193,8 @@ public:
     void resized() override;
     void paint (juce::Graphics&) override;
 private:
+    void timerCallback() override;              // hearts marked in another window (or plug-in) show here too
+    juce::int64 favouritesSeen = 0;
     void showLengthMenu();
     void showGridMenu();
     void stepLength (int direction);

@@ -56,6 +56,38 @@ inline const juce::Colour& background = currentPalette.background, & panel = cur
 const juce::Colour inkColour (0xff111312);
 // Text with non-ASCII characters (middle dot, arrows) written as UTF-8 in the source.
 inline juce::String u8 (const char* text) { return juce::String::fromUTF8 (text); }
+// The favourites heart (0.15.0, Thomas: "a small outline of a heart, and then when you click it, it fills up to be
+// red"): an outline, brighter under the mouse, filled red when it is a favourite.
+const juce::Colour heartColour (0xffe5484d);
+inline juce::Path heartPath (juce::Rectangle<float> r)
+{
+    const float s = juce::jmin (r.getWidth(), r.getHeight());
+    const auto b = r.withSizeKeepingCentre (s, s * 0.9f);
+    const float x = b.getX(), y = b.getY(), w = b.getWidth(), h = b.getHeight();
+    juce::Path p;
+    p.startNewSubPath (x + w * 0.5f, y + h);                                                      // the point at the bottom
+    p.cubicTo (x + w * 0.38f, y + h * 0.84f, x, y + h * 0.62f, x, y + h * 0.32f);                  // up the left side
+    p.cubicTo (x, y + h * 0.08f, x + w * 0.18f, y, x + w * 0.29f, y);                              // over the left lobe
+    p.cubicTo (x + w * 0.4f, y, x + w * 0.48f, y + h * 0.07f, x + w * 0.5f, y + h * 0.2f);
+    p.cubicTo (x + w * 0.52f, y + h * 0.07f, x + w * 0.6f, y, x + w * 0.71f, y);                   // the right lobe
+    p.cubicTo (x + w * 0.82f, y, x + w, y + h * 0.08f, x + w, y + h * 0.32f);
+    p.cubicTo (x + w, y + h * 0.62f, x + w * 0.62f, y + h * 0.84f, x + w * 0.5f, y + h);         // down to the point
+    p.closeSubPath();
+    return p;
+}
+inline void drawHeart (juce::Graphics& g, juce::Rectangle<float> area, bool favourite, bool hover, juce::Colour outline)
+{
+    const auto p = heartPath (area);
+    if (favourite)
+    {
+        g.setColour (heartColour);
+        g.fillPath (p);
+        return;
+    }
+    if (hover) { g.setColour (heartColour.withAlpha (0.25f)); g.fillPath (p); }
+    g.setColour (hover ? heartColour : outline);
+    g.strokePath (p, juce::PathStrokeType (juce::jmax (1.1f, area.getHeight() * 0.09f), juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
 // Decibels for meters and readouts: "-6.0 dB", "-inf".
 inline juce::String formatDb (float gain)
 {

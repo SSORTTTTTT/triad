@@ -2,12 +2,17 @@
 #include "Widgets.h"
 #include "ShapePanel.h"
 
+class LfoPage;
+
 // An LFO of one of Triad's bands (or PRE / POST), as the shape panel edits it.
 struct LfoShapeHost final : ShapeHost
 {
-    explicit LfoShapeHost (TriadProcessor& p) : processor (p) {}
+    LfoShapeHost (TriadProcessor& p, LfoPage& o) : processor (p), page (o) {}
     TriadProcessor& processor;
+    LfoPage& page;
     int band = 0, lfo = 0;
+    bool hasBackdrop() const override;
+    void paintBackdrop (juce::Graphics&, juce::Rectangle<float> plot) override;
     triad::mod::Shape getShape() const override { return processor.getLfoInfo (band, lfo).shape; }
     void setShape (const triad::mod::Shape& s, bool undoable) override { processor.setLfoShape (band, lfo, s, undoable); }
     void beginEdit() override { processor.beginLfoEdit (band, lfo); }
@@ -69,6 +74,12 @@ public:
     int chipWidth() const noexcept { return juce::jlimit (48, 76, (getWidth() - 220) / juce::jmax (1, (int) bandButtons.size())); }
     void paint (juce::Graphics&) override;
     void lookAndFeelChanged() override { colourBandButtons(); }   // the theme changed
+    // Behind the grid (0.15.0, the gear menu's LFO BACKGROUND): nothing, the sound coming in as a waveform across the
+    // LFO's cycle (a new trace at each restart with TRIGGER: AUDIO), or the live spectrum with the band's range lit.
+    TriadSettings::Backdrop getBackdrop() const;
+    bool hasBackdrop() const { return getBackdrop() != TriadSettings::Backdrop::off; }
+    void paintBackdrop (juce::Graphics&, juce::Rectangle<float> plot);
+    void visibilityChanged() override;
 
 private:
     void rebuild();
@@ -87,7 +98,13 @@ private:
     triad::ui::IconButton addLfoButton { triad::ui::IconButton::Icon::plus, "Add an LFO to this band" };
     class TriggerButton;
     std::unique_ptr<TriggerButton> triggerButton;
-    LfoShapeHost host { processor };
+    LfoShapeHost host { processor, *this };
+    struct Backdrop;
+    std::unique_ptr<Backdrop> backdrop;
+    mutable TriadSettings::Backdrop backdropMode = TriadSettings::Backdrop::off;
+    mutable bool backdropAudio = false;
+    mutable double backdropChecked = -1.0;
+    juce::SharedResourcePointer<TriadSettings> settings;
     ShapePanel shapes;
     GeneratorPanel generator;
     std::vector<std::unique_ptr<triad::ui::RouteRow>> routeRows;

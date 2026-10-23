@@ -191,6 +191,12 @@ public:
     void setTrigger (int band, const TriggerSettings&);           // undoable
     struct TriggerStatus { bool waiting = true; float levelDb = -100.0f; int count = 0; };
     TriggerStatus getTriggerStatus (int band) const;             // the level: the loudest since the last call
+    // The sound behind the LFO grid (0.15.0): the LFO tab says which LFO it shows (-1: none, the tab is closed), and
+    // the audio thread traces the sound that LFO's band hears (what its TRIGGER listens to) across that LFO's cycle.
+    void setTracedLfo (int band, int lfo);
+    void readLfoTrace (std::array<float, triad::WaveTrace::bins>& level, std::array<int, triad::WaveTrace::bins>& age) const { lfoTrace.read (level, age); }
+    uint32_t getLfoTraceCycle() const noexcept { return lfoTrace.getCycle(); }
+    triad::SpectrumTap& getSpectrumTap() noexcept { return spectrum; }
 
     // ---- Matrix (message thread) -----------------------------------------------------------------
     struct Destination
@@ -322,6 +328,15 @@ private:
                 if (frame >= restarts[(size_t) k]) return table.lookup (restartIncrement * (frame - restarts[(size_t) k]));
             return table.lookup (blockPhase + increment * frame);
         }
+        // Where it is at `frame` (0..1), as value() reads it; < 0 while it waits for sound (AUDIO, held at its start).
+        double phaseAt (int frame) const noexcept
+        {
+            for (int k = numRestarts; --k >= 0;)
+                if (frame >= restarts[(size_t) k]) { const double p = restartIncrement * (frame - restarts[(size_t) k]); return p - std::floor (p); }
+            if (increment <= 0.0) return -1.0;
+            const double p = blockPhase + increment * frame;
+            return p - std::floor (p);
+        }
     };
     struct Route
     {
@@ -427,6 +442,10 @@ private:
     std::array<juce::AudioBuffer<float>, triad::maxBands> split;
     juce::AudioBuffer<float> wide;   // for effects with an extra bus that cannot be switched off (e.g. a sidechain)
     juce::AudioBuffer<float> fullSound;   // the full sound as it reaches the bands (after PRE): what LISTEN: FULL hears
+    triad::WaveTrace lfoTrace;
+    std::atomic<int> traceBand { -1000 }, traceLfoId { 0 };
+    std::atomic<bool> traceReset { false };
+    void traceLfo (Band&, int bandIndex, const juce::AudioBuffer<float>& source, int start, int frames);
     triad::Splitter splitter;
     triad::StereoDelay bypassDelay;
     juce::MidiBuffer childMidi;

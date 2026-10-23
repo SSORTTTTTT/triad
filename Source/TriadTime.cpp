@@ -328,6 +328,8 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
     const auto& volumeShape = playing[volumeEnvelope];
     const auto limit = (double) (historySize - 8);
     float timePhase = 0.0f, volumePhase = 0.0f;
+    const int traced = tracedEnvelope.load (std::memory_order_relaxed);
+    if (traced != tracing) { tracing = traced; trace.reset(); }
     for (int s = 0; s < n; ++s)
     {
         const double at = beats + s * beatsPerSample;
@@ -372,6 +374,7 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
         }
         // VOLUME: the gate, with attack and release.
         volumePhase = (float) (at / volumeBeats - std::floor (at / volumeBeats));
+        if (traced >= 0) trace.add (traced == timeEnvelope ? timePhase : volumePhase, juce::jmax (std::abs (dry[0]), std::abs (dry[1])));
         const float target = evaluate (volumeShape, volumePhase, cursors[volumeEnvelope]);
         gate = target + (gate - target) * (target > gate ? rise : fall);
         const float tm = timeMixSmooth.getNextValue(), vm = volumeMixSmooth.getNextValue();
@@ -379,6 +382,7 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
         for (int c = 0; c < channels; ++c)
             audio.setSample (c, s, (dry[c] + (wet[c] - dry[c]) * tm) * gain);
     }
+    if (traced >= 0) trace.endBlock();
     if (! playingSong) freeBeats = beats + n * beatsPerSample;
     phases[timeEnvelope].store (timePhase, std::memory_order_relaxed);
     phases[volumeEnvelope].store (volumePhase, std::memory_order_relaxed);
@@ -387,6 +391,10 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
     for (int c = channels; c < audio.getNumChannels(); ++c) audio.clear (c, 0, n);
 }
 
+void TriadTime::setTracedEnvelope (int envelope)
+{
+    tracedEnvelope.store (envelope == timeEnvelope || envelope == volumeEnvelope ? envelope : -1);
+}
 double TriadTime::segmentSpeed (const mod::Point& from, const mod::Point& to)
 {
     // How far back = (1 - y) x one length; time passes at one length per x. Speed = 1 - (change in delay / time).
@@ -574,6 +582,17 @@ struct EnvelopeHost final : ShapeHost
         return quarters == 0 ? juce::String ("0") : "-" + juce::String (quarters) + "/4";
     }
     bool squareGrid() const override { return true; }
+    // Behind the grid (0.15.0, the gear's BEHIND THE GRID): the sound coming in, across the pattern.
+    bool hasBackdrop() const override { return showWaveform; }
+    void paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot) override
+    {
+        processor.setTracedEnvelope (envelope);
+        processor.readTrace (level, age);
+        triad::ui::drawWaveTrace (g, plot, level, age, getColour(), std::numeric_limits<float>::quiet_NaN());
+    }
+    bool showWaveform = false;   // the setting (Triad Time's gear, or Triad's)
+    std::array<float, triad::WaveTrace::bins> level {};
+    std::array<int, triad::WaveTrace::bins> age {};
     bool shadeBelowDiagonal() const override { return envelope == TriadTime::timeEnvelope; }
     bool offersTimePresets() const override { return envelope == TriadTime::timeEnvelope; }
     juce::String segmentLabel (const mod::Point& from, const mod::Point& to) const override
@@ -590,7 +609,28 @@ class SlotButton final : public juce::Button
 {
 public:
     SlotButton (int s) : Button (juce::String (s + 1)), slot (s) { setClickingTogglesState (false); }
-    void setShape (mod::Shape s, juce::Colour c, const juce::String& tip) { shape = std::move (s); colour = c; setTooltip (tip); repaint(); }
+    void setShape (mod::Shape s, juce::Colour c, const juce::String& tip)
+    {
+        shape = std::move (s); colour = c; setTooltip (tip + " (the heart: FAVORITES)");
+        favourite = triad::favouriteShapes::contains (shape);
+        repaint();
+    }
+    // The heart (0.15.0): the pattern as it is drawn now goes into FAVORITES (or out again).
+    std::function<void()> onHeart;
+    bool favourite = false;
+    juce::Rectangle<float> heartArea() const { return { 4.0f, (float) getHeight() - 15.0f, 11.0f, 11.0f }; }   // lower left, as Thomas drew it
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (onHeart && heartArea().expanded (3.0f).contains (e.position)) { onHeart(); return; }
+        Button::mouseDown (e);
+    }
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        const bool over = onHeart && heartArea().expanded (3.0f).contains (e.position);
+        if (over != overHeart) { overHeart = over; repaint(); }
+        Button::mouseMove (e);
+    }
+    void mouseExit (const juce::MouseEvent& e) override { overHeart = false; Button::mouseExit (e); }
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         const auto r = getLocalBounds().toFloat().reduced (1.0f);
@@ -611,11 +651,18 @@ public:
         }
         g.setColour ((on ? colour : textColour).withAlpha (on ? 1.0f : 0.7f));
         g.strokePath (p, juce::PathStrokeType (1.3f));
+        if (onHeart)
+        {
+            g.setColour (on ? background.interpolatedWith (colour, 0.25f) : over || down ? slotRowHover : slotRow);
+            g.fillRoundedRectangle (heartArea().expanded (1.5f), 3.0f);
+            drawHeart (g, heartArea(), favourite, overHeart, dimTextColour.withAlpha (over ? 0.8f : 0.5f));
+        }
     }
 private:
     int slot;
     mod::Shape shape;
     juce::Colour colour { accent };
+    bool overHeart = false;
 };
 
 class TriadTimeEditor final : public juce::AudioProcessorEditor, private juce::Timer
@@ -637,6 +684,7 @@ public:
         {
             auto b = std::make_unique<SlotButton> (s);
             b->onClick = [this, s] { processor.setSlot (envelope, s); refreshSlots(); shapes.setHost (&hostFor (envelope)); };
+            b->onHeart = [this, s] { togglePatternFavourite (s); };
             addAndMakeVisible (*b);
             slots.push_back (std::move (b));
         }
@@ -665,13 +713,14 @@ public:
         addAndMakeVisible (gearButton);
         addChildComponent (themePanel);
         applyLabelMode (settings->getPitchLabels());
+        applyBackdrop();
         showEnvelope (TriadTime::timeEnvelope);
         // The grid spans the whole window at ShaperBox's proportions (1 bar across is 3.48 x 1 bar down), so a line drawn at
         // ShaperBox's angle bends the pitch as much (a cut from 0 to -1/16 over 1/8 = an octave down).
         setSize (1100, windowHeightFor (1100));
         startTimerHz (15);
     }
-    ~TriadTimeEditor() override { setLookAndFeel (nullptr); }
+    ~TriadTimeEditor() override { processor.setTracedEnvelope (-1); setLookAndFeel (nullptr); }
     void showEnvelope (int e)
     {
         envelope = e;
@@ -726,6 +775,18 @@ public:
         timeHost.labelMode = (int) mode;
         shapes.getEditor().repaint();
     }
+    // The sound behind the grid, as set in the gear (here or in Triad's).
+    void applyBackdrop()
+    {
+        const bool on = settings->getTimeBackdrop() == TriadSettings::Backdrop::waveform;
+        if (on == timeHost.showWaveform) return;
+        timeHost.showWaveform = volumeHost.showWaveform = on;
+        if (! on) processor.setTracedEnvelope (-1);
+        shapes.getEditor().repaint();
+    }
+public:
+    bool isShowingWaveform() const noexcept { return timeHost.showWaveform; }
+private:
     void showGearMenu()
     {
         const auto mode = settings->getPitchLabels();
@@ -735,12 +796,22 @@ public:
         menu.addItem (2, "While dragging a point", true, mode == TriadSettings::PitchLabels::dragging);
         menu.addItem (3, "Always, on every line", true, mode == TriadSettings::PitchLabels::always);
         menu.addItem (-1, "FWD / REV: which way it plays; st: semitones up or down", false);
+        menu.addSectionHeader ("BEHIND THE GRID");
+        const auto backdropNow = settings->getTimeBackdrop();
+        menu.addItem (10, "Nothing", true, backdropNow == TriadSettings::Backdrop::off);
+        menu.addItem (11, "The waveform (the sound coming in, across the pattern)", true, backdropNow == TriadSettings::Backdrop::waveform);
         triad::ui::addThemeItems (menu, themeBase);
         juce::Component::SafePointer<TriadTimeEditor> safe (this);
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&gearButton), [safe] (int choice)
         {
             if (safe == nullptr) return;
             if (triad::ui::handleThemeChoice (choice, themeBase, [safe] { if (safe != nullptr) safe->openThemePanel(); })) return;
+            if (choice == 10 || choice == 11)
+            {
+                safe->settings->setTimeBackdrop (choice == 11 ? TriadSettings::Backdrop::waveform : TriadSettings::Backdrop::off);
+                safe->applyBackdrop();
+                return;
+            }
             if (choice < 1 || choice > 3) return;
             const auto next = (TriadSettings::PitchLabels) (choice - 1);
             safe->settings->setPitchLabels (next);
@@ -805,7 +876,19 @@ public:
         place (releaseKnob, small);
     }
     ShapePanel& getShapePanel() noexcept { return shapes; }
+    // The heart on pattern button s (1-12) of the envelope shown: its shape into FAVORITES, or out again.
+    void togglePatternFavourite (int s)
+    {
+        const auto shape = processor.getShape (envelope, s);
+        const auto name = juce::String (envelope == TriadTime::timeEnvelope ? "TIME" : "VOLUME") + " pattern " + juce::String (s + 1);
+        const bool now = triad::favouriteShapes::toggle (name, shape);
+        favouritesSeen = triad::favouriteShapes::version();
+        juce::ignoreUnused (now);
+        refreshSlots();
+    }
+    bool isPatternFavourite (int s) const { return s >= 0 && s < (int) slots.size() && slots[(size_t) s]->favourite; }
 private:
+    juce::int64 favouritesSeen = 0;
     EnvelopeHost& hostFor (int e) { return e == TriadTime::timeEnvelope ? timeHost : volumeHost; }
     void refreshSlots()
     {
@@ -824,7 +907,13 @@ private:
     void timerCallback() override
     {
         shapes.updateToolbar();
-        if (++settingsTicks >= 8) { settingsTicks = 0; applyLabelMode (settings->getPitchLabels()); }   // changed in Triad's gear menu
+        if (++settingsTicks >= 8)
+        {
+            settingsTicks = 0;
+            applyLabelMode (settings->getPitchLabels());   // changed in Triad's gear menu
+            applyBackdrop();
+            if (const auto v = triad::favouriteShapes::version(); v != favouritesSeen) { favouritesSeen = v; refreshSlots(); }   // hearts marked elsewhere
+        }
     }
     // Every frame of the screen (up to 120 a second): a pattern switched by automation (or one of Triad's LFOs)
     // shows at once.

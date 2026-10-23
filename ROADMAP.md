@@ -4,7 +4,28 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.14.0 ("Triad v13"): plug-in search, audio trigger, 3,000 TIME patterns
+## Current testing version — 0.15.0 ("Triad v14"): favorites with hearts, the sound behind the grid, 10,000 TIME patterns
+
+0.15.0 (2026-10-22), Thomas: "can you just start on all these updates for the roadmap right now, like the audio thing
+coming in, the favorite system, and the 2,000 presets for each category ... just ship me a new installer":
+- **Favorites with a heart** (the two plans below, "favourites with a heart"): a small heart outline in the lower left
+  corner of every preset button (Triad's LFO tab and Triad Time), filling red when clicked; the **FAVORITES** folder
+  (next to ALL, newest first); hearts on Triad Time's 12 numbered patterns; one list for every Triad and Triad Time
+  (`~/Music/Triad/Favorites.triadfavs`). Plug-ins: a heart on every row of the search, **♥ FAVORITES** (only them),
+  the same favourites as the effect menu (its section and the slot menu now say FAVORITES, with a heart).
+- **The sound behind the grid** (Thomas: "a visual of the audio coming through in the LFO tab ... also not just for the
+  audio setting ... an option ... the way the audio comes in ... like how it would go through the playlist ... or live
+  frequency ... similar to an EQ, like Pro Q ... an option that you have to turn on"): with TRIGGER: AUDIO the waveform
+  (to start with), a new trace at each restart, the threshold shown; with TRIGGER: SONG nothing to start with; the gear
+  menu (LFO TAB: BEHIND THE GRID) sets each to the waveform, the spectrum (the band's range lit) or nothing. Triad
+  Time's gear: the waveform across the pattern (off to start with). The audio thread keeps the loudest sample of each
+  of 400 steps of the cycle, only for the LFO on screen.
+- **10,000 TIME patterns** ("make 2,000 presets for each ... so there's 10K presets"): 1,400 more in each folder (2,000
+  each), from the same generator trained on the Gross Beat banks; each new one at least 0.12 beats from every bank
+  pattern and 0.2 from every other (the first 3,000 included, kept as they were: names up to 600, the new ones 601 to
+  2,000). The pages stay as they are (Thomas: "the page system right now is fine").
+
+### 0.14.0 ("Triad v13"): plug-in search, audio trigger, 3,000 TIME patterns
 
 0.14.0 (2026-10-22), Thomas:
 - **Plug-in search** ("a little search bar where we can search just the plugin name ... similar ... like at Ableton
@@ -31,7 +52,7 @@ installed; the plug-in ID stays the same, so projects made with any earlier Tria
 "The next big step will be working on ... the aesthetics of the plugin": the look and feel of Triad, Triad Time and
 Triad Split (see "Look and feel" below), when Thomas sends his references.
 
-### Next version: favourites with a heart (Thomas, 2026-10-22) — planned, alongside the aesthetics work
+### Favourites with a heart (Thomas, 2026-10-22) — done in 0.15.0
 
 Thomas: "for the ... LFO tab ... make a favorite system ... and a separate folder that indexes all the favorites ... an
 outline of a heart, and when you click it, it goes red ... and also do a favorite system for all of the plugins ... a
@@ -55,7 +76,7 @@ similar thing, just with the heart ... in the search bar". He marked where it go
   favourites come first in the search, and a FAVOURITES button in the search shows only them.
 - Hearts are drawn with the new look (aesthetics work), in the theme's colours.
 
-### Next version: see the sound behind the LFO (Thomas, 2026-10-22) — planned
+### See the sound behind the LFO (Thomas, 2026-10-22) — done in 0.15.0
 
 Thomas: "when the audio is coming in from the trigger, can you have a visual of the audio coming through in the LFO tab?
 Like, if it's a clap, I want to be able to see the waveform of the clap or ... any kind of audio, melody, drum".

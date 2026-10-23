@@ -144,6 +144,31 @@ void TriadSettings::setPitchLabels (PitchLabels mode)
     file->saveIfNeeded();
     loadedModification = options().getDefaultFile().getLastModificationTime();
 }
+TriadSettings::Backdrop TriadSettings::getLfoBackdrop (bool audioTrigger) const
+{
+    reload();
+    return (Backdrop) juce::jlimit (0, 2, file->getIntValue (audioTrigger ? "lfoBackdropAudio" : "lfoBackdropSong",
+                                                             (int) (audioTrigger ? Backdrop::waveform : Backdrop::off)));
+}
+void TriadSettings::setLfoBackdrop (bool audioTrigger, Backdrop mode)
+{
+    reload();
+    file->setValue (audioTrigger ? "lfoBackdropAudio" : "lfoBackdropSong", (int) mode);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
+TriadSettings::Backdrop TriadSettings::getTimeBackdrop() const
+{
+    reload();
+    return file->getIntValue ("timeBackdrop", (int) Backdrop::off) == (int) Backdrop::waveform ? Backdrop::waveform : Backdrop::off;
+}
+void TriadSettings::setTimeBackdrop (Backdrop mode)
+{
+    reload();
+    file->setValue ("timeBackdrop", mode == Backdrop::waveform ? (int) Backdrop::waveform : (int) Backdrop::off);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
 juce::String TriadSettings::favouriteKey (const juce::String& format, const juce::String& name)
 {
     return (format == "AudioUnit" ? juce::String ("AU") : format) + "|" + name.trim().toLowerCase();
@@ -199,6 +224,10 @@ juce::File TriadSettings::startupPresetFile (const juce::String& choice)
 juce::File TriadSettings::lfoShapeFolder()
 {
     return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/LFO Shapes");
+}
+juce::File TriadSettings::favouriteShapesFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/Favorites.triadfavs");
 }
 juce::File TriadSettings::themeFolder()
 {

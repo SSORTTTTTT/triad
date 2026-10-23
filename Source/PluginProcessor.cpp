@@ -1166,6 +1166,7 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
         {
             detectTrigger (pre, audio, offset, n);   // PRE listens to Triad's input (BAND and FULL alike)
             advanceLfos (pre, offset, n);
+            traceLfo (pre, preBand, audio, offset, n);
             for (int ch = 0; ch < 2; ++ch) pre.dry.copyFrom (ch, 0, audio, ch, offset, n);
             if (! runChain (pre, pre.dry, n)) { audio.clear(); return; }
             for (int ch = 0; ch < 2; ++ch) audio.copyFrom (ch, offset, pre.dry, ch, 0, n);
@@ -1179,6 +1180,7 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
             auto& buffer = split[(size_t) b];
             detectTrigger (band, band.trigger.listenFull.load (std::memory_order_relaxed) ? fullSound : buffer, 0, n);
             advanceLfos (band, offset, n);
+            traceLfo (band, b, band.trigger.listenFull.load (std::memory_order_relaxed) ? fullSound : buffer, 0, n);
             for (int ch = 0; ch < 2; ++ch) band.dry.copyFrom (ch, 0, buffer, ch, 0, n);
             // The band's chain: each active slot processes the output of the one above it.
             if (! runChain (band, buffer, n)) { audio.clear(); return; }
@@ -1225,6 +1227,8 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
             if (post.trigger.listenFull.load (std::memory_order_relaxed)) detectTrigger (post, fullSound, 0, n);
             else detectTrigger (post, audio, offset, n);   // POST's own sound: the bands added together
             advanceLfos (post, offset, n);
+            if (post.trigger.listenFull.load (std::memory_order_relaxed)) traceLfo (post, postBand, fullSound, 0, n);
+            else traceLfo (post, postBand, audio, offset, n);
             for (int ch = 0; ch < 2; ++ch) post.dry.copyFrom (ch, 0, audio, ch, offset, n);
             if (! runChain (post, post.dry, n)) { audio.clear(); return; }
             for (int ch = 0; ch < 2; ++ch) audio.copyFrom (ch, offset, post.dry, ch, 0, n);
@@ -2074,6 +2078,31 @@ bool TriadProcessor::removeLfo (int band, int index)
     }
     stateChanged();
     return true;
+}
+void TriadProcessor::setTracedLfo (int band, int lfo)
+{
+    const int id = isValidBand (band) && lfo >= 0 && lfo < getLfoCount (band) ? bands[(size_t) band]->lfos[(size_t) lfo]->id : 0;
+    const int b = id > 0 ? band : -1000;
+    if (b == traceBand.load() && id == traceLfoId.load()) return;
+    traceLfoId.store (id);
+    traceBand.store (b);
+    traceReset.store (true);
+}
+void TriadProcessor::traceLfo (Band& band, int bandIndex, const juce::AudioBuffer<float>& source, int start, int frames)
+{
+    if (traceBand.load (std::memory_order_relaxed) != bandIndex) return;
+    const auto* l = band.findLfo (traceLfoId.load (std::memory_order_relaxed));
+    if (l == nullptr) return;
+    if (traceReset.exchange (false)) lfoTrace.reset();
+    const float* left = source.getReadPointer (0, start);
+    const float* right = source.getReadPointer (juce::jmin (1, source.getNumChannels() - 1), start);
+    for (int i = 0; i < frames; ++i)
+    {
+        const double phase = l->phaseAt (i);
+        if (phase < 0.0) continue;   // waiting for sound
+        lfoTrace.add (phase, juce::jmax (std::abs (left[i]), std::abs (right[i])));
+    }
+    lfoTrace.endBlock();
 }
 TriadProcessor::TriggerSettings TriadProcessor::getTrigger (int band) const
 {

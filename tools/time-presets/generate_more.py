@@ -3,10 +3,12 @@
 # live, replay, further back). Each folder leans on one thing Thomas likes; every pattern is checked to be new (not a
 # copy of any pattern in the banks), on Triad Time's grid (1/64 bar across, 1/16 bar of delay down), within one bar back.
 import json, math, random, collections, sys
+import numpy as np
 from model import envs, polyline, model, speed_class
 # python3 generate_more.py [kept.json] [per folder] [seed]
 #   0.13.0: batch-120.json 200 20261381   (880 more on top of generate.py's 120: 1,000)
 #   0.14.0: batch-1000.json 600 20261022  (2,000 more on top of those: 3,000)
+#   0.15.0: batch-3000.json 2000 20261023 (7,000 more on top of those: 10,000)
 KEPT = sys.argv[1] if len(sys.argv) > 1 else 'batch-120.json'
 PER_FOLDER = int(sys.argv[2]) if len(sys.argv) > 2 else 200
 R = random.Random(int(sys.argv[3]) if len(sys.argv) > 3 else 20261021 + 360)
@@ -120,6 +122,14 @@ for e in envs:
     segs = [(x0, x1, min(d0, 8), min(d1, 8), k, s) for (x0, x1, d0, d1, k, s) in polyline(e) if k != 'jump']
     SOURCES.append(delay_curve(segs))
 def distance(a, b): return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
+def padded(curve):
+    # As distance() compares them: value by value from the start (a shorter curve ends early), over 256.
+    row = np.full(256, np.nan)
+    row[:min(256, len(curve))] = curve[:256]
+    return row
+BANK = np.array([padded(s) for s in SOURCES])
+def nearest_bank(curve):
+    return float((np.nansum(np.abs(BANK - padded(curve)), axis=1) / 256.0).min())
 
 def counts(segs):
     c = collections.Counter()
@@ -140,21 +150,29 @@ FOLDERS = [
 first = json.load(open(KEPT))   # the patterns there already, kept as they are (and the new ones kept clear of them)
 batch = [dict(m, curve=delay_curve([tuple(x) for x in m['segs']])) for m in first]
 stats = collections.Counter()
+# Every pattern so far as one array, so a new one is checked against all of them at once.
+ALL = np.full((len(batch) + 5 * PER_FOLDER, 256), np.nan)
+count = 0
+for m in batch:
+    ALL[count] = padded(m['curve']); count += 1
 for name, weights, crit in FOLDERS:
     made = []
     tries = 0
     have = sum(1 for m in batch if m['folder'] == name)
-    while have + len(made) < PER_FOLDER and tries < 6000000:
+    while have + len(made) < PER_FOLDER and tries < 20000000:
         tries += 1
         segs = make(weights, lambda s: crit(counts(s)))
         if segs is None: continue
         if all(k == 'flat' for (_, _, _, _, k, _) in segs) and name != 'CHOPS': continue
         curve = delay_curve(segs)
-        nearest = min(distance(curve, s) for s in SOURCES)
+        c = padded(curve)
+        if count and (np.nansum(np.abs(ALL[:count] - c), axis=1) / 256.0).min() < 0.2: stats['too close to one made already'] += 1; continue
+        nearest = nearest_bank(curve)
         if nearest < 0.12: stats['too close to a bank pattern'] += 1; continue
-        if any(distance(curve, m['curve']) < 0.2 for m in batch + made): stats['too close to one made already'] += 1; continue
         made.append({'folder': name, 'segs': segs, 'curve': curve, 'nearest': nearest})
-    print(name, len(made), 'more made in', tries, 'tries')
+        ALL[count] = c; count += 1
+        if len(made) % 200 == 0: print(' ', name, len(made), 'after', tries, 'tries', flush=True)
+    print(name, len(made), 'more made in', tries, 'tries', flush=True)
     batch += made
 print(dict(stats))
 for i, m in enumerate(batch):

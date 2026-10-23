@@ -24,6 +24,8 @@ void require (bool b, const char* message) { if (! b) throw std::runtime_error (
 #include "ThemeTests.h"
 #include "SearchTests.h"
 #include "TriggerTests.h"
+#include "FavouriteTests.h"
+#include "BackdropTests.h"
 
 namespace
 {
@@ -387,6 +389,10 @@ int main (int argc, char** argv)
         searchTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
         testStage = "audio trigger";
         triggerTests::run();
+        testStage = "favorites";
+        favouriteTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
+        testStage = "behind the grid";
+        backdropTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
         testStage = "running the tests";
 
         // ---- Built-in Linkwitz-Riley filter equals JUCE's -----------------------------------

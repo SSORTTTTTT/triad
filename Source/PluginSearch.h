@@ -43,8 +43,14 @@ public:
     ~Panel() override;
     // Opens over its parent: `target` names where the effect goes ("Band 2  /  Slot 3"); `choose` gets the chosen
     // entry's index in `entries`.
+    // The heart on each row (0.15.0) marks a favourite through `setFavourite` (the same favourites as the effect menu's).
     void open (std::shared_ptr<std::vector<EffectEntry>> entries, const juce::String& target, const juce::String& initialText,
-               std::function<bool (const EffectEntry&)> isFavourite, std::function<void (int)> choose);
+               std::function<bool (const EffectEntry&)> isFavourite, std::function<void (int)> choose,
+               std::function<void (const EffectEntry&, bool)> setFavourite = {});
+    void toggleFavourite (int row);                 // the heart on a row of getResults()
+    void setFavouritesOnly (bool);                  // the FAVORITES button: only the favourites
+    bool isFavouritesOnly() const noexcept { return favouritesButton.getToggleState(); }
+    bool isFavouriteRow (int row) const;
     void close();
     void setQuery (const juce::String&);            // as if typed
     juce::String getQuery() const { return box.getText(); }
@@ -67,13 +73,15 @@ private:
     bool keyPressed (const juce::KeyPress&, juce::Component*) override;
     void update();
     juce::Rectangle<int> frame() const;
+    static constexpr int heartColumn = 34;   // the heart, at the left of each row (pixels from the row's left)
     std::shared_ptr<std::vector<EffectEntry>> list;
     std::function<bool (const EffectEntry&)> favourite;
+    std::function<void (const EffectEntry&, bool)> markFavourite;
     std::function<void (int)> onChoose;
     std::vector<int> results;
     juce::String targetText;
     juce::TextEditor box;
     juce::ListBox rows { "Plug-ins", this };
-    juce::TextButton closeButton { "CLOSE" };
+    juce::TextButton closeButton { "CLOSE" }, favouritesButton;
 };
 }

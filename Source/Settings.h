@@ -33,6 +33,14 @@ public:
     enum class PitchLabels { off = 0, dragging = 1, always = 2 };
     PitchLabels getPitchLabels() const;
     void setPitchLabels (PitchLabels);
+    // Behind the LFO grid (0.15.0): nothing, the sound as a waveform across the LFO's cycle, or its spectrum (the
+    // band's range lit in its colour). One choice for bands on TRIGGER: AUDIO (waveform to start with), one for SONG
+    // (off to start with); Triad Time's grid has its own (off, or the waveform).
+    enum class Backdrop { off = 0, waveform = 1, spectrum = 2 };
+    Backdrop getLfoBackdrop (bool audioTrigger) const;
+    void setLfoBackdrop (bool audioTrigger, Backdrop);
+    Backdrop getTimeBackdrop() const;
+    void setTimeBackdrop (Backdrop);
 
     // The colour theme (Theme.h), shared by Triad, Triad Time and Triad Split: its name ("Triad", "Midnight" ...,
     // "Custom", or "My: <name>" for one saved in themeFolder()) and the Custom theme's colours (as text).
@@ -56,6 +64,7 @@ public:
     static juce::File presetFolder();        // ~/Music/Triad/Presets
     static juce::File chainFolder();         // ~/Music/Triad/Chains
     static juce::File lfoShapeFolder();      // ~/Music/Triad/LFO Shapes (the LFO palette's USER folder)
+    static juce::File favouriteShapesFile(); // ~/Music/Triad/Favorites.triadfavs (the hearts: the FAVORITES folder)
     static juce::File themeFolder();         // ~/Music/Triad/Themes (saved colour themes, .triadtheme)
 
 private:
