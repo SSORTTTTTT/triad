@@ -1,0 +1,194 @@
+Triad stress test, Triad 0.15.0 (Mac OSX 15.7.9, Apple M1 (Virtual), 3 cores)
+Effect pool: 22 different effects: Triad Test Effect (VST3), AUBandpass (AU), AUDelay (AU), AUDistortion (AU), AUDynamicsProcessor (AU), AUFilter (AU), AUGraphicEQ (AU), AUHighShelfFilter (AU), AUHipass (AU), AULowpass (AU), AULowShelfFilter (AU), AUMatrixReverb (AU), AUMultibandCompressor (AU), AUNBandEQ (AU), AUNewPitch (AU), AUParametricEQ (AU), AUPeakLimiter (AU), AUPitch (AU), AUReverb2 (AU), AURogerBeep (AU), AUSampleDelay (AU), Triad Time (built in)
+
+== 0. Removing effects: each effect loaded, played, its window opened and removed 8 times, then 6 copies removed at once (each effect in its own process) ==
+22 of 22 effects were removed and deleted 14 times each without a problem
+
+== 1. Big project: 10 bands x 20 slots ==
+Loaded 200 effects in 393.95 ms; Triad latency 8496 samples
+20 s of audio through 200 effects: average 3.58 ms per 256-sample block (67.1% of one core), worst 14.30 ms, peak level -24.8 dBFS
+Switched on every LFO: 220 knobs now move with the song (slot mixes, band mixes, band volumes)
+20 s of audio through 200 effects with every LFO on: average 3.89 ms per 256-sample block (73.0% of one core), worst 14.31 ms, peak level -13.4 dBFS
+LFO cost: 8.7% more processing than the same project without LFOs
+Saved (459 KB) in 19.90 ms, reopened in 467.12 ms with 200 effects running
+Undo with 200 effects: a snapshot takes 26.37 ms; undoing a removed effect 24.01 ms (it is loaded again, the others stay as they are); undoing a slot mix 16.28 ms; redoing both 30.59 ms
+Closed the 200-effect project in 25.75 ms
+
+== 2. 3000 random edits while audio plays on another thread (seed 20261015) ==
+  ... 100 edits in 1.4 s, 5 effects loaded (37 removed, waiting to be deleted), 285 audio blocks, 366 MB in use
+  ... 200 edits in 2.0 s, 9 effects loaded (86 removed, waiting to be deleted), 402 audio blocks, 396 MB in use
+2026-10-23 02:51:09.486 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:09.487 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:09.487 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:09.487 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:09.492 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:09.492 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:09.492 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:09.492 TriadStress[23653:64142] Circle and line do not intersect
+  ... 300 edits in 2.9 s, 15 effects loaded (127 removed, waiting to be deleted), 567 audio blocks, 410 MB in use
+  ... 400 edits in 3.6 s, 16 effects loaded (155 removed, waiting to be deleted), 689 audio blocks, 413 MB in use
+  ... 500 edits in 4.3 s, 16 effects loaded (179 removed, waiting to be deleted), 825 audio blocks, 413 MB in use
+  ... 600 edits in 4.9 s, 24 effects loaded (300 removed, waiting to be deleted), 1013 audio blocks, 445 MB in use
+  ... 700 edits in 5.7 s, 34 effects loaded (334 removed, waiting to be deleted), 1150 audio blocks, 460 MB in use
+  ... 800 edits in 6.7 s, 34 effects loaded (342 removed, waiting to be deleted), 1308 audio blocks, 543 MB in use
+  ... 900 edits in 7.8 s, 38 effects loaded (256 removed, waiting to be deleted), 1470 audio blocks, 548 MB in use
+  ... 1000 edits in 8.7 s, 43 effects loaded (290 removed, waiting to be deleted), 1624 audio blocks, 550 MB in use
+  ... 1100 edits in 9.4 s, 44 effects loaded (365 removed, waiting to be deleted), 1717 audio blocks, 554 MB in use
+  ... 1200 edits in 10.0 s, 33 effects loaded (478 removed, waiting to be deleted), 1826 audio blocks, 564 MB in use
+  ... 1300 edits in 11.0 s, 22 effects loaded (397 removed, waiting to be deleted), 1995 audio blocks, 571 MB in use
+2026-10-23 02:51:18.075 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:18.076 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:18.076 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:18.081 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:18.081 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:18.081 TriadStress[23653:64142] Circle and line do not intersect
+  ... 1400 edits in 11.7 s, 31 effects loaded (427 removed, waiting to be deleted), 2131 audio blocks, 585 MB in use
+  ... 1500 edits in 12.5 s, 38 effects loaded (330 removed, waiting to be deleted), 2282 audio blocks, 603 MB in use
+  ... 1600 edits in 13.4 s, 36 effects loaded (501 removed, waiting to be deleted), 2424 audio blocks, 624 MB in use
+2026-10-23 02:51:20.276 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.276 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.276 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.277 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.277 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.277 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.277 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.277 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.278 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.278 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.278 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.278 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.279 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.279 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.279 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.279 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.289 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.289 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.289 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.290 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.290 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.290 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.290 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.290 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.291 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.291 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.291 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.292 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.292 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.292 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.293 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:20.293 TriadStress[23653:64142] Circle and line do not intersect
+  ... 1700 edits in 14.4 s, 32 effects loaded (509 removed, waiting to be deleted), 2583 audio blocks, 631 MB in use
+  ... 1800 edits in 15.2 s, 28 effects loaded (431 removed, waiting to be deleted), 2729 audio blocks, 629 MB in use
+  ... 1900 edits in 15.8 s, 28 effects loaded (624 removed, waiting to be deleted), 2896 audio blocks, 633 MB in use
+  ... 2000 edits in 16.9 s, 27 effects loaded (559 removed, waiting to be deleted), 3077 audio blocks, 646 MB in use
+  ... 2100 edits in 17.6 s, 40 effects loaded (447 removed, waiting to be deleted), 3183 audio blocks, 648 MB in use
+  ... 2200 edits in 18.4 s, 46 effects loaded (530 removed, waiting to be deleted), 3324 audio blocks, 672 MB in use
+2026-10-23 02:51:26.216 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.216 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.216 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.220 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.220 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.220 TriadStress[23653:64142] Circle and line do not intersect
+  ... 2300 edits in 19.6 s, 29 effects loaded (538 removed, waiting to be deleted), 3498 audio blocks, 684 MB in use
+2026-10-23 02:51:26.554 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.555 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.556 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.565 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.565 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:26.565 TriadStress[23653:64142] Circle and line do not intersect
+  ... 2400 edits in 20.6 s, 32 effects loaded (263 removed, waiting to be deleted), 3675 audio blocks, 700 MB in use
+  ... 2500 edits in 21.3 s, 22 effects loaded (367 removed, waiting to be deleted), 3809 audio blocks, 707 MB in use
+2026-10-23 02:51:28.929 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:28.929 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:28.929 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:28.934 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:28.934 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:28.934 TriadStress[23653:64142] Circle and line do not intersect
+  ... 2600 edits in 22.6 s, 31 effects loaded (225 removed, waiting to be deleted), 4024 audio blocks, 728 MB in use
+  ... 2700 edits in 23.3 s, 17 effects loaded (176 removed, waiting to be deleted), 4160 audio blocks, 726 MB in use
+  ... 2800 edits in 23.9 s, 16 effects loaded (236 removed, waiting to be deleted), 4286 audio blocks, 729 MB in use
+2026-10-23 02:51:31.033 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:31.033 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:31.033 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:31.047 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:31.047 TriadStress[23653:64142] Circle and line do not intersect
+2026-10-23 02:51:31.047 TriadStress[23653:64142] Circle and line do not intersect
+  ... 2900 edits in 24.7 s, 26 effects loaded (271 removed, waiting to be deleted), 4419 audio blocks, 741 MB in use
+3000 edits in 26.5 s: 4793 audio blocks processed alongside the edits (584 automation moves), worst block 22.97 ms, up to 59 effects loaded at once, up to 671 removed effects waiting their 1.5 s to be deleted (0 of them 3 s late or more), memory up to 765 MB
+Effect windows opened on top of Triad: 63
+Final layout: 3 bands, 17 effects; NaN/Inf output: none
+Edits: LFO length / trigger x69, LFO palette: folders, pages, USER, dice x71, LIVE on/off x36, PRE / POST chain x51, add band x94, add empty slot x126, add/remove an LFO x49, all dividers: hard wall / default / soft x50, band volume x65, bypass/enable slot x106, chain preset copy x29, close effect windows x32, copy / paste band state x26, copy / paste plugin state x61, crossover slope x40, drag a slot x58, drag crossover x34, draw an LFO x127, knob link / LEARN x77, load effect (new slot) x414, matrix edit x133, move a band x83, move slot x109, open effect window x89, open/close Triad window, switch tabs x65, remove band x104, remove effect, keep slot x65, remove slot x194, replace effect x139, sample rate / buffer change x33, save and reload project x77, slot mix x171, undo / redo x123
+Slowest edits: open effect window avg 41.33 ms, worst 551.95 ms (edit 41); matrix edit avg 7.34 ms, worst 179.75 ms (edit 43); open/close Triad window, switch tabs avg 15.34 ms, worst 112.82 ms (edit 2234); slot mix avg 6.78 ms, worst 111.08 ms (edit 1918); sample rate / buffer change avg 22.30 ms, worst 89.55 ms (edit 2983)
+
+== 3. Many Triad instances (one per track), every LFO on ==
+24 instances with 288 hosted effects created in 2146.33 ms
+10 s of audio through all of them: average 11.59 ms per block for the whole project (108.7% of one core's real-time budget), worst 43.51 ms
+All instances closed in 71.40 ms
+40 create/play/destroy cycles in 4340.81 ms
+
+== 4. Live vocal monitoring: latency and real-time safety ==
+Triad alone, 3 bands, 24 dB/oct (default): reports 0 samples (0.00 ms) to the DAW; the sound starts at sample 0, its peak at sample 1 (0.02 ms)
+Triad alone, 3 bands, 6 dB/oct (softest): reports 0 samples (0.00 ms) to the DAW; the sound starts at sample 0, its peak at sample 0 (0.00 ms)
+Triad alone, 3 bands, 96 dB/oct (hardest): reports 0 samples (0.00 ms) to the DAW; the sound starts at sample 0, its peak at sample 1 (0.02 ms)
+Triad alone, 10 bands, 96 dB/oct: reports 0 samples (0.00 ms) to the DAW; the sound starts at sample 2, its peak at sample 5 (0.10 ms)
+Crossover timing smear (group delay of the bands added back, crossovers at 250 Hz and 2.5 kHz), in ms at:
+                 100 Hz   250 Hz   500 Hz  1.0 kHz  2.5 kHz  5.0 kHz 10.0 kHz
+6 dB/oct           0.00     0.00     0.00    -0.00    -0.00     0.00     0.00
+12 dB/oct          1.22     0.76     0.38     0.18     0.08     0.03     0.01
+24 dB/oct          2.21     1.98     0.72     0.32     0.20     0.06     0.02
+48 dB/oct          3.92     5.03     1.29     0.57     0.51     0.11     0.03
+72 dB/oct          5.73     8.51     1.87     0.84     0.87     0.16     0.04
+96 dB/oct          7.58    12.28     2.47     1.11     1.25     0.20     0.05
+(For comparison: a singer 1 m from the microphone arrives 2.9 ms late; a 64-sample buffer is 1.33 ms.)
+16 of 22 effects add no latency; these do (Triad then reports the largest band total to the DAW): Triad Test Effect (VST3) 73 samples (1.52 ms); AUDynamicsProcessor (AU) 256 samples (5.33 ms); AUMultibandCompressor (AU) 256 samples (5.33 ms); AUNewPitch (AU) 4096 samples (85.33 ms); AUPeakLimiter (AU) 96 samples (2.00 ms); AUPitch (AU) 3719 samples (77.48 ms)
+With AUNewPitch (AU) in band 2 (slot at 0% mix): Triad reports 4096 samples (85.33 ms); the dry sound comes out at sample 4096 (peak at 4097)
+Vocal chain effects: AUGraphicEQ (AU), AUNBandEQ (AU), AUParametricEQ (AU), AUDelay (AU), AUSampleDelay (AU)
+Each case plays 6 s per buffer size at 48 kHz on an audio thread paced like an interface, with Triad's window open. Times are Triad's own work per block (CPU time); "late": the work took longer than the buffer lasts (a dropout on any machine); "paused by the system": the test machine (shared, virtual) stopped the thread for a moment, not Triad's work; "silenced": blocks Triad output as silence because its window was changing the bands at that moment. The project is saved every second meanwhile, like a DAW's autosave.
+  Triad alone, 3 bands, 24 dB/oct,  32 samples (0.67 ms): average 9 us (1.3% of the time), 99.9% under 120 us, worst 416 us; late 0 of 9000, silenced 0, paused by the system 26 (longest wait 4.6 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 3 bands, 24 dB/oct,  64 samples (1.33 ms): average 8 us (0.6% of the time), 99.9% under 74 us, worst 204 us; late 0 of 4500, silenced 0, paused by the system 0 (longest wait 0.2 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 3 bands, 24 dB/oct, 128 samples (2.67 ms): average 38 us (1.4% of the time), 99.9% under 481 us, worst 688 us; late 0 of 2250, silenced 0, paused by the system 0 (longest wait 0.7 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 3 bands, 24 dB/oct, 256 samples (5.33 ms): average 79 us (1.5% of the time), 99.9% under 174 us, worst 189 us; late 0 of 1125, silenced 0, paused by the system 0 (longest wait 0.2 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct,  32 samples (0.67 ms): average 71 us (10.7% of the time), 99.9% under 250 us, worst 358 us; late 0 of 9000, silenced 0, paused by the system 0 (longest wait 0.5 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct,  64 samples (1.33 ms): average 134 us (10.1% of the time), 99.9% under 409 us, worst 1056 us; late 0 of 4500, silenced 0, paused by the system 0 (longest wait 1.1 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, 128 samples (2.67 ms): average 912 us (34.2% of the time), 99.9% under 2385 us, worst 2489 us; late 0 of 2250, silenced 0, paused by the system 0 (longest wait 2.5 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, 256 samples (5.33 ms): average 2025 us (38.0% of the time), 99.9% under 3430 us, worst 3463 us; late 0 of 1125, silenced 0, paused by the system 0 (longest wait 3.5 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, every LFO on,  32 samples (0.67 ms): average 99 us (14.9% of the time), 99.9% under 463 us, worst 1336 us; late 2 of 9000, silenced 0, paused by the system 3 (longest wait 1.3 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, every LFO on,  64 samples (1.33 ms): average 188 us (14.1% of the time), 99.9% under 763 us, worst 1052 us; late 0 of 4500, silenced 0, paused by the system 1 (longest wait 1.6 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, every LFO on, 128 samples (2.67 ms): average 902 us (33.8% of the time), 99.9% under 3634 us, worst 8509 us; late 5 of 2250, silenced 0, paused by the system 0 (longest wait 8.5 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, every LFO on, 256 samples (5.33 ms): average 1950 us (36.6% of the time), 99.9% under 4120 us, worst 12314 us; late 1 of 1125, silenced 0, paused by the system 0 (longest wait 12.3 ms); Triad latency 0 samples (0.00 ms)
+  vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct,  32 samples (0.67 ms): average 16 us (2.5% of the time), 99.9% under 101 us, worst 306 us; late 0 of 9000, silenced 0, paused by the system 0 (longest wait 0.3 ms); Triad latency 0 samples (0.00 ms)
+  vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct,  64 samples (1.33 ms): average 32 us (2.4% of the time), 99.9% under 184 us, worst 264 us; late 0 of 4500, silenced 0, paused by the system 0 (longest wait 0.2 ms); Triad latency 0 samples (0.00 ms)
+  vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct, 128 samples (2.67 ms): average 115 us (4.3% of the time), 99.9% under 1112 us, worst 8057 us; late 1 of 2250, silenced 0, paused by the system 0 (longest wait 8.1 ms); Triad latency 0 samples (0.00 ms)
+  vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct, 256 samples (5.33 ms): average 236 us (4.4% of the time), 99.9% under 2083 us, worst 4713 us; late 0 of 1125, silenced 0, paused by the system 0 (longest wait 4.7 ms); Triad latency 0 samples (0.00 ms)
+
+== 5. Knobs inside the effects: Triad's LFO links, LEARN and undo, with every effect ==
+22 of 22 effects have knobs an LFO can link to (median 4 each, up to 33). With Triad's own links (an LFO on up to 4 knobs, set every 64 samples): the knobs followed in 22, the sound followed in 21; LEARN linked a knob in 22; undo put a turned knob back in 22; none crashed
+  note: AURogerBeep (AU): its first knobs did not change the sound of the test noise
+
+== 7. Recording through Triad: the extra-strong live test ==
+The session: no pitch corrector installed (PRE empty); 3 bands at 250 Hz / 2.5 kHz (24 dB/oct) with AUGraphicEQ (AU), AUNBandEQ (AU), AUParametricEQ (AU), AUDelay (AU), AUSampleDelay (AU); every LFO on (band volumes as a 60% tremolo) and an LFO linked to a knob inside an effect; Triad's window open; the project saved every second.
+(a) Monitoring while you work: a knob turned, an LFO drawn, a window opened, an undo step kept... every 150 ms. "Silenced": blocks Triad output as silence because its window was changing the bands at that moment; "dropouts": output blocks that were silent while the voice was there, for any reason; "late": Triad's work took longer than the buffer lasts.
+  48.0 kHz,  32 samples (0.67 ms), 6 s, 35 actions: Triad's work average 18 us (2.7% of the time), 99.9% under 276 us; late 3 of 9000, paused by the system 2; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+  48.0 kHz,  64 samples (1.33 ms), 8 s, 47 actions: Triad's work average 27 us (2.1% of the time), 99.9% under 268 us; late 0 of 6000, paused by the system 2; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+  48.0 kHz, 128 samples (2.67 ms), 6 s, 33 actions: Triad's work average 171 us (6.4% of the time), 99.9% under 2607 us; late 2 of 2250, paused by the system 0; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+  44.1 kHz,  64 samples (1.45 ms), 5 s, 29 actions: Triad's work average 20 us (1.4% of the time), 99.9% under 173 us; late 0 of 3445, paused by the system 0; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+  96.0 kHz,  64 samples (0.67 ms), 5 s, 29 actions: Triad's work average 19 us (2.8% of the time), 99.9% under 101 us; late 0 of 7500, paused by the system 2; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+(b) Layout changes while recording (48 kHz, 64 samples, one every 400 ms for 12 s): late 0 of 9000, not-a-number 0. How long each kind of change interrupted the sound:
+  LIVE on or off (x4): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  add / remove a band (x2): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  all dividers: hard wall / default / soft (x4): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  bypass / enable an effect (x3): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  drag an effect to another slot (x3): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  load an effect into a new slot (x3): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  redo (x6): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  undo (x3): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+
+== 8. Pitch correction with a sung vocal: a plain track, Triad's PRE, and a copy in each band (250 Hz / 2.5 kHz) ==
+No pitch corrector is installed on this computer (the CI Mac installs Graillon 3 Free for this): skipped
+
+== 6. Plug-in list: 60 plug-ins, 20 of which crash when loaded ==
+First scan: 60 plug-ins in 5.5 s: 20 read from disk, 20 checked by Triad Scanner, 20 crashed the scanner (Triad unaffected)
+Next session (from the cache): 119.79 ms
+Closed during a full rescan in 500.43 ms
+
+PASS: no crashes, no NaN/Inf output, all checks held

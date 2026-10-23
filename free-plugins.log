@@ -1,0 +1,106 @@
+== surge-synthesizer/releases-xt
+  surge-xt-macOS-1.3.4.dmg (405M)
+yes: stdout: Broken pipe
+    installing surge-xt-macOS-1.3.4.pkg
+== jatinchowdhury18/AnalogTapeModel
+  ChowTapeModel-Mac-2.11.4.dmg ( 27M)
+yes: stdout: Broken pipe
+    installing CHOWTapeModel-signed.pkg
+== Chowdhury-DSP/ChowMatrix
+  ChowMatrix-Mac-1.3.0.dmg ( 16M)
+yes: stdout: Broken pipe
+    installing ChowMatrix-signed.pkg
+== michaelwillis/dragonfly-reverb
+  dragonfly-reverb-3.2.10-macos-universal.dmg ( 24M)
+yes: stdout: Broken pipe
+    installing dragonfly-reverb-AudioPlugins.pkg
+== baconpaul/airwin2rack
+  airwindows-consolidated-macOS-2026-10-17-d8fe301.dmg ( 47M)
+yes: stdout: Broken pipe
+    installing airwindows-consolidated-macOS-2026-10-17-d8fe301.pkg
+== Chowdhury-DSP/BYOD
+  BYOD-Mac-1.3.0.dmg ( 96M)
+yes: stdout: Broken pipe
+    installing BYOD-signed.pkg
+== jatinchowdhury18/ChowPhaser
+  ChowPhaser-Mac-1.1.1.dmg ( 46M)
+yes: stdout: Broken pipe
+    installing ChowPhaser-signed.pkg
+== jatinchowdhury18/KlonCentaur
+  ChowCentaur-Mac-1.4.0.dmg ( 12M)
+yes: stdout: Broken pipe
+    installing ChowCentaur-signed.pkg
+== Chowdhury-DSP/ChowMultiTool
+  ChowMultiTool-Mac-1.1.0.dmg ( 29M)
+yes: stdout: Broken pipe
+    installing ChowMultiTool-signed.pkg
+== tiagolr/gate12
+  gate12-macos-v1.3.3.zip ( 12M)
+    contents: . ./gate12-macos ./gate12-macos/VST3 ./gate12-macos/VST3/GATE-12.vst3 ./gate12-macos/VST3/GATE-12.vst3/Contents ./gate12-macos/AU ./gate12-macos/AU/GATE-12.component ./gate12-macos/AU/GATE-12.component/Contents ./gate12-macos/readme.txt ./gate12-macos/LV2 ./gate12-macos/LV2/GATE-12.lv2 ./gate12-macos/LV2/GATE-12.lv2/libGATE-12.so ./gate12-macos/LV2/GATE-12.lv2/manifest.ttl ./gate12-macos/LV2/GATE-12.lv2/ui.ttl ./gate12-macos/LV2/GATE-12.lv2/dsp.ttl 
+    copying GATE-12.vst3
+    copying GATE-12.component
+== tiagolr/time12
+  time12-macos-v1.2.3.zip ( 12M)
+    contents: . ./time12-macos ./time12-macos/VST3 ./time12-macos/VST3/TIME-12.vst3 ./time12-macos/VST3/TIME-12.vst3/Contents ./time12-macos/AU ./time12-macos/AU/TIME-12.component ./time12-macos/AU/TIME-12.component/Contents ./time12-macos/readme.txt ./time12-macos/LV2 ./time12-macos/LV2/TIME-12.lv2 ./time12-macos/LV2/TIME-12.lv2/manifest.ttl ./time12-macos/LV2/TIME-12.lv2/ui.ttl ./time12-macos/LV2/TIME-12.lv2/libTIME-12.so ./time12-macos/LV2/TIME-12.lv2/dsp.ttl 
+    copying TIME-12.vst3
+    copying TIME-12.component
+== tiagolr/filtr
+  filtr-macos-v1.3.0.zip ( 13M)
+    contents: . ./filtr-macos ./filtr-macos/VST3 ./filtr-macos/VST3/FILT-R.vst3 ./filtr-macos/VST3/FILT-R.vst3/Contents ./filtr-macos/AU ./filtr-macos/AU/FILT-R.component ./filtr-macos/AU/FILT-R.component/Contents ./filtr-macos/readme.txt ./filtr-macos/LV2 ./filtr-macos/LV2/FILT-R.lv2 ./filtr-macos/LV2/FILT-R.lv2/manifest.ttl ./filtr-macos/LV2/FILT-R.lv2/ui.ttl ./filtr-macos/LV2/FILT-R.lv2/libFILT-R.so ./filtr-macos/LV2/FILT-R.lv2/dsp.ttl 
+    copying FILT-R.vst3
+    copying FILT-R.component
+== tiagolr/reevr
+  reevr-macos-v1.4.0.zip ( 18M)
+    contents: . ./reevr-macos ./reevr-macos/VST3 ./reevr-macos/VST3/REEV-R.vst3 ./reevr-macos/VST3/REEV-R.vst3/Contents ./reevr-macos/AU ./reevr-macos/AU/REEV-R.component ./reevr-macos/AU/REEV-R.component/Contents ./reevr-macos/readme.txt ./reevr-macos/LV2 ./reevr-macos/LV2/REEV-R.lv2 ./reevr-macos/LV2/REEV-R.lv2/manifest.ttl ./reevr-macos/LV2/REEV-R.lv2/ui.ttl ./reevr-macos/LV2/REEV-R.lv2/libREEV-R.so ./reevr-macos/LV2/REEV-R.lv2/dsp.ttl 
+    copying REEV-R.vst3
+    copying REEV-R.component
+== wolf-plugins/wolf-shaper
+  wolf-shaper-v1.0.2-macos-universal.zip (5.7M)
+yes: stdout: Broken pipe
+    installing wolf-shaper-AudioPlugins.pkg
+== Graillon 3 Free (Auburn Sounds), a pitch corrector
+  Graillon-FREE-3.2.zip ( 52M)
+    installing Graillon-3-FREE-3.2.0.pkg
+== Installed VST3:
+Airwindows Consolidated.vst3
+Auburn Sounds Graillon 3.vst3
+BYOD.vst3
+ChowCentaur.vst3
+ChowMatrix.vst3
+ChowMultiTool.vst3
+ChowPhaserMono.vst3
+ChowPhaserStereo.vst3
+CHOWTapeModel.vst3
+DragonflyEarlyReflections.vst3
+DragonflyHallReverb.vst3
+DragonflyPlateReverb.vst3
+DragonflyRoomReverb.vst3
+FILT-R.vst3
+GATE-12.vst3
+REEV-R.vst3
+Surge XT Effects.vst3
+Surge XT.vst3
+TIME-12.vst3
+Triad Split.vst3
+Triad Time.vst3
+Triad v14.vst3
+wolf-shaper.vst3
+== Installed AU:
+Airwindows Consolidated.component
+Auburn Sounds Graillon 3.component
+BYOD.component
+ChowCentaur.component
+ChowMatrix.component
+ChowMultiTool.component
+ChowPhaserMono.component
+ChowPhaserStereo.component
+CHOWTapeModel.component
+FILT-R.component
+GATE-12.component
+REEV-R.component
+Surge XT Effects.component
+Surge XT.component
+TIME-12.component
+Triad Split.component
+Triad Time.component
+Triad v14.component
