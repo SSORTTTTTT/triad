@@ -239,6 +239,10 @@ Your hosted effects must have native Apple Silicon VST3 versions installed. Tria
 
 If you would rather not install Apple's developer tools, push this folder to a GitHub repository. `.github/workflows/build-mac.yml` runs `Build-Mac.command` on GitHub's Apple Silicon Mac runner, uploads the `.pkg` as the **Triad-macOS-AppleSilicon-pkg** artifact, then installs it on the runner and checks it with `auval`, the integration tests and pluginval. A downloaded package is quarantined by macOS: Control-click it and choose **Open**, or allow it under System Settings > Privacy & Security.
 
+## Windows
+
+Triad, Triad Time and Triad Split also build as 64-bit Windows VST3s (Windows 10 or 11; Audio Units are Mac-only). `.github/workflows/build-windows.yml` builds them with Visual Studio 2022 on GitHub's Windows runner, makes one setup program with Inno Setup (`windows/Triad.iss`: **Triad-v14-0.15.0-Windows-x64-Setup.exe**, uploaded as the **Triad-Windows-x64-Setup** artifact), installs it there over simulated earlier versions, and runs the same integration tests, stress tests (also with free third-party Windows effects) and pluginval as on the Mac. The setup program installs into `C:\Program Files\Common Files\VST3`, where FL Studio, Ableton Live and other Windows DAWs look, and removes "Triad v13" and earlier. It is not signed with a paid certificate, so Windows SmartScreen asks first ("More info", then "Run anyway"). `windows/For-Windows-users.txt` has the steps for someone installing it. The C++ runtime is built in (nothing else to install). Effect windows stay in front of the DAW window that shows Triad (not of every app); on Windows, keys pressed in an effect's window are not passed back to the DAW.
+
 ## Use
 
 1. Load **Triad v14** on a stereo track or mixer insert. It starts with 3 bands.
@@ -327,5 +331,6 @@ The fixtures are development-only and are not installed. See `VALIDATION.md` for
 - `Build-Mac.command`: Mac dependency check, AU/VST3 build and `.pkg` installer creation.
 - `Install-Mac.command`: optional per-user install without the package.
 - `.github/workflows/build-mac.yml`: builds, installs and validates the package on GitHub's Apple Silicon Mac.
+- `.github/workflows/build-windows.yml`, `windows/Triad.iss`: the Windows VST3 build, its setup program and its checks on GitHub's Windows runner.
 
 JUCE and its included SDKs retain their own upstream licenses. JUCE is fetched as a dependency and is not bundled in this source archive. Consult the pinned checkout's license and <https://juce.com/> before distributing a product built with it.

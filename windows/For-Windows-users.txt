@@ -1,0 +1,32 @@
+Triad v14 for Windows (64-bit VST3)
+===================================
+
+What it installs
+  Triad v14    the multiband effects host
+  Triad Time   the time and volume gate
+  Triad Split  one band per track or mixer insert
+All three go into C:\Program Files\Common Files\VST3, the folder FL Studio, Ableton Live and every other
+Windows DAW look in.
+
+Installing
+  1. Close FL Studio, Ableton Live and any other music program.
+  2. Double-click Triad-v14-0.15.0-Windows-x64-Setup.exe.
+     The installer is not signed with a paid certificate, so Windows may show
+     "Windows protected your PC". Click "More info", then "Run anyway".
+  3. Click through the installer (it asks for administrator permission, because the VST3 folder is
+     inside Program Files).
+
+Finding it in your DAW
+  FL Studio:    Options > Manage plugins > Find more plugins (or Find installed plugins), then look for
+                "Triad v14" under Effects.
+  Ableton Live: Preferences > Plug-ins, turn on "Use VST3 Plug-in System Folders", click Rescan.
+                Triad is under Plug-ins > VST3 > Thomas Ross.
+
+Updating
+  Run the new installer: it replaces the old version (and removes "Triad v13" and earlier). Quit the DAW
+  completely first, or it keeps using the copy it already loaded.
+
+Uninstalling
+  Settings > Apps > Installed apps > "Triad v14, Triad Time and Triad Split" > Uninstall.
+
+Needs Windows 10 or 11, 64-bit. No other downloads (the C++ runtime is built in).
