@@ -55,6 +55,23 @@ similar thing, just with the heart ... in the search bar". He marked where it go
   favourites come first in the search, and a FAVOURITES button in the search shows only them.
 - Hearts are drawn with the new look (aesthetics work), in the theme's colours.
 
+### Next version: see the sound behind the LFO (Thomas, 2026-10-22) — planned
+
+Thomas: "when the audio is coming in from the trigger, can you have a visual of the audio coming through in the LFO tab?
+Like, if it's a clap, I want to be able to see the waveform of the clap or ... any kind of audio, melody, drum".
+- **The waveform on the LFO grid:** the sound the band's TRIGGER listens to (its own sound, or the full sound) drawn
+  behind the LFO's line, left to right in step with the LFO: each time the LFO starts again (a new hit), a new trace
+  starts at the left edge, so a clap shows its attack right at the start of the grid and its tail running across, and
+  you can see exactly where the shape's points fall on the sound. The previous cycle fades out behind the new one.
+- Drawn as a filled waveform (its peaks, up and down from the middle) in a soft version of the band's colour, under
+  the grid lines and the LFO line, so the shape stays easy to edit; the threshold shown as a faint line, and the
+  moment of each restart marked.
+- Also with TRIGGER: SONG (the sound drawn across the LFO's cycle as the song plays), and on Triad Time's grid (the
+  sound coming in, under the TIME and VOLUME lines), with a switch in the settings to hide it.
+- How: the audio thread keeps the loudest and quietest sample for each step of the cycle (a few hundred per cycle,
+  for each band) in a buffer the screen reads without locks, at the screen's frame rate; nothing is stored or slowed
+  down when the LFO tab is closed.
+
 ### 0.13.0 ("Triad v12"): TIME folders trained on Gross Beat banks
 
 0.13.0 (2026-10-21), Thomas: "make another batch of presets trained only upon the lfos from the grossbeat presets I
