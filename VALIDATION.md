@@ -1,5 +1,24 @@
 # Validation — Triad
 
+## Triad v14 (0.15.0), Triad Time and Triad Split on macOS — 2026-10-22
+
+Commit `8d9ac54`, run 39888064388 attempt 2 (macos-15 runner, virtual Apple M1). New in 0.15.0: favorites with hearts
+(shapes, Triad Time's patterns, the FAVORITES folder, plug-ins in the search), the sound behind the grid (waveform or
+spectrum, in Triad's LFO tab and Triad Time) and 10,000 TIME patterns.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v14-0.15.0`, `Triad-Time-0.15.0`, `Triad-Split-0.15.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (Triad v14 over simulated Triad ... v13 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| Favorites | The heart marks and unmarks a shape (the shape stays on the grid), FAVORITES lists them newest first and a heart there takes one out, other folders and other windows show them; Triad Time's pattern hearts put the pattern as drawn in FAVORITES (shared with Triad); plug-in hearts in the search, FAVORITES only, the same favourites as the effect menu |
+| The sound behind the grid | SONG: a tone in the first half of each cycle traced there (quiet half 0, 400 of 400 steps this cycle); AUDIO: nothing traced while waiting, a new trace from the left at each restart; Triad Time traces its input across the pattern; spectrum in Triad's LFO tab and Triad Time; defaults: waveform with AUDIO, off with SONG, off in Triad Time |
+| TIME patterns | 10,000 (2,000 a folder), all on the grid, in range, each with what its folder is named for, all different; the first 3,000 unchanged; 20 of 20 octave / reverse lines bend 440 Hz as labelled; ALL: 11,049 presets, 1,005 pages |
+| Real plug-ins (57) | 5 x 3,000 random edits (each in its own process) all passed: PASS, no crashes, no NaN/Inf output, all checks held |
+
+Attempt 1 failed one check: recording through Triad at 96 kHz / 64 samples, 1 block of 7,500 silenced (the audio thread
+found its lock taken for an instant; the check allows none). Every other check passed; none of 0.15.0's new code takes
+that lock (the trigger, the trace, the spectrum and the favourites are lock-free). Attempt 2: 0 silenced in every case.
+The first v14 run (39886806669) was cancelled to add Triad Time's spectrum.
+
 ## Triad v13 (0.14.0), Triad Time and Triad Split on macOS — 2026-10-22
 
 Commit `7915886`, run 39804911083 attempt 4 (macos-15 runner, virtual Apple M1; GitHub is retiring macos-14 and gave
