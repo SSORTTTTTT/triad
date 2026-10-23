@@ -31,6 +31,30 @@ installed; the plug-in ID stays the same, so projects made with any earlier Tria
 "The next big step will be working on ... the aesthetics of the plugin": the look and feel of Triad, Triad Time and
 Triad Split (see "Look and feel" below), when Thomas sends his references.
 
+### Next version: favourites with a heart (Thomas, 2026-10-22) — planned, alongside the aesthetics work
+
+Thomas: "for the ... LFO tab ... make a favorite system ... and a separate folder that indexes all the favorites ... an
+outline of a heart, and when you click it, it goes red ... and also do a favorite system for all of the plugins ... a
+similar thing, just with the heart ... in the search bar". He marked where it goes on photos of the preset buttons
+(the lower left corner of each).
+- **Shapes and patterns (Triad's LFO tab and Triad Time):** an outlined heart in the lower left corner of every preset
+  button in the palette (every folder: Triad's shapes, the GEN and EXTRA folders, the TIME folders, USER, ALL). Click
+  it: the heart fills (red, or the theme's colour for it) and the shape is a favourite; click again to take it out. The
+  heart shows faintly on every button, brighter when the mouse is over it, and filled on favourites. Clicking the
+  heart only marks it; clicking the rest of the button still puts the shape on the grid.
+- **FAVORITES folder:** a new folder in the folder menu, next to OCTAVE DOWN, OCTAVE UP, REVERSE, CHOPS, PITCH +
+  CHOPS (and near the top in Triad's LFO tab): every favourite, newest first or in the order they were marked, page by
+  page like the others. Removing the heart there takes it out of the folder.
+- **Triad Time's numbered patterns (1-12):** a heart on each too; marking one puts that pattern's shape (as it is
+  drawn now) in FAVORITES.
+- Shared by every Triad and Triad Time on the computer and kept between sessions (next to Triad.settings, as the
+  USER folder is); a favourite is the shape itself, so it stays even if a folder changes in a later version.
+- **Plug-in favourites with a heart:** in the plug-in search (the magnifying glass), a heart on every row: outline,
+  click to fill it and make that plug-in a favourite (click again to remove). The same favourites as the effect
+  menu's FAVOURITES section and the slot menu's "Add to favourites" (which get the heart too, in place of the words);
+  favourites come first in the search, and a FAVOURITES button in the search shows only them.
+- Hearts are drawn with the new look (aesthetics work), in the theme's colours.
+
 ### 0.13.0 ("Triad v12"): TIME folders trained on Gross Beat banks
 
 0.13.0 (2026-10-21), Thomas: "make another batch of presets trained only upon the lfos from the grossbeat presets I
