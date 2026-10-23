@@ -50,7 +50,8 @@ except Exception:
 seen = []
 def rank(name):
     n = name.lower()
-    if not re.search(r"(win|windows)", n) or re.search(r"darwin|macos|osx", n): return None
+    # "win" as a word of its own ("-win64-", "_windows."), not inside a name such as "airwin2rack"
+    if not re.search(r"(?<![a-z])win(dows)?(?![a-z])", n) or re.search(r"darwin|macos|osx|linux", n): return None
     if re.search(r"(win32|32bit|32-bit|x86[^_-]|x86$|arm64|aarch64|lv2|clap-only|vst2|source|debug|pdb|symbols|sha256|\.sig$|\.txt$)", n): return None
     if not re.search(r"\.(zip|exe|msi)$", n): return None
     score = 0

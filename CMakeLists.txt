@@ -185,6 +185,8 @@ if(TRIAD_BUILD_TESTS)
     endif()
     if(WIN32)
         target_sources(TriadTests PRIVATE Tests/WindowsSupport.cpp)
+        # main() holds every test inline: far more than Windows' default 1 MB stack (8 MB on macOS and Linux).
+        target_link_options(TriadTests PRIVATE /STACK:33554432)
     endif()
     target_compile_definitions(TriadTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(TriadTests PRIVATE Triad juce::juce_audio_utils juce::juce_dsp)
