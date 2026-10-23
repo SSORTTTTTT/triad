@@ -359,7 +359,7 @@ void onTestCrash (int signal)
     std::raise (signal);
 }
 #else
-void triadInstallCrashReport (void (*describe)());   // WindowsCrash.cpp
+void triadInstallCrashReport (void (*describe)());   // WindowsSupport.cpp
 void describeTestCrash()
 {
     std::fprintf (stderr, "during: %s\nCall stack of the crashing thread:\n%s\n", testStage, juce::SystemStats::getStackBacktrace().toRawUTF8());

@@ -1,5 +1,5 @@
-// Windows: what the tests print when they crash (the Mac and Linux builds use signal handlers instead).
-// Kept free of JUCE headers, so <windows.h> cannot clash with JUCE names.
+// Windows support for the test programs: what they print when they crash (the Mac and Linux builds use signal
+// handlers instead), and a thread's CPU time. Kept free of JUCE headers, so <windows.h> cannot clash with JUCE names.
 #if defined (_WIN32)
  #ifndef NOMINMAX
   #define NOMINMAX
@@ -11,6 +11,7 @@
  #include <csignal>
  #include <cstdio>
  #include <cstdlib>
+ #include <intrin.h>
 
 namespace
 {
@@ -61,5 +62,32 @@ void triadInstallCrashReport (void (*describe)())
     _set_abort_behavior (0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
     SetUnhandledExceptionFilter (onUnhandledException);
     std::signal (SIGABRT, onAbort);
+}
+
+// CPU time this thread has used, in ms. Counted in processor cycles (QueryThreadCycleTime: exact, where
+// GetThreadTimes only moves in 15.6 ms steps), turned into ms with the cycle rate measured once at startup.
+namespace
+{
+double measureCyclesPerMs()
+{
+    LARGE_INTEGER frequency {}, start {}, now {};
+    QueryPerformanceFrequency (&frequency);
+    QueryPerformanceCounter (&start);
+    const auto c0 = __rdtsc();
+    do QueryPerformanceCounter (&now); while ((now.QuadPart - start.QuadPart) * 1000 < frequency.QuadPart * 40);
+    const auto c1 = __rdtsc();
+    const double ms = (double) (now.QuadPart - start.QuadPart) * 1000.0 / (double) frequency.QuadPart;
+    return ms > 0.0 ? (double) (c1 - c0) / ms : 0.0;
+}
+const double cyclesPerMs = measureCyclesPerMs();   // at startup, not in the middle of a timed audio block
+}
+double triadThreadCpuMs()
+{
+    ULONG64 cycles = 0;
+    if (cyclesPerMs > 0.0 && QueryThreadCycleTime (GetCurrentThread(), &cycles)) return (double) cycles / cyclesPerMs;
+    FILETIME created {}, exited {}, kernel {}, user {};
+    GetThreadTimes (GetCurrentThread(), &created, &exited, &kernel, &user);
+    auto ms = [] (const FILETIME& f) { return (double) (((ULONG64) f.dwHighDateTime << 32) | f.dwLowDateTime) / 10000.0; };
+    return ms (kernel) + ms (user);
 }
 #endif

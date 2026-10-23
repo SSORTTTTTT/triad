@@ -42,7 +42,8 @@ bool triadStressUsesOpenGL (void* nativeHandle);
 #endif
 #if JUCE_WINDOWS
  #include <cstdio>
-void triadInstallCrashReport (void (*describe)());   // WindowsCrash.cpp
+void triadInstallCrashReport (void (*describe)());   // WindowsSupport.cpp
+double triadThreadCpuMs();
 #endif
 
 namespace
@@ -1300,9 +1301,13 @@ juce::String samplesAndMs (int samples) { return juce::String (samples) + " samp
 struct Timing { double average = 0.0, worst = 0.0, p999 = 0.0, worstCpu = 0.0; int late = 0, paused = 0, blocks = 0, silenced = 0; bool realtime = false; };
 double threadCpuMs()
 {
+   #if JUCE_WINDOWS
+    return triadThreadCpuMs();
+   #else
     timespec t {};
     clock_gettime (CLOCK_THREAD_CPUTIME_ID, &t);
     return (double) t.tv_sec * 1000.0 + (double) t.tv_nsec / 1.0e6;
+   #endif
 }
 class PacedAudio final : public juce::Thread
 {
