@@ -30,6 +30,7 @@ jobs:
           git -c advice.detachedHead=false checkout -q FETCH_HEAD
 
       - name: Build Triad, Triad Time, Triad Split (VST3, x64) and the tests
+        id: build
         run: |
           set -uo pipefail
           cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 -DTRIAD_BUILD_TESTS=ON -DJUCE_SOURCE_DIR="$(cygpath -m "$PWD/deps/JUCE")" 2>&1 | tee build-win.log
@@ -69,6 +70,7 @@ jobs:
           if-no-files-found: error
 
       - name: Install it on the runner (over simulated earlier versions)
+        id: install
         run: |
           set -euo pipefail
           export MSYS_NO_PATHCONV=1   # hand /VERYSILENT and the like to the setup program as they are
@@ -108,10 +110,14 @@ jobs:
             "C:/Program Files/Common Files/VST3/Triad Split.vst3" 2>&1 | tee test-results-windows.txt
           status=${PIPESTATUS[0]}
           echo "Integration tests exit code: $status" | tee -a test-results-windows.txt
-          if [ "$status" -ne 0 ]; then sleep 5; bash ci/windows-crash-events.sh 2>&1 | tee -a test-results-windows.txt; fi
+          if [ "$status" -ne 0 ]; then
+            sleep 5; bash ci/windows-crash-events.sh 2>&1 | tee -a test-results-windows.txt
+            bash ci/windows-dll-check.sh "$(find build-win/TriadTests_artefacts/Release -maxdepth 1 -iname 'Triad*Tests.exe' | head -n 1)" 2>&1 | tee -a test-results-windows.txt
+          fi
           exit $status
 
       - name: Stress test (hundreds of effects, random edits while audio plays)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
           set +e
           set -uo pipefail
@@ -123,10 +129,14 @@ jobs:
             "$(w "$PWD/stress-results.txt")" 2>&1 | tee stress-log.txt
           status=${PIPESTATUS[0]}
           echo "Stress test exit code: $status" | tee -a stress-log.txt
-          if [ "$status" -ne 0 ]; then sleep 5; bash ci/windows-crash-events.sh 2>&1 | tee -a stress-log.txt; fi
+          if [ "$status" -ne 0 ]; then
+            sleep 5; bash ci/windows-crash-events.sh 2>&1 | tee -a stress-log.txt
+            bash ci/windows-dll-check.sh "$(find build-win/TriadStress_artefacts/Release -maxdepth 1 -iname 'Triad*Stress.exe' | head -n 1)" 2>&1 | tee -a stress-log.txt
+          fi
           exit $status
 
       - name: Stress test with real third-party plug-ins and every LFO on
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true
         timeout-minutes: 90
         env:
@@ -147,6 +157,7 @@ jobs:
           exit $status
 
       - name: pluginval (VST3, strictness 5)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         continue-on-error: true
         run: |
           set +e
