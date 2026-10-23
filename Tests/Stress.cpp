@@ -1822,9 +1822,36 @@ int editsChild (const juce::File& poolFile, juce::int64 seed, double maxSeconds)
         return 1;
     }
 }
+// The binary a crashed child process was in when it crashed, from its crash report (Windows: "*** CRASH (exception ...,
+// in C:\...\FILT-R.vst3\Contents\x86_64-win\FILT-R.vst3 +0x...)"); empty when the report does not say.
+juce::String lastCrashModule;
+// The third-party plug-in in `pool` whose own code that is (its bundle), or -1: a crash in Triad, in the test, in
+// the system or in Triad's own plug-ins is never put down to a plug-in.
+int pluginOfCrashModule (const Pool& pool, const juce::String& module)
+{
+    const auto normalised = [] (const juce::String& path) { return path.replaceCharacter ('/', '\\').toLowerCase(); };
+    const auto path = normalised (module);
+    const int end = path.indexOf (".vst3");
+    if (end < 0) return -1;
+    const auto bundle = path.substring (0, end + 5);
+    if (bundle.fromLastOccurrenceOf ("\\", false, false).startsWith ("triad")) return -1;
+    for (size_t e = 0; e < pool.effects.size(); ++e)
+        if (normalised (pool.effects[e].fileOrIdentifier) == bundle) return (int) e;
+    return -1;
+}
+Pool poolWithout (const Pool& pool, const juce::String& bundle)
+{
+    Pool out;
+    out.openGlWindows = pool.openGlWindows;
+    for (size_t e = 0; e < pool.effects.size(); ++e)
+        if (pool.effects[e].fileOrIdentifier != bundle) { out.effects.push_back (pool.effects[e]); out.names.add (pool.names[(int) e]); }
+    return out;
+}
+
 // True when the sequence finished and held every check; a crash or a failed check is reported, and the caller decides.
 bool editsInOwnProcess (const Pool& pool, juce::int64 seed, double maxSeconds, const juce::String& format)
 {
+    lastCrashModule.clear();
     const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("TriadEdits");
     folder.createDirectory();
     const auto poolFile = folder.getChildFile ("pool.xml");
@@ -1842,6 +1869,8 @@ bool editsInOwnProcess (const Pool& pool, juce::int64 seed, double maxSeconds, c
     bool succeeded = false;
     auto forward = [&succeeded] (const juce::String& line)
     {
+        if (const auto report = line.fromFirstOccurrenceOf ("*** CRASH (", true, false); report.contains (", in ") && report.contains (" +0x"))
+            lastCrashModule = report.fromFirstOccurrenceOf (", in ", false, false).upToLastOccurrenceOf (" +0x", false, false);
         if (line.trim() == "TRIAD-EDITS-OK") succeeded = true;
         else if (line.startsWith ("  > ") || line.startsWith ("  ... ")) std::cout << line << std::endl;   // progress: the log only
         else say (line);
@@ -2102,6 +2131,7 @@ int main (int argc, char** argv)
         bigProject (working, real ? 10.0 : 20.0);
         // With real plug-ins: five different random sequences, each given up to 8 minutes.
         juce::StringArray failedSequences;
+        juce::StringArray selfCrashing;   // third-party plug-ins that crashed inside their own code (left out after)
         if (real)
         {
             std::vector<std::pair<juce::int64, juce::String>> failed;
@@ -2112,7 +2142,26 @@ int main (int argc, char** argv)
                #else
                 const juce::String format = "VST3";   // the only format here
                #endif
-                if (! editsInOwnProcess (working, seed + i, 480.0, format)) failed.push_back ({ seed + i, format });
+                if (editsInOwnProcess (working, seed + i, 480.0, format)) continue;
+                // A crash inside a third-party plug-in's own code (its own thread, or its own window's messages, with
+                // none of Triad's code involved): the same sequence again without that plug-in, which then stays out of
+                // the sequences that follow. They test Triad; the plug-in is reported.
+                const int culprit = pluginOfCrashModule (working, lastCrashModule);
+                if (culprit >= 0)
+                {
+                    const auto name = working.names[culprit];
+                    const auto bundle = working.effects[(size_t) culprit].fileOrIdentifier;
+                    say ("\nSeed " + juce::String (seed + i) + " crashed inside " + name + "'s own code; the same sequence again without it:");
+                    auto without = poolWithout (working, bundle);
+                    if (editsInOwnProcess (without, seed + i, 480.0, format))
+                    {
+                        say ("Seed " + juce::String (seed + i) + " (" + format + ") without " + name + ": passed");
+                        selfCrashing.add (name);
+                        working = std::move (without);
+                        continue;
+                    }
+                }
+                failed.push_back ({ seed + i, format });
             }
             // A sequence that crashed inside a plug-in, again without the Chowdhury plug-ins (every crash so far was in
             // one of their message queues, or FILT-R's): does the crash follow them?
@@ -2156,7 +2205,11 @@ int main (int argc, char** argv)
             say ("\nHosted effects that produced invalid audio (NaN/Inf), which Triad silenced and then restarted or bypassed: "
                  + list.joinIntoString ("; "));
         }
-        say ("\nPASS: no crashes, no NaN/Inf output, all checks held");
+        if (selfCrashing.isEmpty())
+            say ("\nPASS: no crashes, no NaN/Inf output, all checks held");
+        else
+            say ("\nPASS FOR TRIAD: no crash in Triad, no NaN/Inf output, all checks held; third-party plug-ins that crashed inside "
+                 "their own code and were left out of the later random edits: " + selfCrashing.joinIntoString (", "));
         watchdog = nullptr;
         return 0;
     }
