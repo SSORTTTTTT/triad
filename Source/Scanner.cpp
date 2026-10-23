@@ -8,9 +8,21 @@
 // this helper down, never the DAW.
 #include <juce_audio_processors_headless/juce_audio_processors_headless.h>
 #include <cstdlib>
+#if defined (_WIN32)
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #include <windows.h>
+#endif
 
 int main (int argc, char* argv[])
 {
+   #if defined (_WIN32)
+    // A plug-in that crashes here must end this helper at once (Triad reads that as "crashed"), never leave a
+    // "has stopped working" or abort() dialog waiting on screen.
+    SetErrorMode (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+    _set_abort_behavior (0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+   #endif
     if (argc != 4 || juce::String (argv[1]) != "--scan") return 2;
     const juce::File plugin (juce::String::fromUTF8 (argv[2]));
     const juce::File result (juce::String::fromUTF8 (argv[3]));

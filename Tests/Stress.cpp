@@ -40,6 +40,10 @@
 std::string triadStressOpenGLRenderer();      // StressMac.mm
 bool triadStressUsesOpenGL (void* nativeHandle);
 #endif
+#if JUCE_WINDOWS
+ #include <cstdio>
+void triadInstallCrashReport (void (*describe)());   // WindowsCrash.cpp
+#endif
 
 namespace
 {
@@ -176,11 +180,13 @@ char stepTrail[5][400] {};
 std::atomic<int> stepCount { 0 };
 #if ! JUCE_WINDOWS
 void writeText (const char* text) { const auto ignored = ::write (2, text, std::strlen (text)); juce::ignoreUnused (ignored); }
-void onCrash (int signal)
+#else
+void writeText (const char* text) { std::fputs (text, stderr); }
+#endif
+// The step it was in, the four before it, and the effects and windows deleted just before.
+void describeCrashContext()
 {
-    writeText ("\n*** CRASH (");
-    writeText (signal == SIGSEGV ? "SIGSEGV" : signal == SIGBUS ? "SIGBUS" : signal == SIGABRT ? "SIGABRT" : signal == SIGILL ? "SIGILL" : signal == SIGFPE ? "SIGFPE" : "signal");
-    writeText (") while the stress test was in:\n");
+    writeText ("while the stress test was in:\n");
     const int n = stepCount.load();
     for (int i = juce::jmax (0, n - 5); i < n; ++i)
     {
@@ -192,6 +198,14 @@ void onCrash (int signal)
     TriadProcessor::describeRecentDeletions (deletions, sizeof (deletions));
     writeText ("Effects and windows Triad deleted just before (newest first):\n");
     writeText (deletions);
+}
+#if ! JUCE_WINDOWS
+void onCrash (int signal)
+{
+    writeText ("\n*** CRASH (");
+    writeText (signal == SIGSEGV ? "SIGSEGV" : signal == SIGBUS ? "SIGBUS" : signal == SIGABRT ? "SIGABRT" : signal == SIGILL ? "SIGILL" : signal == SIGFPE ? "SIGFPE" : "signal");
+    writeText (") ");
+    describeCrashContext();
     writeText ("Call stack of the crashing thread:\n");
     void* frames[128];
     backtrace_symbols_fd (frames, backtrace (frames, 128), 2);
@@ -203,7 +217,13 @@ void installCrashHandler()
     for (int signal : { SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE }) std::signal (signal, onCrash);
 }
 #else
-void installCrashHandler() {}
+void describeCrashWithStack()
+{
+    describeCrashContext();
+    writeText ("Call stack of the crashing thread:\n");
+    writeText (juce::SystemStats::getStackBacktrace().toRawUTF8());
+}
+void installCrashHandler() { triadInstallCrashReport (describeCrashWithStack); }
 #endif
 
 // What the run is doing now, and how long that may take before the watchdog calls it a hang.
@@ -1951,6 +1971,10 @@ void pluginList (const juce::File& effect, const juce::File& crashFixture, const
         for (auto& arch : dest.getChildFile ("Contents").findChildFiles (juce::File::findDirectories, false, "*-linux"))
             for (auto& so : arch.findChildFiles (juce::File::findFiles, false, "*.so"))
                 so.moveFileTo (arch.getChildFile (dest.getFileNameWithoutExtension() + ".so"));
+       #elif JUCE_WINDOWS
+        for (auto& arch : dest.getChildFile ("Contents").findChildFiles (juce::File::findDirectories, false, "*-win"))
+            for (auto& dll : arch.findChildFiles (juce::File::findFiles, false, "*.vst3"))
+                dll.moveFileTo (arch.getChildFile (dest.getFileName()));
        #endif
         if (dropModuleInfo)
             for (auto name : { "Contents/Resources/moduleinfo.json", "Contents/moduleinfo.json" }) dest.getChildFile (name).deleteFile();
@@ -2074,7 +2098,11 @@ int main (int argc, char** argv)
             std::vector<std::pair<juce::int64, juce::String>> failed;
             for (int i = 0; i < 5; ++i)
             {
+               #if JUCE_MAC
                 const juce::String format = i % 2 == 0 ? "VST3" : "AudioUnit";
+               #else
+                const juce::String format = "VST3";   // the only format here
+               #endif
                 if (! editsInOwnProcess (working, seed + i, 480.0, format)) failed.push_back ({ seed + i, format });
             }
             // A sequence that crashed inside a plug-in, again without the Chowdhury plug-ins (every crash so far was in

@@ -5,6 +5,10 @@
 void triadMacKeepAbove (void* childView, void* parentView);
 bool triadMacSendCurrentKey (void* targetView);
 void triadMacRelease (void* childView);
+#elif JUCE_WINDOWS
+// PlatformWindowsWin.cpp
+bool triadWinKeepAbove (void* childWindow, void* parentWindow);
+void triadWinRelease (void* childWindow);
 #endif
 
 namespace triad::platform
@@ -19,6 +23,15 @@ void keepAbove (juce::Component& window, juce::Component* owner)
                 triadMacKeepAbove (child->getNativeHandle(), parent->getNativeHandle());
                 return;
             }
+   #elif JUCE_WINDOWS
+    if (owner != nullptr)
+        if (auto* child = window.getPeer())
+            if (auto* parent = owner->getPeer())
+                if (triadWinKeepAbove (child->getNativeHandle(), parent->getNativeHandle()))
+                {
+                    if (window.isAlwaysOnTop()) window.setAlwaysOnTop (false);
+                    return;
+                }
    #else
     juce::ignoreUnused (owner);
    #endif
@@ -28,6 +41,8 @@ void release (juce::Component& window)
 {
    #if JUCE_MAC
     if (auto* peer = window.getPeer()) triadMacRelease (peer->getNativeHandle());
+   #elif JUCE_WINDOWS
+    if (auto* peer = window.getPeer()) triadWinRelease (peer->getNativeHandle());
    #else
     juce::ignoreUnused (window);
    #endif

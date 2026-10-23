@@ -4,6 +4,7 @@
 #include "../Source/Settings.h"
 #include <juce_dsp/juce_dsp.h>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -322,6 +323,10 @@ bool copyBundle (const juce::File& source, const juce::File& dest)
     for (auto& arch : dest.getChildFile ("Contents").findChildFiles (juce::File::findDirectories, false, "*-linux"))
         for (auto& so : arch.findChildFiles (juce::File::findFiles, false, "*.so"))
             so.moveFileTo (arch.getChildFile (dest.getFileNameWithoutExtension() + ".so"));
+   #elif JUCE_WINDOWS
+    for (auto& arch : dest.getChildFile ("Contents").findChildFiles (juce::File::findDirectories, false, "*-win"))
+        for (auto& dll : arch.findChildFiles (juce::File::findFiles, false, "*.vst3"))
+            dll.moveFileTo (arch.getChildFile (dest.getFileName()));
    #endif
     return true;
 }
@@ -353,12 +358,30 @@ void onTestCrash (int signal)
     std::signal (signal, SIG_DFL);
     std::raise (signal);
 }
+#else
+void triadInstallCrashReport (void (*describe)());   // WindowsCrash.cpp
+void describeTestCrash()
+{
+    std::fprintf (stderr, "during: %s\nCall stack of the crashing thread:\n%s\n", testStage, juce::SystemStats::getStackBacktrace().toRawUTF8());
+}
 #endif
+// TRIAD_FIXTURE_HANG for the helper processes started next (inherited by them).
+void setFixtureHang (bool hang)
+{
+   #if JUCE_WINDOWS
+    _putenv_s ("TRIAD_FIXTURE_HANG", hang ? "1" : "");
+   #else
+    if (hang) setenv ("TRIAD_FIXTURE_HANG", "1", 1);
+    else unsetenv ("TRIAD_FIXTURE_HANG");
+   #endif
+}
 
 int main (int argc, char** argv)
 {
    #if ! JUCE_WINDOWS
     for (int signal : { SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE }) std::signal (signal, onTestCrash);
+   #else
+    triadInstallCrashReport (describeTestCrash);
    #endif
     testStage = "running the tests";
     juce::ScopedJuceInitialiser_GUI gui;
@@ -1813,22 +1836,20 @@ int main (int argc, char** argv)
                 for (const auto& e : cached.getEffects()) if (e.name == "Triad Test Effect" && e.verified) ++again;
                 require (again == 2 && c.unchecked == 0 && c.crashed == 1, "Cached list matches");
             }
-           #if ! JUCE_WINDOWS
             {
-                setenv ("TRIAD_FIXTURE_HANG", "1", 1);   // the fixture now hangs instead of crashing
+                setFixtureHang (true);   // the fixture now hangs instead of crashing
                 auto hanging = options;
                 hanging.timeoutMs = 2000;
                 PluginCatalog catalog (hanging);
                 catalog.rescanAll();
                 require (catalog.waitUntilIdle (120000), "Scan with a hanging plug-in finishes");
-                unsetenv ("TRIAD_FIXTURE_HANG");
+                setFixtureHang (false);
                 const auto c = catalog.getCounts();
                 bool listed = false;
                 for (const auto& e : catalog.getEffects()) if (e.name == "Crashy Effect") listed = ! e.verified && ! e.crashed;
                 require (c.timedOut == 1 && listed, "A plug-in that hangs is given up on and listed as not checked");
                 std::cout << "A plug-in that hangs when loaded was stopped after 2 s; Triad kept running" << std::endl;
             }
-           #endif
             {
                 auto damaged = options;   // no helper at all: unknown plug-ins are listed, never loaded
                 damaged.scanner = temp.getChildFile ("missing/Triad Scanner");

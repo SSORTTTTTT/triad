@@ -6,6 +6,11 @@ project(Triad VERSION 0.15.0 LANGUAGES C CXX)
 set(TRIAD_PRODUCT_NAME "Triad v14")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(MSVC)
+    # Windows: the C++ runtime built in (no Visual C++ Redistributable to install), and UTF-8 source files.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    add_compile_options(/utf-8 /bigobj /MP)
+endif()
 option(TRIAD_BUILD_TESTS "Build integration tests and a test effect" ON)
 option(TRIAD_BUILD_STANDALONE "Also build a standalone app (development only, not shipped)" OFF)
 option(TRIAD_SIZE_OPTIMISED "Optimise framework/UI code for size (audio path stays -O3) and use LTO" ON)
@@ -39,6 +44,8 @@ target_sources(Triad PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp 
     Source/Generator.cpp Source/ShapeLibrary.cpp Source/TriadTime.cpp Source/Theme.cpp Source/PluginSearch.cpp)
 if(APPLE)
     target_sources(Triad PRIVATE Source/PlatformWindowsMac.mm)
+elseif(WIN32)
+    target_sources(Triad PRIVATE Source/PlatformWindowsWin.cpp)
 endif()
 target_compile_definitions(Triad PUBLIC
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1
@@ -137,7 +144,7 @@ foreach(format IN ITEMS VST3 AU)
         # <bundle>/Contents/MacOS (or x86_64-linux) -> <bundle>/Contents/Helpers
         add_custom_command(TARGET Triad_${format} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers"
-            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:TriadScanner>" "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers/Triad Scanner"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:TriadScanner>" "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers/$<TARGET_FILE_NAME:TriadScanner>"
             VERBATIM)
     endif()
 endforeach()
@@ -162,6 +169,11 @@ if(TRIAD_BUILD_TESTS)
     if(APPLE)
         set_target_properties(TriadCrashFixture PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION vst3
             LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures>")
+    elseif(WIN32)
+        # Windows VST3 bundle: <name>.vst3/Contents/x86_64-win/<name>.vst3 (a DLL).
+        set_target_properties(TriadCrashFixture PROPERTIES SUFFIX ".vst3"
+            LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures/Triad Crash Fixture.vst3/Contents/x86_64-win>"
+            RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures/Triad Crash Fixture.vst3/Contents/x86_64-win>")
     else()
         set_target_properties(TriadCrashFixture PROPERTIES SUFFIX ".so"
             LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures/Triad Crash Fixture.vst3/Contents/${CMAKE_SYSTEM_PROCESSOR}-linux>")
@@ -170,6 +182,9 @@ if(TRIAD_BUILD_TESTS)
     target_sources(TriadTests PRIVATE Tests/Tests.cpp Source/TriadSplit.cpp Source/SplitLink.cpp)
     if(APPLE)
         target_sources(TriadTests PRIVATE Source/SplitLinkMac.mm)
+    endif()
+    if(WIN32)
+        target_sources(TriadTests PRIVATE Tests/WindowsCrash.cpp)
     endif()
     target_compile_definitions(TriadTests PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(TriadTests PRIVATE Triad juce::juce_audio_utils juce::juce_dsp)
@@ -185,6 +200,8 @@ if(TRIAD_BUILD_TESTS)
     if(APPLE)
         target_sources(TriadStress PRIVATE Tests/StressMac.mm)
         target_link_libraries(TriadStress PRIVATE "-framework OpenGL" "-framework AppKit" "-framework QuartzCore")
+    elseif(WIN32)
+        target_sources(TriadStress PRIVATE Tests/WindowsCrash.cpp)
     endif()
     target_compile_definitions(TriadStress PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(TriadStress PRIVATE Triad juce::juce_audio_utils)
