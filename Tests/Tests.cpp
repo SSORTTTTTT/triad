@@ -360,6 +360,7 @@ void onTestCrash (int signal)
 }
 #else
 void triadInstallCrashReport (void (*describe)());   // WindowsSupport.cpp
+void* triadTestOwnerOf (void* window);
 void describeTestCrash()
 {
     std::fprintf (stderr, "during: %s\nCall stack of the crashing thread:\n%s\n", testStage, juce::SystemStats::getStackBacktrace().toRawUTF8());
@@ -1905,6 +1906,44 @@ int main (int argc, char** argv)
             restored.closeWindows();
             restored.removeEffect (1, 1);
             std::cout << "Hosted effect editor opened and closed (including auto-open on load)" << std::endl;
+           #if JUCE_WINDOWS
+            {
+                // Windows: an effect's window is owned by the DAW window that shows Triad (it stays in front of that
+                // window, not of every app), and still moves and sizes as any window.
+                TriadProcessor owned;
+                owned.prepareToPlay (48000, 512);
+                require (owned.loadFile (0, 0, effect, false).isEmpty(), "Load an effect for the window test");
+                juce::DocumentWindow daw ("A DAW's plug-in window", juce::Colours::black, juce::DocumentWindow::closeButton, true);
+                daw.setUsingNativeTitleBar (true);
+                std::unique_ptr<juce::AudioProcessorEditor> editor (owned.createEditorIfNeeded());
+                daw.setContentNonOwned (editor.get(), true);
+                daw.setTopLeftPosition (60, 60);
+                daw.setVisible (true);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+                owned.showEffect (0, 0);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+                juce::DocumentWindow* window = nullptr;
+                for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
+                    if (auto* w = dynamic_cast<juce::DocumentWindow*> (juce::TopLevelWindow::getTopLevelWindow (i)))
+                        if (w != &daw && w->isVisible() && w->getName().contains ("Triad Test Effect")) window = w;
+                require (window != nullptr && window->getPeer() != nullptr && daw.getPeer() != nullptr, "The effect's window opens");
+                require (triadTestOwnerOf (window->getPeer()->getNativeHandle()) == daw.getPeer()->getNativeHandle() && ! window->isAlwaysOnTop(),
+                         "Windows: the effect's window belongs to the DAW window (in front of it, not of every app)");
+                const auto size = window->getBounds().getWidth() * 1000 + window->getBounds().getHeight();
+                window->setTopLeftPosition (240, 180);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+                const auto now = window->getBounds();
+                std::cout << "Effect window owned by the DAW window; moved to 240, 180, reports " << now.toString() << std::endl;
+                require (std::abs (now.getX() - 240) <= 2 && std::abs (now.getY() - 180) <= 2 && now.getWidth() * 1000 + now.getHeight() == size,
+                         "...and it moves as any window (its size kept)");
+                window->closeButtonPressed();
+                require (triadTestOwnerOf (window->getPeer()->getNativeHandle()) == nullptr, "...closed, it is let go of the DAW window");
+                owned.closeWindows();
+                daw.clearContentComponent();
+                editor.reset();
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+            }
+           #endif
         }
         else
         {

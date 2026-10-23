@@ -44,6 +44,8 @@ bool triadStressUsesOpenGL (void* nativeHandle);
  #include <cstdio>
 void triadInstallCrashReport (void (*describe)());   // WindowsSupport.cpp
 double triadThreadCpuMs();
+std::string triadStressOpenGLRenderer();
+bool triadStressUsesOpenGL (void* nativeHandle);
 #endif
 
 namespace
@@ -335,7 +337,7 @@ int openEffectWindows()
 // OpenGL plug-in windows are drawn in software, so slowly that one window can stall the test.
 juce::String openGlRenderer()
 {
-   #if JUCE_MAC
+   #if JUCE_MAC || JUCE_WINDOWS
     static const juce::String name (triadStressOpenGLRenderer());
     return name;
    #else
@@ -345,11 +347,12 @@ juce::String openGlRenderer()
 bool hardwareGraphics()
 {
     const auto r = openGlRenderer();
-    return r.isNotEmpty() && ! r.containsIgnoreCase ("software") && ! r.containsIgnoreCase ("paravirtual");
+    return r.isNotEmpty() && ! r.containsIgnoreCase ("software") && ! r.containsIgnoreCase ("paravirtual")
+           && ! r.containsIgnoreCase ("GDI Generic") && ! r.containsIgnoreCase ("Basic Render") && ! r.containsIgnoreCase ("llvmpipe");
 }
 bool usesOpenGL (juce::Component* window)
 {
-   #if JUCE_MAC
+   #if JUCE_MAC || JUCE_WINDOWS
     if (auto* peer = window != nullptr ? window->getPeer() : nullptr) return triadStressUsesOpenGL (peer->getNativeHandle());
    #else
     juce::ignoreUnused (window);
@@ -430,8 +433,8 @@ Pool buildRealPool (const juce::File& scanner)
     juce::VST3PluginFormat vst3;
     const bool haveDisplay = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr;
     if (haveDisplay && ! hardwareGraphics())
-        say ("Note: this test Mac has no graphics card (OpenGL renderer: " + (openGlRenderer().isNotEmpty() ? openGlRenderer() : juce::String ("none"))
-             + "), so plug-in windows that draw with OpenGL are opened and closed but not left on screen (not a problem on a real Mac).");
+        say ("Note: this test machine has no graphics card (OpenGL renderer: " + (openGlRenderer().isNotEmpty() ? openGlRenderer() : juce::String ("none"))
+             + "), so plug-in windows that draw with OpenGL are opened and closed but not left on screen (not a problem on a real computer).");
     for (const auto& e : catalog.getEffects())
     {
         if (! e.verified || skip.contains (e.name)) continue;
@@ -464,7 +467,7 @@ Pool buildRealPool (const juce::File& scanner)
                 const bool openGl = usesOpenGL (w);
                 if (openGl) pool.openGlWindows.insert (windowKey (info));
                 if (w == nullptr) window = ", no window";
-                else if (openGl && ! hardwareGraphics()) window = ", window opens in " + ms (openMs) + " (OpenGL: not drawn on this test Mac)";
+                else if (openGl && ! hardwareGraphics()) window = ", window opens in " + ms (openMs) + " (OpenGL: not drawn on this test machine)";
                 else
                 {
                     const auto d0 = juce::Time::getMillisecondCounterHiRes();
@@ -1133,7 +1136,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     require (peakLate < 100, "Removed effects are deleted as fast as they are removed (no pile-up holding memory)");
     if (windowsOpened + windowsNotDrawn > 0)
         say ("Effect windows opened on top of Triad: " + juce::String (windowsOpened)
-             + (windowsNotDrawn > 0 ? " (" + juce::String (windowsNotDrawn) + " OpenGL windows skipped: no graphics card on this test Mac)" : juce::String()));
+             + (windowsNotDrawn > 0 ? " (" + juce::String (windowsNotDrawn) + " OpenGL windows skipped: no graphics card on this test machine)" : juce::String()));
     say ("Final layout: " + juce::String (p.getBandCount()) + (p.getBandCount() == 1 ? " band, " : " bands, ") + juce::String (loadedCount (p)) + " effects; NaN/Inf output: none");
     juce::StringArray lines;
     for (auto& [k, v] : counts) lines.add (k + " x" + juce::String (v));
@@ -1860,7 +1863,8 @@ bool editsInOwnProcess (const Pool& pool, juce::int64 seed, double maxSeconds, c
     folder.deleteRecursively();
     if (succeeded && code == 0) return true;
     say ("FAILED: random edits with real plug-ins (seed " + juce::String (seed) + ", " + format + "): the process "
-         + (code == 1 ? juce::String ("failed a check") : juce::String ("crashed (its crash report is above)")) + "; the other sections go on");
+         + (code == 1 ? juce::String ("failed a check") : juce::String ("crashed (its crash report is above)"))
+         + ", exit code 0x" + juce::String::toHexString ((juce::int64) code).toUpperCase() + "; the other sections go on");
     return false;
 }
 

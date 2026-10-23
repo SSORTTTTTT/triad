@@ -12,6 +12,11 @@
  #include <cstdio>
  #include <cstdlib>
  #include <intrin.h>
+ #include <string>
+ #include <GL/gl.h>
+ #pragma comment (lib, "opengl32.lib")
+ #pragma comment (lib, "gdi32.lib")
+ #pragma comment (lib, "user32.lib")
 
 namespace
 {
@@ -89,5 +94,82 @@ double triadThreadCpuMs()
     GetThreadTimes (GetCurrentThread(), &created, &exited, &kernel, &user);
     auto ms = [] (const FILETIME& f) { return (double) (((ULONG64) f.dwHighDateTime << 32) | f.dwLowDateTime) / 10000.0; };
     return ms (kernel) + ms (user);
+}
+
+// The stress test's graphics checks, as on the Mac (StressMac.mm). GitHub's Windows machines are virtual and have no
+// graphics card: OpenGL there is Windows' own software renderer ("GDI Generic", OpenGL 1.1), so slow (or missing what
+// a plug-in asks for) that a plug-in window drawing with it can hold up or upset the whole test.
+// The OpenGL renderer's name ("NVIDIA GeForce ...", "GDI Generic", ...), or empty when there is none.
+std::string triadStressOpenGLRenderer()
+{
+    std::string name;
+    const auto instance = GetModuleHandleW (nullptr);
+    WNDCLASSW windowClass {};
+    windowClass.style = CS_OWNDC;
+    windowClass.lpfnWndProc = DefWindowProcW;
+    windowClass.hInstance = instance;
+    windowClass.lpszClassName = L"TriadStressOpenGLProbe";
+    RegisterClassW (&windowClass);
+    const auto window = CreateWindowW (L"TriadStressOpenGLProbe", L"", WS_POPUP, 0, 0, 16, 16, nullptr, nullptr, instance, nullptr);
+    if (window == nullptr) return name;
+    const auto dc = GetDC (window);
+    PIXELFORMATDESCRIPTOR wanted {};
+    wanted.nSize = sizeof (wanted);
+    wanted.nVersion = 1;
+    wanted.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    wanted.iPixelType = PFD_TYPE_RGBA;
+    wanted.cColorBits = 32;
+    wanted.cDepthBits = 24;
+    const int format = ChoosePixelFormat (dc, &wanted);
+    if (format > 0 && SetPixelFormat (dc, format, &wanted))
+        if (const auto context = wglCreateContext (dc))
+        {
+            if (wglMakeCurrent (dc, context))
+            {
+                if (const auto* renderer = (const char*) glGetString (GL_RENDERER)) name = renderer;
+                wglMakeCurrent (nullptr, nullptr);
+            }
+            wglDeleteContext (context);
+        }
+    ReleaseDC (window, dc);
+    DestroyWindow (window);
+    return name;
+}
+
+namespace
+{
+bool drawsWithOpenGL (HWND window)
+{
+    bool found = false;
+    if (const auto dc = GetDC (window))
+    {
+        PIXELFORMATDESCRIPTOR format {};
+        const int index = GetPixelFormat (dc);
+        if (index > 0 && DescribePixelFormat (dc, index, sizeof (format), &format) > 0) found = (format.dwFlags & PFD_SUPPORT_OPENGL) != 0;
+        ReleaseDC (window, dc);
+    }
+    return found;
+}
+BOOL CALLBACK findOpenGLChild (HWND child, LPARAM result)
+{
+    if (! drawsWithOpenGL (child)) return TRUE;
+    *(bool*) result = true;
+    return FALSE;   // found: stop
+}
+}
+// The window that owns this one (it stays in front of its owner), or null.
+void* triadTestOwnerOf (void* window)
+{
+    return window != nullptr ? (void*) GetWindowLongPtrW ((HWND) window, GWLP_HWNDPARENT) : nullptr;
+}
+
+// `nativeHandle` is a JUCE peer's native handle (an HWND): does it, or a window inside it, draw with OpenGL?
+bool triadStressUsesOpenGL (void* nativeHandle)
+{
+    const auto window = (HWND) nativeHandle;
+    if (window == nullptr || ! IsWindow (window)) return false;
+    bool found = drawsWithOpenGL (window);
+    if (! found) EnumChildWindows (window, findOpenGLChild, (LPARAM) &found);
+    return found;
 }
 #endif

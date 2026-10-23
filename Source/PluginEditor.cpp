@@ -213,7 +213,12 @@ void TriadEditor::paintContent (juce::Graphics& g)
     g.setColour (accent); g.setFont (juce::FontOptions (28.0f, juce::Font::bold));
     g.drawText ("TRIAD", margin, 7, 110, 38, juce::Justification::centredLeft);
     g.setColour (currentPalette.softText); g.setFont (juce::FontOptions (11.5f));
-    g.drawText (juce::String ("VST3 + AU  /  ") + juce::String (TRIAD_PRODUCT_NAME).fromLastOccurrenceOf (" ", false, false).toUpperCase() + "  " + TRIAD_VERSION, logicalWidth - margin - 170, 13, 170, 26, juce::Justification::centredRight);
+   #if JUCE_MAC
+    const juce::String formats ("VST3 + AU  /  ");
+   #else
+    const juce::String formats ("VST3  /  ");   // Audio Units are Mac-only
+   #endif
+    g.drawText (formats + juce::String (TRIAD_PRODUCT_NAME).fromLastOccurrenceOf (" ", false, false).toUpperCase() + "  " + TRIAD_VERSION, logicalWidth - margin - 170, 13, 170, 26, juce::Justification::centredRight);
 }
 void TriadEditor::layoutContent()
 {
