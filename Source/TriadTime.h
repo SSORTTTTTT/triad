@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Modulation.h"
+#include "AudioEngine.h"
 
 // Triad Time: a time and volume gate in the spirit of Gross Beat, by Thomas Ross. It keeps the last
 // moments of the sound in a rolling buffer and plays them back the way two drawn envelopes say:
@@ -54,6 +55,9 @@ public:
     // The sound coming in across the pattern of `envelope` (-1: none), for the grid's background (0.15.0).
     void setTracedEnvelope (int envelope);
     void readTrace (std::array<float, triad::WaveTrace::bins>& level, std::array<int, triad::WaveTrace::bins>& age) const { trace.read (level, age); }
+    // The sound coming in, for the spectrum behind the grid (as Triad's BANDS and LFO tabs); fed while `active`.
+    triad::SpectrumTap& getSpectrumTap() noexcept { return spectrum; }
+    double getSampleRateForDisplay() const noexcept { return rate; }
 
     // Parameters (automatable; Triad's LFOs can move them too).
     juce::AudioParameterInt* timeSlot = nullptr;
@@ -119,6 +123,7 @@ private:
     std::array<triad::PhaseClock, 2> clocks;
     std::atomic<int> jumps { 0 };
     triad::WaveTrace trace;
+    triad::SpectrumTap spectrum;
     std::atomic<int> tracedEnvelope { -1 };
     int tracing = -1;   // audio thread: the envelope traced in the last block
     bool prepared = false;

@@ -2,6 +2,7 @@
 #include "Look.h"
 #include "Generator.h"
 #include "Settings.h"
+#include "AudioEngine.h"
 
 // Triad's shape editing, shared by the LFO tab and Triad Time: the grid editor, its toolbar (length, grid,
 // snap, 2x, 1/2, flip, undo...), the preset palette (every folder, the USER folder) and the shape generator.
@@ -55,6 +56,22 @@ namespace triad::ui
 void drawWaveTrace (juce::Graphics&, juce::Rectangle<float> plot, const std::array<float, triad::WaveTrace::bins>& level,
                     const std::array<int, triad::WaveTrace::bins>& age, juce::Colour colour, float thresholdDb);
 float waveHeight (float level);   // 0..1 of the half height
+
+// A live spectrum behind a grid (as the BANDS tab's, Pro-Q style): 20 Hz .. 20 kHz across, -84 .. +6 dB up, falling
+// 36 dB a second; the range low .. high Hz lit in `colour` (a band's), the rest faint. Reads a SpectrumTap.
+class SpectrumBackdrop
+{
+public:
+    SpectrumBackdrop();
+    void paint (juce::Graphics&, juce::Rectangle<float> plot, triad::SpectrumTap&, double sampleRate, float lowHz, float highHz, juce::Colour colour);
+private:
+    static constexpr int fftSize = 4096;
+    std::vector<float> samples, window, levels;
+    std::vector<std::complex<float>> bins;
+    float windowSum = 0.0f;
+    uint32_t lastWrite = 0;
+    double lastTime = 0.0;
+};
 }
 
 // The grid, in the spirit of ShaperBox / Gross Beat / Serum: points on a grid that snap by default,

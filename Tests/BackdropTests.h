@@ -180,5 +180,30 @@ inline void run (const juce::File& screenshots)
         themeTests::snapshot (screenshots, "Triad-Time-waveform.png", *editor);
         settings.setTimeBackdrop (TriadSettings::Backdrop::off);
     }
+    {
+        // Triad Time's spectrum, as Triad's (the whole range lit in the envelope's colour).
+        TriadTime t;
+        t.prepareToPlay (rate, block);
+        settings.setTimeBackdrop (TriadSettings::Backdrop::spectrum);
+        std::unique_ptr<juce::AudioProcessorEditor> editor (t.createEditor());
+        editor->setVisible (true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        themeTests::snapshot (screenshots, "Triad-Time-spectrum.png", *editor);   // drawing it starts the analyser
+        require (t.getSpectrumTap().active.load(), "Triad Time: the spectrum behind the grid listens while it is shown");
+        juce::AudioBuffer<float> buffer (2, block);
+        juce::MidiBuffer midi;
+        auto mix = drums (48000);
+        for (double hz : { 110.0, 220.0, 440.0, 880.0, 1760.0, 3520.0 }) triggerTests::addTone (mix, 0, mix.size(), hz, 0.06f);
+        for (size_t start = 0; start + block <= mix.size(); start += block)
+        {
+            for (int i = 0; i < block; ++i) buffer.setSample (0, i, mix[start + (size_t) i]), buffer.setSample (1, i, mix[start + (size_t) i]);
+            t.processBlock (buffer, midi);
+        }
+        require (t.getSpectrumTap().getWriteIndex() > 0, "...and hears the sound coming in");
+        themeTests::snapshot (screenshots, "Triad-Time-spectrum.png", *editor);
+        settings.setTimeBackdrop (TriadSettings::Backdrop::off);
+        editor.reset();
+        require (! t.getSpectrumTap().active.load(), "...and stops when the window closes");
+    }
 }
 }

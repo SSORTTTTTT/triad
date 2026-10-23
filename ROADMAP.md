@@ -18,7 +18,8 @@ coming in, the favorite system, and the 2,000 presets for each category ... just
   frequency ... similar to an EQ, like Pro Q ... an option that you have to turn on"): with TRIGGER: AUDIO the waveform
   (to start with), a new trace at each restart, the threshold shown; with TRIGGER: SONG nothing to start with; the gear
   menu (LFO TAB: BEHIND THE GRID) sets each to the waveform, the spectrum (the band's range lit) or nothing. Triad
-  Time's gear: the waveform across the pattern (off to start with). The audio thread keeps the loudest sample of each
+  Time's gear: the waveform across the pattern or the spectrum, as Triad's (Thomas: "make the spectrum viewer on triad
+  time same as triad and make it a viewable option in the settings"); off to start with. The audio thread keeps the loudest sample of each
   of 400 steps of the cycle, only for the LFO on screen.
 - **10,000 TIME patterns** ("make 2,000 presets for each ... so there's 10K presets"): 1,400 more in each folder (2,000
   each), from the same generator trained on the Gross Beat banks; each new one at least 0.12 beats from every bank

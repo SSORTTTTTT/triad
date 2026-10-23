@@ -100,8 +100,9 @@ and also installed as a plug-in of its own (**Triad Time**, VST3 and AU) for any
   newest first). Click it again to take it out. Clicking the rest of the button still puts the shape on the grid.
   Triad Time's numbered patterns (1-12) have a heart too: it puts the pattern, as it is drawn now, in FAVORITES. One
   list for every Triad and Triad Time on the computer (`~/Music/Triad/Favorites.triadfavs`).
-- **Behind the grid** (new in 0.15.0, Triad Time's gear): **the waveform** of the sound coming in, across the pattern,
-  under the TIME and VOLUME lines; off to start with.
+- **Behind the grid** (new in 0.15.0, Triad Time's gear, or Triad's under TRIAD TIME): **the waveform** of the sound
+  coming in, across the pattern, or **the spectrum** (as Triad's, Pro-Q style, in the TIME or VOLUME colour), under the
+  TIME and VOLUME lines; off to start with.
 - **Pitch labels** (new in 0.11.0): each straight TIME line can read which way it plays and how far the pitch moves:
   "FWD -12 st" (half speed), "FWD -24 st" (a quarter speed), "FWD +12 st" (double), "REV 0 st" (backwards at normal
   speed), "REV -12 st" (backwards at half speed), "FREEZE" (the diagonal). The gear at the top right of Triad Time's

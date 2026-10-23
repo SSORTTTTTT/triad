@@ -867,6 +867,7 @@ void TriadEditor::showGearMenu()
         juce::PopupMenu sound;
         sound.addItem (timeBackdropBase + 0, "Nothing", true, now == TriadSettings::Backdrop::off);
         sound.addItem (timeBackdropBase + 1, "The waveform (the sound coming in, across the pattern)", true, now == TriadSettings::Backdrop::waveform);
+        sound.addItem (timeBackdropBase + 2, "The spectrum (as Triad's, Pro-Q style)", true, now == TriadSettings::Backdrop::spectrum);
         menu.addSubMenu ("Behind the grid", sound);
     }
     {
@@ -912,7 +913,7 @@ void TriadEditor::showGearMenu()
         if (choice >= pitchLabelsBase && choice <= pitchLabelsBase + 2) { s.setPitchLabels ((TriadSettings::PitchLabels) (choice - pitchLabelsBase)); return; }
         if (choice >= backdropSongBase && choice <= backdropSongBase + 2) { s.setLfoBackdrop (false, (TriadSettings::Backdrop) (choice - backdropSongBase)); return; }
         if (choice >= backdropAudioBase && choice <= backdropAudioBase + 2) { s.setLfoBackdrop (true, (TriadSettings::Backdrop) (choice - backdropAudioBase)); return; }
-        if (choice >= timeBackdropBase && choice <= timeBackdropBase + 1) { s.setTimeBackdrop ((TriadSettings::Backdrop) (choice - timeBackdropBase)); return; }
+        if (choice >= timeBackdropBase && choice <= timeBackdropBase + 2) { s.setTimeBackdrop ((TriadSettings::Backdrop) (choice - timeBackdropBase)); return; }
         if (choice == sortCompany) s.setSort (TriadSettings::Sort::company);
         else if (choice == sortAZ) s.setSort (TriadSettings::Sort::alphabetical);
         else if (choice == autoCheck)

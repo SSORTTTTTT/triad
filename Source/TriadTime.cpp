@@ -302,6 +302,7 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
     const int channels = juce::jmin (2, audio.getNumChannels(), getTotalNumInputChannels() > 0 ? 2 : 0);
     if (! prepared || historySize <= 0 || channels == 0) return;
     pullShapes (false);
+    spectrum.push (audio, n);   // the sound coming in (only while a window shows its spectrum)
     // Where the song is: the DAW's position while it plays, otherwise a clock of our own at the last tempo.
     double beats = freeBeats, bpm = lastBpm, beatsPerBar = 4.0;
     bool playingSong = false;
@@ -582,17 +583,26 @@ struct EnvelopeHost final : ShapeHost
         return quarters == 0 ? juce::String ("0") : "-" + juce::String (quarters) + "/4";
     }
     bool squareGrid() const override { return true; }
-    // Behind the grid (0.15.0, the gear's BEHIND THE GRID): the sound coming in, across the pattern.
-    bool hasBackdrop() const override { return showWaveform; }
+    // Behind the grid (0.15.0, the gear's BEHIND THE GRID): the sound coming in, across the pattern (the waveform), or
+    // its spectrum, as Triad's (the whole range lit in the envelope's colour).
+    bool hasBackdrop() const override { return backdrop != TriadSettings::Backdrop::off; }
     void paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot) override
     {
+        if (backdrop == TriadSettings::Backdrop::spectrum)
+        {
+            processor.setTracedEnvelope (-1);
+            if (spectrumView == nullptr) spectrumView = std::make_unique<triad::ui::SpectrumBackdrop>();
+            spectrumView->paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), 20.0f, 20000.0f, getColour());
+            return;
+        }
         processor.setTracedEnvelope (envelope);
         processor.readTrace (level, age);
         triad::ui::drawWaveTrace (g, plot, level, age, getColour(), std::numeric_limits<float>::quiet_NaN());
     }
-    bool showWaveform = false;   // the setting (Triad Time's gear, or Triad's)
+    TriadSettings::Backdrop backdrop = TriadSettings::Backdrop::off;   // the setting (Triad Time's gear, or Triad's)
     std::array<float, triad::WaveTrace::bins> level {};
     std::array<int, triad::WaveTrace::bins> age {};
+    std::unique_ptr<triad::ui::SpectrumBackdrop> spectrumView;
     bool shadeBelowDiagonal() const override { return envelope == TriadTime::timeEnvelope; }
     bool offersTimePresets() const override { return envelope == TriadTime::timeEnvelope; }
     juce::String segmentLabel (const mod::Point& from, const mod::Point& to) const override
@@ -720,7 +730,12 @@ public:
         setSize (1100, windowHeightFor (1100));
         startTimerHz (15);
     }
-    ~TriadTimeEditor() override { processor.setTracedEnvelope (-1); setLookAndFeel (nullptr); }
+    ~TriadTimeEditor() override
+    {
+        processor.setTracedEnvelope (-1);
+        processor.getSpectrumTap().active.store (false);
+        setLookAndFeel (nullptr);
+    }
     void showEnvelope (int e)
     {
         envelope = e;
@@ -778,14 +793,15 @@ public:
     // The sound behind the grid, as set in the gear (here or in Triad's).
     void applyBackdrop()
     {
-        const bool on = settings->getTimeBackdrop() == TriadSettings::Backdrop::waveform;
-        if (on == timeHost.showWaveform) return;
-        timeHost.showWaveform = volumeHost.showWaveform = on;
-        if (! on) processor.setTracedEnvelope (-1);
+        const auto mode = settings->getTimeBackdrop();
+        if (mode == timeHost.backdrop) return;
+        timeHost.backdrop = volumeHost.backdrop = mode;
+        if (mode != TriadSettings::Backdrop::waveform) processor.setTracedEnvelope (-1);
+        if (mode != TriadSettings::Backdrop::spectrum) processor.getSpectrumTap().active.store (false);
         shapes.getEditor().repaint();
     }
 public:
-    bool isShowingWaveform() const noexcept { return timeHost.showWaveform; }
+    TriadSettings::Backdrop getBackdrop() const noexcept { return timeHost.backdrop; }
 private:
     void showGearMenu()
     {
@@ -800,15 +816,16 @@ private:
         const auto backdropNow = settings->getTimeBackdrop();
         menu.addItem (10, "Nothing", true, backdropNow == TriadSettings::Backdrop::off);
         menu.addItem (11, "The waveform (the sound coming in, across the pattern)", true, backdropNow == TriadSettings::Backdrop::waveform);
+        menu.addItem (12, "The spectrum (as Triad's, Pro-Q style)", true, backdropNow == TriadSettings::Backdrop::spectrum);
         triad::ui::addThemeItems (menu, themeBase);
         juce::Component::SafePointer<TriadTimeEditor> safe (this);
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&gearButton), [safe] (int choice)
         {
             if (safe == nullptr) return;
             if (triad::ui::handleThemeChoice (choice, themeBase, [safe] { if (safe != nullptr) safe->openThemePanel(); })) return;
-            if (choice == 10 || choice == 11)
+            if (choice >= 10 && choice <= 12)
             {
-                safe->settings->setTimeBackdrop (choice == 11 ? TriadSettings::Backdrop::waveform : TriadSettings::Backdrop::off);
+                safe->settings->setTimeBackdrop ((TriadSettings::Backdrop) (choice - 10));
                 safe->applyBackdrop();
                 return;
             }

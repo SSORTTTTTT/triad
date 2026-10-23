@@ -808,6 +808,66 @@ void drawWaveTrace (juce::Graphics& g, juce::Rectangle<float> plot, const std::a
 }
 }
 
+namespace triad::ui
+{
+SpectrumBackdrop::SpectrumBackdrop()
+    : samples ((size_t) fftSize), window ((size_t) fftSize), levels ((size_t) fftSize / 2 + 1, -200.0f), bins ((size_t) fftSize)
+{
+    for (int i = 0; i < fftSize; ++i)
+    {
+        window[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / (float) (fftSize - 1));
+        windowSum += window[(size_t) i];
+    }
+}
+void SpectrumBackdrop::paint (juce::Graphics& g, juce::Rectangle<float> plot, triad::SpectrumTap& tap, double sampleRate, float low, float high,
+                              juce::Colour colour)
+{
+    tap.active.store (true);
+    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    const float decay = (float) (36.0 * juce::jlimit (0.0, 0.25, now - lastTime));
+    lastTime = now;
+    const auto w = tap.getWriteIndex();
+    if (w != lastWrite && tap.read (samples.data(), fftSize))
+    {
+        lastWrite = w;
+        for (size_t i = 0; i < (size_t) fftSize; ++i) bins[i] = { samples[i] * window[i], 0.0f };
+        triad::fft (bins);
+        for (size_t k = 1; k < levels.size(); ++k)
+        {
+            const auto db = 20.0f * std::log10 (std::abs (bins[k]) * 2.0f / windowSum + 1.0e-9f);
+            levels[k] = juce::jmax (db, levels[k] - decay);
+        }
+    }
+    else for (auto& l : levels) l -= decay;
+    const float binHz = (float) juce::jmax (8000.0, sampleRate) / (float) fftSize;
+    const auto xFor = [&plot] (float hz) { return plot.getX() + plot.getWidth() * std::log (hz / 20.0f) / std::log (1000.0f); };
+    const auto hzFor = [&plot] (float x) { return 20.0f * std::pow (1000.0f, (x - plot.getX()) / plot.getWidth()); };
+    const auto yFor = [&plot] (float db) { return juce::jmap (juce::jlimit (-84.0f, 6.0f, db), -84.0f, 6.0f, plot.getBottom(), plot.getY()); };
+    juce::Path fill, line;
+    fill.startNewSubPath (plot.getX(), plot.getBottom());
+    for (float x = plot.getX(); x <= plot.getRight() + 0.5f; x += 2.0f)
+    {
+        const float k0 = hzFor (x - 1.0f) / binHz, k1 = hzFor (x + 1.0f) / binHz;
+        float db = -200.0f;
+        for (auto k = (size_t) juce::jmax (1.0f, k0); k <= (size_t) juce::jmax (1.0f, k1) && k < levels.size(); ++k)
+            db = juce::jmax (db, levels[k] + 3.0f * std::log2 (juce::jmax (1.0f, (float) k * binHz) / 1000.0f));   // +3 dB/oct tilt, as the BANDS tab
+        const float y = yFor (db);
+        fill.lineTo (x, y);
+        if (line.isEmpty()) line.startNewSubPath (x, y); else line.lineTo (x, y);
+    }
+    fill.lineTo (plot.getRight(), plot.getBottom());
+    fill.closeSubPath();
+    g.setColour (textColour.withAlpha (0.10f));
+    g.fillPath (fill);
+    juce::Graphics::ScopedSaveState state (g);
+    g.reduceClipRegion (juce::Rectangle<float> (xFor (low), plot.getY(), xFor (high) - xFor (low), plot.getHeight()).toNearestInt());
+    g.setColour (colour.withAlpha (0.30f));
+    g.fillPath (fill);
+    g.setColour (colour.withAlpha (0.65f));
+    g.strokePath (line, juce::PathStrokeType (1.2f));
+}
+}
+
 // ---- FAVORITES: the shapes marked with the heart ---------------------------------------------------------------
 namespace triad::favouriteShapes
 {

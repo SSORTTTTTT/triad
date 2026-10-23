@@ -160,12 +160,12 @@ void TriadSettings::setLfoBackdrop (bool audioTrigger, Backdrop mode)
 TriadSettings::Backdrop TriadSettings::getTimeBackdrop() const
 {
     reload();
-    return file->getIntValue ("timeBackdrop", (int) Backdrop::off) == (int) Backdrop::waveform ? Backdrop::waveform : Backdrop::off;
+    return (Backdrop) juce::jlimit (0, 2, file->getIntValue ("timeBackdrop", (int) Backdrop::off));
 }
 void TriadSettings::setTimeBackdrop (Backdrop mode)
 {
     reload();
-    file->setValue ("timeBackdrop", mode == Backdrop::waveform ? (int) Backdrop::waveform : (int) Backdrop::off);
+    file->setValue ("timeBackdrop", (int) mode);
     file->saveIfNeeded();
     loadedModification = options().getDefaultFile().getLastModificationTime();
 }
