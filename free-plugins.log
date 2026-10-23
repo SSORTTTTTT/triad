@@ -1,0 +1,83 @@
+== surge-synthesizer/releases-xt
+  surge-xt-win64-1.3.4-pluginsonly.zip (47M)
+    copying Surge XT Effects.vst3
+    copying Surge XT.vst3
+== jatinchowdhury18/AnalogTapeModel
+  ChowTapeModel-Win-64bit-2.11.4.exe (11M)
+    running ChowTapeModel-Win-64bit-2.11.4.exe
+    installed
+== Chowdhury-DSP/ChowMatrix
+  ChowMatrix-Win-1.3.0.exe (7.6M)
+    running ChowMatrix-Win-1.3.0.exe
+    installed
+== michaelwillis/dragonfly-reverb
+  dragonfly-reverb-3.2.10-win64.zip (22M)
+    copying DragonflyEarlyReflections.vst3
+    copying DragonflyHallReverb.vst3
+    copying DragonflyPlateReverb.vst3
+    copying DragonflyRoomReverb.vst3
+== baconpaul/airwin2rack
+  AirwindowsConsolidated-2026-10-17-d8fe301-Windows-windows7.zip (12M)
+    copying Airwindows Consolidated.vst3
+== Chowdhury-DSP/BYOD
+  BYOD-Win-64bit-1.3.0.exe (26M)
+    running BYOD-Win-64bit-1.3.0.exe
+    installed
+== jatinchowdhury18/ChowPhaser
+  ChowPhaser-Win-1.1.1.exe (8.5M)
+    running ChowPhaser-Win-1.1.1.exe
+    installed
+== jatinchowdhury18/KlonCentaur
+  ChowCentaur-Win-1.4.0.exe (8.6M)
+    running ChowCentaur-Win-1.4.0.exe
+    installed
+== Chowdhury-DSP/ChowMultiTool
+  ChowMultiTool-Win-64bit-1.1.0.exe (7.1M)
+    running ChowMultiTool-Win-64bit-1.1.0.exe
+    installed
+== tiagolr/gate12
+  gate12-win-v1.3.3.zip (6.1M)
+    copying GATE-12.vst3
+== tiagolr/time12
+  time12-win-v1.2.3.zip (5.3M)
+    copying TIME-12.vst3
+== tiagolr/filtr
+  filtr-win-v1.3.0.zip (6.3M)
+    copying FILT-R.vst3
+== tiagolr/reevr
+  reevr-win-v1.4.0.zip (7.4M)
+    copying REEV-R.vst3
+== wolf-plugins/wolf-shaper
+  wolf-shaper-v1.0.2%2B20230515144200-windows-x64.zip (5.3M)
+    copying wolf-shaper.vst3
+== Graillon 3 Free (Auburn Sounds), a pitch corrector
+  Graillon-FREE-3.2.zip (52M)
+    skipping Auburn Sounds Graillon 3.vst3 (no 64-bit Windows binary)
+    running Graillon-3-FREE-3.2.0.exe
+    installed
+== Installed VST3 (C:/Program Files/Common Files/VST3):
+Airwindows Consolidated.vst3
+Auburn Sounds Graillon 3.vst3
+BYOD.vst3
+CHOWTapeModel.vst3
+ChowCentaur.vst3
+ChowMatrix.vst3
+ChowMultiTool.vst3
+ChowPhaserMono.vst3
+ChowPhaserStereo.vst3
+DragonflyEarlyReflections.vst3
+DragonflyHallReverb.vst3
+DragonflyPlateReverb.vst3
+DragonflyRoomReverb.vst3
+FILT-R.vst3
+GATE-12.vst3
+REEV-R.vst3
+Surge XT Effects.vst3
+Surge XT.vst3
+TIME-12.vst3
+Triad Split.vst3
+Triad Time.vst3
+Triad v14.vst3
+unins000.dat
+unins000.exe
+wolf-shaper.vst3
