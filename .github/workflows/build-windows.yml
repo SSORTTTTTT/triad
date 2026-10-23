@@ -97,11 +97,11 @@ jobs:
           product="$(cat product.txt)"
           w () { cygpath -m "$1"; }
           mkdir -p ci-ui
-          "build-win/TriadTests_artefacts/Release/Triad Tests.exe" \
+          "$(find build-win/TriadTests_artefacts/Release -maxdepth 1 -iname 'Triad*Tests.exe' | head -n 1)" \
             "$(w "$PWD/build-win/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3")" \
             "$(w "$PWD/build-win/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3")" \
             "$(w "$PWD/build-win/fixtures/Triad Crash Fixture.vst3")" \
-            "$(w "$PWD/build-win/TriadScanner_artefacts/Release/Triad Scanner.exe")" \
+            "$(w "$PWD/$(find build-win/TriadScanner_artefacts/Release -maxdepth 1 -iname 'Triad*Scanner.exe' | head -n 1)")" \
             "$(w "$PWD/ci-ui/Triad-preview-windows.png")" \
             "$(w "$PWD/build-win/Triad_artefacts/Release/VST3/$product.vst3")" \
             "C:/Program Files/Common Files/VST3/Triad Split.vst3" 2>&1 | tee test-results-windows.txt
@@ -113,10 +113,10 @@ jobs:
         run: |
           set -uo pipefail
           w () { cygpath -m "$1"; }
-          "build-win/TriadStress_artefacts/Release/Triad Stress.exe" \
+          "$(find build-win/TriadStress_artefacts/Release -maxdepth 1 -iname 'Triad*Stress.exe' | head -n 1)" \
             "$(w "$PWD/build-win/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3")" \
             "$(w "$PWD/build-win/fixtures/Triad Crash Fixture.vst3")" \
-            "$(w "$PWD/build-win/TriadScanner_artefacts/Release/Triad Scanner.exe")" \
+            "$(w "$PWD/$(find build-win/TriadScanner_artefacts/Release -maxdepth 1 -iname 'Triad*Scanner.exe' | head -n 1)")" \
             "$(w "$PWD/stress-results.txt")" 2>&1 | tee stress-log.txt
           exit ${PIPESTATUS[0]}
 
@@ -129,10 +129,10 @@ jobs:
           set -uo pipefail
           w () { cygpath -m "$1"; }
           bash ci/install-free-plugins-windows.sh 2>&1 | tee free-plugins.log
-          "build-win/TriadStress_artefacts/Release/Triad Stress.exe" \
+          "$(find build-win/TriadStress_artefacts/Release -maxdepth 1 -iname 'Triad*Stress.exe' | head -n 1)" \
             "$(w "$PWD/build-win/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3")" \
             "$(w "$PWD/build-win/fixtures/Triad Crash Fixture.vst3")" \
-            "$(w "$PWD/build-win/TriadScanner_artefacts/Release/Triad Scanner.exe")" \
+            "$(w "$PWD/$(find build-win/TriadScanner_artefacts/Release -maxdepth 1 -iname 'Triad*Scanner.exe' | head -n 1)")" \
             "$(w "$PWD/stress-real.txt")" 777 --real 2>&1 | tee stress-real-log.txt
           status=${PIPESTATUS[0]}
           echo "Stress test exit code: $status" | tee -a stress-real-log.txt

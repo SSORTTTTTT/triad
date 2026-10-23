@@ -538,8 +538,8 @@ Pool buildPool (const juce::File& effectFile, const juce::File& scanner)
 void bigProject (const Pool& pool, double seconds)
 {
     say ("\n== 1. Big project: 10 bands x 20 slots ==");
-    constexpr double rate = 48000.0;
-    constexpr int block = 256, slotsPerBand = 20;
+    static constexpr double rate = 48000.0;
+    static constexpr int block = 256, slotsPerBand = 20;
     auto p = std::make_unique<TriadProcessor>();
     Transport transport;
     p->setPlayHead (&transport);
@@ -715,7 +715,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
     std::map<juce::String, Timing> timings;
     int peakEffects = 0, failedLoads = 0, done = 0, windowsOpened = 0, windowsNotDrawn = 0;
     bool timeLimit = false;
-    constexpr int maxEffects = 120;
+    static constexpr int maxEffects = 120;
     const auto started = juce::Time::getMillisecondCounterHiRes();
     int peakWaiting = 0, peakLate = 0, peakMemory = 0;   // removed effects waiting to be deleted (all; 3 s late); memory (MB)
     std::vector<juce::File> userShapes;   // LFO shapes saved to USER by the palette edits (deleted at the end)
@@ -1153,9 +1153,9 @@ void manyInstances (const Pool& pool)
     say ("\n== 3. Many Triad instances (one per track), every LFO on ==");
     Transport transport;
     juce::Random lfoRandom (99);
-    constexpr int instances = 24, slotsPerBand = 4;
-    constexpr double rate = 48000.0;
-    constexpr int block = 512;
+    static constexpr int instances = 24, slotsPerBand = 4;
+    static constexpr double rate = 48000.0;
+    static constexpr int block = 512;
     std::vector<std::unique_ptr<TriadProcessor>> triads;
     step ("many instances: creating 24 Triads", 900);
     auto start = juce::Time::getMillisecondCounterHiRes();
@@ -1578,8 +1578,8 @@ bool isLinkable (const juce::String& name) { return name.isNotEmpty() && ! name.
 ParameterProbe probeParameters (const juce::PluginDescription& description)
 {
     namespace mod = triad::mod;
-    constexpr double rate = 48000.0;
-    constexpr int block = 128;
+    static constexpr double rate = 48000.0;
+    static constexpr int block = 128;
     ParameterProbe result;
     auto run = [&] (bool modulate, std::vector<float>& trace)
     {

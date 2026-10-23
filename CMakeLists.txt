@@ -144,7 +144,7 @@ foreach(format IN ITEMS VST3 AU)
         # <bundle>/Contents/MacOS (or x86_64-linux) -> <bundle>/Contents/Helpers
         add_custom_command(TARGET Triad_${format} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers"
-            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:TriadScanner>" "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers/$<TARGET_FILE_NAME:TriadScanner>"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:TriadScanner>" "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers/Triad Scanner$<TARGET_FILE_SUFFIX:TriadScanner>"
             VERBATIM)
     endif()
 endforeach()
