@@ -134,6 +134,13 @@ void Led::paintButton (juce::Graphics& g, bool over, bool)
 // ---- Look ---------------------------------------------------------------------------------------------
 TriadLook::TriadLook()
 {
+   #if JUCE_WINDOWS
+    // Text as on the Mac: JUCE's default on Windows (Verdana) is far wider than the Mac's Helvetica the layout was
+    // made with; Arial has Helvetica's letter widths. Fonts are found through the default look (this plug-in's own
+    // copy of JUCE), which only clears its font cache when the name changes.
+    juce::LookAndFeel::getDefaultLookAndFeel().setDefaultSansSerifTypefaceName ("Arial");
+    setDefaultSansSerifTypefaceName ("Arial");
+   #endif
     syncThemeFromSettings();
     applyTheme();
 }
