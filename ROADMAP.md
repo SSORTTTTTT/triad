@@ -53,6 +53,41 @@ coming in, the favorite system, and the 2,000 presets for each category ... just
 "The next big step will be working on ... the aesthetics of the plugin": the look and feel of Triad, Triad Time and
 Triad Split (see "Look and feel" below), when Thomas sends his references.
 
+### Triad Time: the numbered patterns follow the palette page (Thomas, 2026-10-23) — later
+
+Thomas is keeping this layout for Triad Time: the numbered patterns along the top (1, 2, 3 ...), the grid, and the
+palette of shapes underneath (folder, page 49/182, the shapes with their hearts).
+- **The top row follows the page:** when the palette's page changes (the arrows, or another folder), the numbered
+  patterns at the top change to that page's patterns as well. To settle when building it: what happens to a numbered
+  pattern Thomas has drawn on when the page changes (kept in that slot, or saved first).
+- **The shape in use is outlined in the palette too:** the shape on the grid gets the same light purple box in the
+  palette as the selected numbered pattern has at the top left.
+- **Hearts match:** hearting a shape in the palette also fills the heart on the same shape in the numbered patterns at
+  the top, and the other way round (one FAVORITES list, as now).
+
+### Redesign of the interface (Thomas, 2026-10-23) — later
+
+A redesign of how Triad, Triad Time and Triad Split look and are used, to make them more usable, keeping everything
+underneath as it is: bands, slots, LFOs, the matrix, presets, favourites, the palettes and patterns, settings and
+themes. Reference: No Glaze's Luma ("simple and readable but really complex"); its developer (nahum.io) told Thomas it was
+designed in Figma and animated in Rive.
+
+How to do it (notes for when we start):
+- **Design first, then build:** Thomas sends references; Claude makes mockups of the new screens to click through and
+  change (no account needed); the agreed design is then built into the plug-ins, one screen at a time, with the same
+  tests and screenshots as now.
+- **Figma** (design): its free plan is enough to start. Thomas (or a designer) can design in Figma and Claude builds from
+  it, from exported pictures and SVG artwork, or by reading the Figma file through Figma's connector for Claude, if his
+  plan allows it.
+- **Rive** (animation): needs an account; exporting animations for use in your own software (.riv files) is on the paid
+  plans (Cadet, $17 a month or $108 a year per seat, in October 2026). Playing Rive animations inside a JUCE plug-in is
+  not a finished path yet (Rive's C++ runtime would have to be built into Triad; the attempts on the JUCE forum are
+  experiments): worth it only for a few animated pieces, later.
+- **Other ways to draw the interface:** (1) JUCE's own drawing, as now, with artwork exported from Figma (SVG) and
+  smooth animations: the least risk, same speed. (2) A web interface inside the plug-in (JUCE 8's WebView: HTML/CSS/
+  JavaScript, close to how Figma designs are made, with web animation tools such as Lottie): most freedom in the look,
+  more work, and every control has to be connected to the plug-in again. Choose once the design is clear.
+
 ### Favourites with a heart (Thomas, 2026-10-22) — done in 0.15.0
 
 Thomas: "for the ... LFO tab ... make a favorite system ... and a separate folder that indexes all the favorites ... an
