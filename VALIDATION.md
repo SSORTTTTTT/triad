@@ -1,5 +1,29 @@
 # Validation — Triad
 
+## Triad v14 (0.15.0), Triad Time and Triad Split on Windows — 2026-10-25
+
+Commit `7aeeb26` (branch `windows-port`), run 40252072078 (windows-2022 runner: virtual, AMD EPYC, 4 cores, no graphics
+card). The first Windows build: the same plug-ins as the Mac's 0.15.0, as 64-bit VST3s, in one setup program
+(`Triad-v14-0.15.0-Windows-x64-Setup.exe`, Inno Setup, 9.6 MB, SHA-256 `f5e68104...fd83077`).
+
+| Check | Result |
+| --- | --- |
+| Build | Visual Studio 2022, x64, C++ runtime built in (no redistributable); Triad Scanner.exe inside Triad's bundle |
+| Setup program | Built and installed silently into `C:\Program Files\Common Files\VST3` over simulated "Triad", "Triad v2", "Triad v9" and "Triad v13" installs (all removed); the installed Triad Scanner checked Triad |
+| Integration tests | All passed (PASS: all integration tests), including the effects-only list with plug-ins that crash or hang (the hanging one stopped after 2 s), editor windows, and a new Windows check: an effect's window belongs to the DAW window showing Triad (in front of it, not of every app) and moves as any window |
+| pluginval (VST3, strictness 5) | SUCCESS for Triad v14, Triad Time and Triad Split |
+| Stress test | PASS: no crashes, no NaN/Inf output, all checks held (200 effects: 0.99 ms per 256-sample block, 18.5% of one core; 3,000 edits; 24 instances; 60-plug-in list with 20 crashing) |
+| Real plug-ins (21 + Triad Time built in) | 5 x 3,000 random edits (each in its own process) all passed: PASS, no crashes, no NaN/Inf output, all checks held. Graillon 3, the Chowdhury DSP effects, Dragonfly reverbs, Airwindows Consolidated, Surge XT Effects, GATE-12, TIME-12, FILT-R, REEV-R, wolf-shaper, Triad Time and Triad Split |
+
+Getting there (runs 39918650290 to 39948021924): MSVC needed constants used inside the tests' lambdas made static, a
+Windows thread-CPU clock for the stress test, and a 32 MB stack for the integration tests (they all sit in main;
+Windows gives 1 MB); one test margin (LFO dice points vs Triad Time's, 6 to 11% depending on the maths library) became
+"more". Earlier full runs had sequences crash inside third-party plug-ins' own code (FILT-R and REEV-R in their own
+window messages, Graillon 3 on its own thread; once a fail-fast, exit 0xC0000409, with no report) and pass without
+them; the stress test now names such a plug-in, runs the sequence again without it, and ends "PASS FOR TRIAD" instead
+of "PASS" when that happens. Text uses Arial on Windows (Helvetica's letter widths, as on the Mac) instead of JUCE's
+Verdana; the header says "VST3" there.
+
 ## Triad v14 (0.15.0), Triad Time and Triad Split on macOS — 2026-10-22
 
 Commit `8d9ac54`, run 39888064388 attempt 2 (macos-15 runner, virtual Apple M1). New in 0.15.0: favorites with hearts
