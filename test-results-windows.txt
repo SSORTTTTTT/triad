@@ -1,0 +1,173 @@
+Triad tests (Triad 0.15.0, Windows 10)
+PASS: crossover dragging, frequency mapping, band order, automation gestures, keyboard, reset, recall, Nyquist guard, add/remove bands up to 10
+Generator, Angular 100%: 90% of shapes have 90-degree steps, 56% only squares/steps, 29% have 30 or 45-degree lines; 94% of lines at 30/45/60/75 degrees; steps+holds 89% of segments
+Generator, Angular 100% + Soft 60%: 49% of shapes mix hard jumps and curves
+Generator, chaos 0 / 50 / 100%: 10 / 17 / 30 points on average; repeating halves or quarters 57% / 23% / 7%
+LFO generator: passed
+LFO presets: 1049 shapes in 14 categories: passed
+Generator taste: curves in its shapes 34% untrained, 5% after liking straight ones and disliking curvy ones
+Generator taste: passed
+SHAPERBOX dice: a repeated quarter in 74% at Chaos 0, 50% at Chaos 100; curved segments 32% at Soft 100, 3% at Angular 100; 400 different of 400, 0 also made by the INFILTRATOR dice
+GROSS BEAT (TIME) dice: 100% with a line or a chop; lines: octave down 456, reverse 545, octave up 35, other 41; points 7 at Chaos 0, 11 at Chaos 100; curves 818 (Soft) / 30 (Angular)
+TIME PRESETS dice: 100% a TIME pattern as it is at Chaos 0, 0% at Chaos 100
+GROSS BEAT (VOLUME) dice: 98% gates (2 or more steps)
+Triad's LFO dice, INFILTRATOR, Chaos 10 -> 100: peaks 190 -> 1364, squares (steps) 389 -> 1791, points 1395 -> 5499 a hundred shapes (without the LFO Chaos, as Triad Time's dice: peaks 724, points 5164)
+Triad's LFO dice, SHAPERBOX, Chaos 10 -> 100: peaks 131 -> 393, squares (steps) 619 -> 1370, points 1644 -> 3364 a hundred shapes (without the LFO Chaos, as Triad Time's dice: peaks 187, points 2325)
+Triad Time half speed: 440 Hz in, 220.003 Hz out
+Triad Time octave cut (0 to -1/16 over 1/8): 440 Hz in, 219.982 Hz out
+TIME folders: 10000 of 10000 on the grid, 10000 in range; octave down 2000/2000, octave up 2000/2000, reverse 2000/2000, chops 2000/2000, pitch + chops 2000/2000
+TIME folders played: 20 of 20 octave / reverse lines bend 440 Hz as labelled
+Triad Time repeats: biggest step 0.0364973 with 8 ms smoothing, 0.382401 without (the tone itself: 0.0288634); 7 jumps
+Triad Time in Triad with a knob link: largest difference from Triad Time alone 0
+Triad Time grid: 1020 x 293 (aspect 3.48123, ShaperBox 3.48), window 1100 x 733
+ALL folder: 11049 presets, 1005 pages
+Screenshot: D:\a\triad\triad\ci-ui\Triad-Time-preview.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-Time-folders.png
+Band 2 (250 Hz - 2.5 kHz) muted: 7.1968% of the noise's energy taken out, 86.8662% left
+Triad Split: bands 1 + 2 + 3 on three tracks vs ALL: max difference 0
+Triad Split ALL vs Triad (3 empty bands): max difference 0
+Screenshot: D:\a\triad\triad\ci-ui\Triad-Split-preview.png
+Triad Split: OK
+Frame rate: 120 a second while drawing is quick (120 measured), 60 when strained (60)
+PASS: smooth motion between audio blocks, 120 / 60 frames a second
+Themes: closest theme colour to a band colour 23.6049 (bands from each other: 18.1 or more); weakest band on a theme's panels / grids / buttons: contrast 4.37422
+Picking a band's own colour for an accent or a line: moved by up to 20.9717, then at least 20.0046 from every band
+Random colourways: 300 made, 0 unreadable or too close to a band, 297 different backgrounds; closest to a band colour 20.0042, accent and lines at least 23.1928 apart
+Screenshot: D:\a\triad\triad\ci-ui\Theme-Midnight-Triad.png
+Screenshot: D:\a\triad\triad\ci-ui\Theme-Midnight-Triad-Time.png
+Screenshot: D:\a\triad\triad\ci-ui\Theme-Plum-Triad-Split.png
+Screenshot: D:\a\triad\triad\ci-ui\Theme-editor.png
+Screenshot: D:\a\triad\triad\ci-ui\Theme-random-Triad-Time.png
+Screenshot: D:\a\triad\triad\ci-ui\Theme-random-editor.png
+Screenshot: D:\a\triad\triad\ci-ui\Theme-Triad-Triad-Time.png
+Search "pro": Pro-L 2 (VST3), Pro-Q 3 (VST3), Pro-Q 3 (AU)
+Plug-in search matching: passed
+Screenshot: D:\a\triad\triad\ci-ui\Triad-plugin-search-preview.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-plugin-search-menu-item.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-plugin-search.png
+Plug-in search in Triad's window: passed
+Audio trigger: waiting at 0, 0.00385417 after the sound came in (expected about 0.00495833), 0.494521 a second later, 0.0031875 after the second sound, 0 after two bars of quiet; 2 restarts
+Audio trigger, square LFO on the band's volume: 0.353553 for the first eighth after the sound, 0.00116872 for the second, 0.353553 in the next cycle
+  the volume went down 150 samples from an eighth after the sound
+Audio trigger, the full sound: started 1300 (sound at 1300)
+Audio trigger: passed
+Screenshot: D:\a\triad\triad\ci-ui\Triad-favorites.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-Time-favorites.png
+Favorites (shapes and patterns): passed
+Screenshot: D:\a\triad\triad\ci-ui\Triad-plugin-search-favorites.png
+Favorites (plug-ins): passed
+LFO waveform (SONG): the loudest in the quiet half 0, the quietest in the loud half 0.14125, 400 of 400 steps from this cycle
+Behind the grid (traces): passed
+Screenshot: D:\a\triad\triad\ci-ui\Triad-lfo-waveform.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-lfo-spectrum.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-Time-waveform.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-Time-spectrum.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-Time-spectrum.png
+Built-in 24 dB/oct crossover (LR4) vs JUCE dsp filter at 44100 Hz: max error 1.63913e-07
+Built-in 24 dB/oct crossover (LR4) vs JUCE dsp filter at 48000 Hz: max error 8.9407e-08
+Built-in 24 dB/oct crossover (LR4) vs JUCE dsp filter at 96000 Hz: max error 1.19209e-07
+Phase-correct reconstruction, 1 to 10 bands: max error 3.57628e-07
+6 dB/oct: bands add up flat (max error 0), shapes match (max error 1.43647e-05), low band at 4000 Hz -12.5 dB, high band at 250 Hz -12.3 dB
+12 dB/oct: bands add up flat (max error 2.87294e-05), shapes match (max error 1.63317e-05), low band at 4000 Hz -25.0 dB, high band at 250 Hz -24.7 dB
+18 dB/oct: bands add up flat (max error 2.41995e-05), shapes match (max error 1.95503e-05), low band at 4000 Hz -36.7 dB, high band at 250 Hz -36.3 dB
+24 dB/oct: bands add up flat (max error 2.51532e-05), shapes match (max error 2.02656e-05), low band at 4000 Hz -48.9 dB, high band at 250 Hz -48.4 dB
+30 dB/oct: bands add up flat (max error 2.57492e-05), shapes match (max error 2.37226e-05), low band at 4000 Hz -61.1 dB, high band at 250 Hz -60.4 dB
+36 dB/oct: bands add up flat (max error 3.03984e-05), shapes match (max error 2.28882e-05), low band at 4000 Hz -73.4 dB, high band at 250 Hz -72.5 dB
+42 dB/oct: bands add up flat (max error 2.83718e-05), shapes match (max error 2.37226e-05), low band at 4000 Hz -85.6 dB, high band at 250 Hz -84.5 dB
+48 dB/oct: bands add up flat (max error 2.95639e-05), shapes match (max error 2.2769e-05), low band at 4000 Hz -97.6 dB, high band at 250 Hz -96.7 dB
+54 dB/oct: bands add up flat (max error 2.98023e-05), shapes match (max error 2.24113e-05), low band at 2000 Hz -54.6 dB, high band at 500 Hz -54.1 dB
+60 dB/oct: bands add up flat (max error 3.21865e-05), shapes match (max error 2.15769e-05), low band at 2000 Hz -60.6 dB, high band at 500 Hz -60.2 dB
+66 dB/oct: bands add up flat (max error 3.02792e-05), shapes match (max error 2.25306e-05), low band at 2000 Hz -66.7 dB, high band at 500 Hz -66.2 dB
+72 dB/oct: bands add up flat (max error 3.05176e-05), shapes match (max error 2.22921e-05), low band at 2000 Hz -72.8 dB, high band at 500 Hz -72.1 dB
+78 dB/oct: bands add up flat (max error 3.05176e-05), shapes match (max error 2.53916e-05), low band at 2000 Hz -78.8 dB, high band at 500 Hz -78.1 dB
+84 dB/oct: bands add up flat (max error 3.15905e-05), shapes match (max error 2.44379e-05), low band at 2000 Hz -84.9 dB, high band at 500 Hz -84.3 dB
+90 dB/oct: bands add up flat (max error 3.03984e-05), shapes match (max error 2.55108e-05), low band at 2000 Hz -90.9 dB, high band at 500 Hz -90.3 dB
+96 dB/oct: bands add up flat (max error 2.99215e-05), shapes match (max error 2.43187e-05), low band at 2000 Hz -96.5 dB, high band at 500 Hz -95.9 dB
+Ten bands with mixed slopes add up flat: max error 7.92146e-05
+Slopes changed 30 times while playing: output peak 0.499632 (input 0.496922), largest step between samples 0.0359691 (the sines alone: 0.0359974)
+Empty slots, oversized block: max error 0
+Unequal band latency compensation: max error 2.98023e-08
+All bands wet: max error 2.23517e-08
+All bands dry with latency retained: max error 0
+50 percent band mix: max error 2.98023e-08
+Always-on sidechain input is fed silence: max error 2.98023e-08
+Mono-only effect refused: Triad hosts stereo effects; this one offers in: Mono + Stereo, out: Mono.
+Removed effects are deleted after their pending messages: passed
+NaN from a hosted effect: silenced, restarted 3 times, then bypassed (Produced invalid audio (NaN) repeatedly; bypassed)
+Soft and hard crossovers (12 and 42 dB/oct): max error 0
+PASS: crossover slopes are DAW parameters, saved, recalled, and move with their crossovers
+50 percent slot mix: max error 2.98023e-08
+Slot mix and band mix together: max error 5.96046e-08
+Three-effect chain on one band, other bands aligned: max error 2.23517e-08
+Bypassed slot leaves the chain and its latency: max error 1.49012e-08
+Slot at 0 percent passes its input (latency kept): max error 1.49012e-08
+Moving a slot keeps the chain's result: max error 1.49012e-08
+Chain removed, latency back to one effect: max error 2.23517e-08
+Hosted state and mix recall: max error 2.98023e-08
+Triad 0.1 project recall: max error 2.98023e-08
+Triad 0.2 project recall (40 percent slot mix): max error 2.98023e-08
+Outer VST3 wrapper with nested effects and recalled state: max error 2.98023e-08
+Missing effects pass bands dry: max error 0
+Added band keeps effects in place: max error 2.98023e-08
+Removing a band merges its range: max error 0
+Ten bands with a sixteen-effect chain: max error 5.82077e-11
+Ten-band project recall: max error 5.82077e-11
+PASS: LFO shape editing (2x, 1/2, reverse, flip, curves, copy/paste); table error 0.000834942
+Untouched LFOs change nothing: max error 2.98023e-08
+LFO at 50% sets the slot mix to 50%: max error 2.98023e-08
+LFO amount 50%: max error 2.98023e-08
+Inverted LFO: max error 2.98023e-08
+Route switched off: max error 2.98023e-08
+Band volume -6 dB: max error 2.98023e-08
+Square LFO on band volume, in time with the song: errors 2.98023e-08 / 7.45058e-09
+PASS: LFOs on slot mixes and band volume, moving bands, chain presets, copy / paste band state
+PASS: LFO project recall
+PASS: startup preset (Init, a saved preset, the current settings), Initialize, projects keep their own settings
+PASS: latency meter (total, per slot), CPU meter, LIVE switch
+PASS: knob linking (LFOs on knobs inside effects): menu, follows the LFO, off/unlink restore, saved, copy/paste, LEARN
+PASS: undo / redo (effects kept loaded, knobs inside effects, crossovers, bands, LFOs, presets, history limit)
+PASS: copy / paste plugin state
+PASS: drag slots to reorder, undo / redo arrows
+Low Latency switch: Triad followed in about 70 ms; 56 blocks of 64 samples were silent meanwhile (74.6667 ms, instead of misaligned sound)
+What each pitch corrector heard of the voice: band 1 (below 250 Hz) 47.2%, band 2 52.0%, band 3 (above 2.5 kHz) 0.74%
+24 dB/oct at 250 Hz: the sound right there comes out 1.80 ms later (the slope list shows 1.80 ms)
+96 dB/oct at 250 Hz: the sound right there comes out 11.65 ms later (the slope list shows 11.65 ms)
+At Thomas's dividers: 250 Hz 11.6 ms at 96 dB/oct, 1.8 ms at 24; 2.5 kHz 1.2 ms at 96 dB/oct, 0.2 ms at 24
+PASS: live vocals with a pitch corrector (latency exactly the effects', Low Latency switching, three copies, PRE chain, hard wall for all dividers)
+moduleinfo.json in test effect: yes
+Plug-in list: 5 bundles (2 from moduleinfo.json, 2 checked by Triad Scanner, 1 crashed the scanner) in 168 ms
+  listed: VST3 / Triad Tests / Triad Test Effect
+  listed: VST3 / Triad Tests / Triad Test Effect
+  listed: VST3 /  / Crashy Effect [not checked] [crashed]
+A plug-in that aborts when loaded only took down Triad Scanner; Triad kept running
+A plug-in that hangs when loaded was stopped after 2 s; Triad kept running
+PASS: effect list excludes instruments, survives plug-ins that crash or hang, caches results
+Hosted effect editor opened and closed (including auto-open on load)
+Effect window owned by the DAW window; moved to 240, 180, reports 240 180 428 125
+Remove effects, clear latency: max error 0
+Screenshot: D:\a\triad\triad\ci-ui\Triad-preview-windows.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-preview-pre.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-preview-5bands.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-preview-slopes.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-preview-slots.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-preview-10bands.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-preview-generator.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-preview-lfo.png
+Screenshot: D:\a\triad\triad\ci-ui\Triad-preview-matrix.png
+UI drawing times, whole window at 1x / 2x (a frame at 60 fps has 16.7 ms, at 120 fps 8.3 ms):
+  BANDS: 4.6 ms (worst 4.8) / 8.1 ms (worst 9.8)
+  LFO: 2.6 ms (worst 2.8) / 5.3 ms (worst 6.1)
+  MATRIX: 2.3 ms (worst 2.7) / 5.4 ms (worst 5.5)
+What moves every frame (up to 120 a second), at 1x / 2x:
+  Crossover display (spectrum and meters over its cached picture): 1.5 ms (worst 1.6) / 2.9 ms (worst 3.0)
+  A band's level meter: 0.3 ms (worst 0.4) / 0.3 ms (worst 0.4)
+  A slot knob's LFO dot: 0.5 ms (worst 0.5) / 0.5 ms (worst 0.5)
+  LFO grid, the playing position (a 12-pixel strip over the cached grid): 0.2 ms (worst 0.3) / 0.2 ms (worst 0.3); the whole grid: 1.3 ms (worst 1.4) at 2x
+Close-up: D:\a\triad\triad\ci-ui\Triad-closeup-strip-footer.png
+Close-up: D:\a\triad\triad\ci-ui\Triad-closeup-slots.png
+Close-up: D:\a\triad\triad\ci-ui\Triad-closeup-crossovers.png
+Close-up: D:\a\triad\triad\ci-ui\Triad-closeup-lfo-toolbar.png
+GUI stress: 400 random interface actions in 0.6 s; the whole window drawn 20 times, 7.6 ms each: passed
+Closing the last Triad deletes every effect it was keeping: passed
+PASS: all integration tests
+Integration tests exit code: 0

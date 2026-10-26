@@ -1,0 +1,424 @@
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.20348.
+-- The C compiler identification is MSVC 19.44.35229.0
+-- The CXX compiler identification is MSVC 19.44.35229.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring juceaide
+-- Building juceaide
+-- Exporting juceaide
+-- Testing juceaide
+-- Finished setting up juceaide
+-- Configuring done (77.3s)
+-- Generating done (0.2s)
+-- Build files have been written to: D:/a/triad/triad/build-win
+
+  Checking File Globs
+  1>Checking Build System
+  Generating Triad_artefacts/JuceLibraryCode/Triad_resources.rc
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Triad_rc_lib.vcxproj -> D:\a\triad\triad\build-win\Triad_rc_lib.dir\Release\Triad_rc_lib.lib
+  Generating TriadScanner_artefacts/JuceLibraryCode/TriadScanner_resources.rc
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  PluginProcessor.cpp
+  PluginEditor.cpp
+  CrossoverDisplay.cpp
+  BandStrip.cpp
+  TriadScanner_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadScanner_rc_lib.dir\Release\TriadScanner_rc_lib.lib
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+D:\a\triad\triad\Source\PluginProcessor.cpp(898,10): warning C4458: declaration of 'info' hides class member [D:\a\triad\triad\build-win\Triad.vcxproj]
+      D:\a\triad\triad\Source\PluginProcessor.h(455,60):
+      see declaration of 'TriadProcessor::info'
+  
+  juce_VST3ManifestHelper.cpp
+  Scanner.cpp
+  juce_audio_processors_headless.cpp
+  PluginCatalog.cpp
+  juce_audio_processors_headless_ara.cpp
+  juce_audio_processors_headless_lv2_libs.cpp
+  AudioUnitList.cpp
+  juce_audio_basics.cpp
+  juce_core.cpp
+  Modulation.cpp
+  Settings.cpp
+  Widgets.cpp
+  Look.cpp
+  ShapePanel.cpp
+  juce_core_CompilationTime.cpp
+  juce_events.cpp
+  LfoPage.cpp
+  MatrixPage.cpp
+  PlatformWindows.cpp
+D:\a\triad\triad\Source\LfoPage.cpp(109,20): warning C4458: declaration of 'settings' hides class member [D:\a\triad\triad\build-win\Triad.vcxproj]
+      D:\a\triad\triad\Source\LfoPage.h(107,48):
+      see declaration of 'LfoPage::settings'
+  
+D:\a\triad\triad\Source\LfoPage.cpp(401,10): warning C4459: declaration of 'panel' hides global declaration [D:\a\triad\triad\build-win\Triad.vcxproj]
+      D:\a\triad\triad\Source\UiCommon.h(50,70):
+      see declaration of 'triad::ui::panel'
+  
+  Generator.cpp
+  ShapeLibrary.cpp
+  TriadTime.cpp
+  Triad_vst3_helper.vcxproj -> D:\a\triad\triad\build-win\Release\Triad_vst3_helper.exe
+  Theme.cpp
+  PluginSearch.cpp
+  PlatformWindowsWin.cpp
+  juce_audio_processors.cpp
+D:\a\triad\triad\Source\TriadTime.cpp(871,14): warning C4459: declaration of 'slotRow' hides global declaration [D:\a\triad\triad\build-win\Triad.vcxproj]
+      D:\a\triad\triad\Source\UiCommon.h(52,27):
+      see declaration of 'triad::ui::slotRow'
+  
+  juce_gui_extra.cpp
+  juce_gui_basics.cpp
+  juce_graphics.cpp
+  TriadScanner.vcxproj -> D:\a\triad\triad\build-win\TriadScanner_artefacts\Release\TriadScanner.exe
+D:\a\triad\triad\deps\JUCE\modules\juce_gui_basics\juce_gui_basics.cpp(61): warning : This version of JUCE does not use the splash screen, the flag JUCE_DISPLAY_SPLASH_SCREEN is ignored [D:\a\triad\triad\build-win\Triad.vcxproj]
+  juce_graphics_Harfbuzz.cpp
+  juce_events.cpp
+  juce_core.cpp
+  juce_core_CompilationTime.cpp
+  juce_data_structures.cpp
+  juce_audio_processors_headless.cpp
+  juce_audio_processors_headless_ara.cpp
+  juce_audio_processors_headless_lv2_libs.cpp
+  juce_audio_basics.cpp
+  juce_graphics_Sheenbidi.c
+  Triad.vcxproj -> D:\a\triad\triad\build-win\Triad_artefacts\Release\Triad v14_SharedCode.lib
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  juce_audio_plugin_client_AAX.cpp
+  juce_audio_plugin_client_AAX_utils.cpp
+  juce_audio_plugin_client_ARA.cpp
+  juce_audio_plugin_client_LV2.cpp
+  juce_audio_plugin_client_Standalone.cpp
+  juce_audio_plugin_client_Unity.cpp
+  juce_audio_plugin_client_VST2.cpp
+  juce_audio_plugin_client_VST3.cpp
+     Creating library D:/a/triad/triad/build-win/Triad_artefacts/Release/VST3/Triad v14.lib and object D:/a/triad/triad/build-win/Triad_artefacts/Release/VST3/Triad v14.exp
+  Triad_VST3.vcxproj -> D:\a\triad\triad\build-win\Triad_artefacts\Release\VST3\Triad v14.vst3\Contents\x86_64-win\Triad v14.vst3
+  removing moduleinfo.json
+  creating D:/a/triad/triad/build-win/Triad_artefacts/Release/VST3/Triad v14.vst3
+
+  Checking File Globs
+  Generating TriadTime_artefacts/JuceLibraryCode/TriadTime_resources.rc
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  TriadTime_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadTime_rc_lib.dir\Release\TriadTime_rc_lib.lib
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  TriadTime.cpp
+  ShapePanel.cpp
+  Look.cpp
+  Modulation.cpp
+  Generator.cpp
+D:\a\triad\triad\Source\TriadTime.cpp(871,14): warning C4459: declaration of 'slotRow' hides global declaration [D:\a\triad\triad\build-win\TriadTime.vcxproj]
+      D:\a\triad\triad\Source\UiCommon.h(52,27):
+      see declaration of 'triad::ui::slotRow'
+  
+  ShapeLibrary.cpp
+  Settings.cpp
+  Theme.cpp
+  juce_audio_processors.cpp
+  juce_gui_extra.cpp
+  juce_gui_basics.cpp
+D:\a\triad\triad\deps\JUCE\modules\juce_gui_basics\juce_gui_basics.cpp(61): warning : This version of JUCE does not use the splash screen, the flag JUCE_DISPLAY_SPLASH_SCREEN is ignored [D:\a\triad\triad\build-win\TriadTime.vcxproj]
+  juce_graphics.cpp
+  juce_graphics_Harfbuzz.cpp
+  juce_events.cpp
+  juce_core.cpp
+  juce_core_CompilationTime.cpp
+  juce_data_structures.cpp
+  juce_VST3ManifestHelper.cpp
+  juce_audio_processors_headless.cpp
+  juce_audio_processors_headless_ara.cpp
+  juce_audio_processors_headless_lv2_libs.cpp
+  juce_audio_basics.cpp
+  juce_graphics_Sheenbidi.c
+  TriadTime.vcxproj -> D:\a\triad\triad\build-win\TriadTime_artefacts\Release\Triad Time_SharedCode.lib
+  TriadTime_vst3_helper.vcxproj -> D:\a\triad\triad\build-win\Release\TriadTime_vst3_helper.exe
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  juce_audio_plugin_client_AAX.cpp
+  juce_audio_plugin_client_AAX_utils.cpp
+  juce_audio_plugin_client_ARA.cpp
+  juce_audio_plugin_client_LV2.cpp
+  juce_audio_plugin_client_Standalone.cpp
+  juce_audio_plugin_client_Unity.cpp
+  juce_audio_plugin_client_VST2.cpp
+  juce_audio_plugin_client_VST3.cpp
+     Creating library D:/a/triad/triad/build-win/TriadTime_artefacts/Release/VST3/Triad Time.lib and object D:/a/triad/triad/build-win/TriadTime_artefacts/Release/VST3/Triad Time.exp
+  TriadTime_VST3.vcxproj -> D:\a\triad\triad\build-win\TriadTime_artefacts\Release\VST3\Triad Time.vst3\Contents\x86_64-win\Triad Time.vst3
+  removing moduleinfo.json
+  creating D:/a/triad/triad/build-win/TriadTime_artefacts/Release/VST3/Triad Time.vst3
+
+  Checking File Globs
+  Generating TriadSplit_artefacts/JuceLibraryCode/TriadSplit_resources.rc
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  TriadSplit_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadSplit_rc_lib.dir\Release\TriadSplit_rc_lib.lib
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  TriadSplit.cpp
+  SplitLink.cpp
+  CrossoverDisplay.cpp
+  Look.cpp
+  Settings.cpp
+  Theme.cpp
+  juce_audio_processors.cpp
+  juce_gui_extra.cpp
+  juce_gui_basics.cpp
+  juce_graphics.cpp
+D:\a\triad\triad\deps\JUCE\modules\juce_gui_basics\juce_gui_basics.cpp(61): warning : This version of JUCE does not use the splash screen, the flag JUCE_DISPLAY_SPLASH_SCREEN is ignored [D:\a\triad\triad\build-win\TriadSplit.vcxproj]
+  juce_graphics_Harfbuzz.cpp
+  juce_events.cpp
+  juce_core.cpp
+  juce_core_CompilationTime.cpp
+  juce_data_structures.cpp
+  juce_audio_processors_headless.cpp
+  juce_audio_processors_headless_ara.cpp
+  juce_audio_processors_headless_lv2_libs.cpp
+  juce_audio_basics.cpp
+  juce_VST3ManifestHelper.cpp
+  juce_graphics_Sheenbidi.c
+  TriadSplit.vcxproj -> D:\a\triad\triad\build-win\TriadSplit_artefacts\Release\Triad Split_SharedCode.lib
+  TriadSplit_vst3_helper.vcxproj -> D:\a\triad\triad\build-win\Release\TriadSplit_vst3_helper.exe
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  juce_audio_plugin_client_AAX.cpp
+  juce_audio_plugin_client_AAX_utils.cpp
+  juce_audio_plugin_client_ARA.cpp
+  juce_audio_plugin_client_LV2.cpp
+  juce_audio_plugin_client_Standalone.cpp
+  juce_audio_plugin_client_Unity.cpp
+  juce_audio_plugin_client_VST2.cpp
+  juce_audio_plugin_client_VST3.cpp
+     Creating library D:/a/triad/triad/build-win/TriadSplit_artefacts/Release/VST3/Triad Split.lib and object D:/a/triad/triad/build-win/TriadSplit_artefacts/Release/VST3/Triad Split.exp
+  TriadSplit_VST3.vcxproj -> D:\a\triad\triad\build-win\TriadSplit_artefacts\Release\VST3\Triad Split.vst3\Contents\x86_64-win\Triad Split.vst3
+  removing moduleinfo.json
+  creating D:/a/triad/triad/build-win/TriadSplit_artefacts/Release/VST3/Triad Split.vst3
+
+  Checking File Globs
+  TriadScanner_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadScanner_rc_lib.dir\Release\TriadScanner_rc_lib.lib
+  TriadScanner.vcxproj -> D:\a\triad\triad\build-win\TriadScanner_artefacts\Release\TriadScanner.exe
+
+  Checking File Globs
+  Generating TriadTests_artefacts/JuceLibraryCode/TriadTests_resources.rc
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  CrashFixture.cpp
+  TriadTests_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadTests_rc_lib.dir\Release\TriadTests_rc_lib.lib
+     Creating library D:/a/triad/triad/build-win/Release/Triad Crash Fixture.lib and object D:/a/triad/triad/build-win/Release/Triad Crash Fixture.exp
+  TriadCrashFixture.vcxproj -> D:\a\triad\triad\build-win\fixtures\Triad Crash Fixture.vst3\Contents\x86_64-win\Triad Crash Fixture.vst3
+  TriadScanner_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadScanner_rc_lib.dir\Release\TriadScanner_rc_lib.lib
+  Triad.vcxproj -> D:\a\triad\triad\build-win\Triad_artefacts\Release\Triad v14_SharedCode.lib
+  TriadScanner.vcxproj -> D:\a\triad\triad\build-win\TriadScanner_artefacts\Release\TriadScanner.exe
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Tests.cpp
+  TriadSplit.cpp
+  SplitLink.cpp
+  WindowsSupport.cpp
+  juce_audio_utils.cpp
+  juce_audio_processors.cpp
+D:\a\triad\triad\Tests\Tests.cpp(1150,36): warning C4456: declaration of 'saved' hides previous local declaration [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+      D:\a\triad\triad\Tests\Tests.cpp(778,27):
+      see declaration of 'saved'
+  
+D:\a\triad\triad\Tests\Tests.cpp(1155,32): warning C4456: declaration of 'restored' hides previous local declaration [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+      D:\a\triad\triad\Tests\Tests.cpp(802,24):
+      see declaration of 'restored'
+  
+D:\a\triad\triad\Tests\Tests.cpp(1210,32): warning C4456: declaration of 'restored' hides previous local declaration [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+      D:\a\triad\triad\Tests\Tests.cpp(802,24):
+      see declaration of 'restored'
+  
+D:\a\triad\triad\Tests\Tests.cpp(1268,32): warning C4456: declaration of 'restored' hides previous local declaration [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+      D:\a\triad\triad\Tests\Tests.cpp(802,24):
+      see declaration of 'restored'
+  
+D:\a\triad\triad\Tests\Tests.cpp(1695,32): warning C4456: declaration of 'restored' hides previous local declaration [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+      D:\a\triad\triad\Tests\Tests.cpp(802,24):
+      see declaration of 'restored'
+  
+D:\a\triad\triad\Tests\Tests.cpp(2244,35): warning C4456: declaration of 'before' hides previous local declaration [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+      D:\a\triad\triad\Tests\Tests.cpp(2061,28):
+      see declaration of 'before'
+  
+D:\a\triad\triad\Tests\Tests.cpp(2264,35): warning C4456: declaration of 'before' hides previous local declaration [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+      D:\a\triad\triad\Tests\Tests.cpp(2061,28):
+      see declaration of 'before'
+  
+D:\a\triad\triad\Tests\Tests.cpp(2283,27): warning C4456: declaration of 'page' hides previous local declaration [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+      D:\a\triad\triad\Tests\Tests.cpp(2056,23):
+      see declaration of 'page'
+  
+C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244: 'initializing': conversion from '_Ty' to '_Ty2', possible loss of data [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:         with [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:         [ [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:             _Ty=int [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:         ] [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:         and [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:         [ [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:             _Ty2=float [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54): warning C4244:         ] [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+  (compiling source file '../Tests/Tests.cpp')
+      C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\utility(274,54):
+      the template instantiation context (the oldest one first) is
+          D:\a\triad\triad\Tests\Tests.cpp(818,82):
+          see reference to function template instantiation 'std::pair<const char *,float>::pair<const char(&)[7],int,0>(_Other1,_Other2 &&) noexcept' being compiled
+          with
+          [
+              _Other1=const char (&)[7],
+              _Other2=int
+          ]
+              D:\a\triad\triad\Tests\Tests.cpp(818,80):
+              see the first reference to 'std::pair<const char *,float>::pair' in 'main'
+  
+  juce_gui_extra.cpp
+  juce_gui_basics.cpp
+D:\a\triad\triad\deps\JUCE\modules\juce_gui_basics\juce_gui_basics.cpp(61): warning : This version of JUCE does not use the splash screen, the flag JUCE_DISPLAY_SPLASH_SCREEN is ignored [D:\a\triad\triad\build-win\TriadTests.vcxproj]
+  juce_graphics.cpp
+  juce_graphics_Harfbuzz.cpp
+  juce_events.cpp
+  juce_core.cpp
+  juce_core_CompilationTime.cpp
+  juce_data_structures.cpp
+  juce_audio_processors_headless.cpp
+  juce_audio_processors_headless_ara.cpp
+  juce_audio_basics.cpp
+  juce_audio_processors_headless_lv2_libs.cpp
+  juce_audio_formats.cpp
+  juce_audio_devices.cpp
+  juce_dsp.cpp
+  juce_graphics_Sheenbidi.c
+  TriadTests.vcxproj -> D:\a\triad\triad\build-win\TriadTests_artefacts\Release\TriadTests.exe
+
+  Checking File Globs
+  TriadCrashFixture.vcxproj -> D:\a\triad\triad\build-win\fixtures\Triad Crash Fixture.vst3\Contents\x86_64-win\Triad Crash Fixture.vst3
+  Generating TriadStress_artefacts/JuceLibraryCode/TriadStress_resources.rc
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  TriadStress_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadStress_rc_lib.dir\Release\TriadStress_rc_lib.lib
+  TriadScanner_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadScanner_rc_lib.dir\Release\TriadScanner_rc_lib.lib
+  Triad.vcxproj -> D:\a\triad\triad\build-win\Triad_artefacts\Release\Triad v14_SharedCode.lib
+  TriadScanner.vcxproj -> D:\a\triad\triad\build-win\TriadScanner_artefacts\Release\TriadScanner.exe
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Stress.cpp
+  WindowsSupport.cpp
+  juce_audio_utils.cpp
+  juce_audio_processors.cpp
+  juce_gui_extra.cpp
+D:\a\triad\triad\Tests\Stress.cpp(244,57): warning C4996: 'getenv': This function or variable may be unsafe. Consider using _dupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [D:\a\triad\triad\build-win\TriadStress.vcxproj]
+D:\a\triad\triad\Tests\Stress.cpp(1872,24): warning C4459: declaration of 'report' hides global declaration [D:\a\triad\triad\build-win\TriadStress.vcxproj]
+      D:\a\triad\triad\Tests\Stress.cpp(53,20):
+      see declaration of '`anonymous-namespace'::report'
+  
+D:\a\triad\triad\Tests\Stress.cpp(2204,25): warning C4456: declaration of 'effect' hides previous local declaration [D:\a\triad\triad\build-win\TriadStress.vcxproj]
+      D:\a\triad\triad\Tests\Stress.cpp(2079,26):
+      see declaration of 'effect'
+  
+D:\a\triad\triad\Tests\Stress.cpp(2189,23): warning C4996: 'getenv': This function or variable may be unsafe. Consider using _dupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [D:\a\triad\triad\build-win\TriadStress.vcxproj]
+  juce_gui_basics.cpp
+  juce_graphics.cpp
+  juce_graphics_Harfbuzz.cpp
+D:\a\triad\triad\deps\JUCE\modules\juce_gui_basics\juce_gui_basics.cpp(61): warning : This version of JUCE does not use the splash screen, the flag JUCE_DISPLAY_SPLASH_SCREEN is ignored [D:\a\triad\triad\build-win\TriadStress.vcxproj]
+  juce_events.cpp
+  juce_core.cpp
+  juce_core_CompilationTime.cpp
+  juce_data_structures.cpp
+  juce_audio_processors_headless.cpp
+  juce_audio_processors_headless_ara.cpp
+  juce_audio_processors_headless_lv2_libs.cpp
+  juce_audio_basics.cpp
+  juce_audio_formats.cpp
+  juce_audio_devices.cpp
+  juce_graphics_Sheenbidi.c
+  TriadStress.vcxproj -> D:\a\triad\triad\build-win\TriadStress_artefacts\Release\TriadStress.exe
+
+  Checking File Globs
+  TriadCrashFixture.vcxproj -> D:\a\triad\triad\build-win\fixtures\Triad Crash Fixture.vst3\Contents\x86_64-win\Triad Crash Fixture.vst3
+
+  Checking File Globs
+  Generating TriadTestEffect_artefacts/JuceLibraryCode/TriadTestEffect_resources.rc
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  TriadTestEffect_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadTestEffect_rc_lib.dir\Release\TriadTestEffect_rc_lib.lib
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  TestEffect.cpp
+  juce_audio_processors.cpp
+  juce_gui_extra.cpp
+  juce_gui_basics.cpp
+  juce_graphics.cpp
+  juce_graphics_Harfbuzz.cpp
+  juce_events.cpp
+  juce_core.cpp
+  juce_core_CompilationTime.cpp
+  juce_data_structures.cpp
+  juce_audio_processors_headless.cpp
+  juce_audio_processors_headless_ara.cpp
+  juce_audio_processors_headless_lv2_libs.cpp
+  juce_audio_basics.cpp
+  juce_audio_utils.cpp
+  juce_audio_formats.cpp
+  juce_audio_devices.cpp
+  juce_VST3ManifestHelper.cpp
+  juce_graphics_Sheenbidi.c
+  TriadTestEffect.vcxproj -> D:\a\triad\triad\build-win\TriadTestEffect_artefacts\Release\Triad Test Effect_SharedCode.lib
+  TriadTestEffect_vst3_helper.vcxproj -> D:\a\triad\triad\build-win\Release\TriadTestEffect_vst3_helper.exe
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  juce_audio_plugin_client_AAX.cpp
+  juce_audio_plugin_client_AAX_utils.cpp
+  juce_audio_plugin_client_ARA.cpp
+  juce_audio_plugin_client_LV2.cpp
+  juce_audio_plugin_client_Standalone.cpp
+  juce_audio_plugin_client_Unity.cpp
+  juce_audio_plugin_client_VST2.cpp
+  juce_audio_plugin_client_VST3.cpp
+     Creating library D:/a/triad/triad/build-win/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.lib and object D:/a/triad/triad/build-win/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.exp
+  TriadTestEffect_VST3.vcxproj -> D:\a\triad\triad\build-win\TriadTestEffect_artefacts\Release\VST3\Triad Test Effect.vst3\Contents\x86_64-win\Triad Test Effect.vst3
+  removing moduleinfo.json
+  creating D:/a/triad/triad/build-win/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3
+
+  Checking File Globs
+  Generating TriadTestSynth_artefacts/JuceLibraryCode/TriadTestSynth_resources.rc
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  TriadTestSynth_rc_lib.vcxproj -> D:\a\triad\triad\build-win\TriadTestSynth_rc_lib.dir\Release\TriadTestSynth_rc_lib.lib
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  TestSynth.cpp
+  juce_audio_processors.cpp
+  juce_gui_extra.cpp
+  juce_gui_basics.cpp
+  juce_graphics.cpp
+  juce_graphics_Harfbuzz.cpp
+  juce_events.cpp
+  juce_core.cpp
+  juce_core_CompilationTime.cpp
+  juce_data_structures.cpp
+  juce_audio_processors_headless.cpp
+  juce_audio_processors_headless_ara.cpp
+  juce_audio_processors_headless_lv2_libs.cpp
+  juce_audio_basics.cpp
+  juce_audio_utils.cpp
+  juce_audio_formats.cpp
+  juce_audio_devices.cpp
+  juce_VST3ManifestHelper.cpp
+  juce_graphics_Sheenbidi.c
+  TriadTestSynth.vcxproj -> D:\a\triad\triad\build-win\TriadTestSynth_artefacts\Release\Triad Test Synth_SharedCode.lib
+  TriadTestSynth_vst3_helper.vcxproj -> D:\a\triad\triad\build-win\Release\TriadTestSynth_vst3_helper.exe
+  Building Custom Rule D:/a/triad/triad/CMakeLists.txt
+  juce_audio_plugin_client_AAX.cpp
+  juce_audio_plugin_client_AAX_utils.cpp
+  juce_audio_plugin_client_ARA.cpp
+  juce_audio_plugin_client_LV2.cpp
+  juce_audio_plugin_client_Standalone.cpp
+  juce_audio_plugin_client_Unity.cpp
+  juce_audio_plugin_client_VST2.cpp
+  juce_audio_plugin_client_VST3.cpp
+     Creating library D:/a/triad/triad/build-win/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.lib and object D:/a/triad/triad/build-win/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.exp
+  TriadTestSynth_VST3.vcxproj -> D:\a\triad\triad\build-win\TriadTestSynth_artefacts\Release\VST3\Triad Test Synth.vst3\Contents\x86_64-win\Triad Test Synth.vst3
+  removing moduleinfo.json
+  creating D:/a/triad/triad/build-win/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3

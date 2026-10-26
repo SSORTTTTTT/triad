@@ -1,0 +1,83 @@
+﻿2026-10-26 01:12:10.698   Log opened. (Time zone: UTC+00:00)
+2026-10-26 01:12:10.698   Setup version: Inno Setup version 6.7.1
+2026-10-26 01:12:10.698   Original Setup EXE: D:\a\triad\triad\Installer\Triad-v14-0.15.0-Windows-x64-Setup.exe
+2026-10-26 01:12:10.698   Setup command line: /SL5="$A00A0,8410143,893952,D:\a\triad\triad\Installer\Triad-v14-0.15.0-Windows-x64-Setup.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=D:\a\triad\triad\install.log
+2026-10-26 01:12:10.698   Windows version: 10.0.20348
+2026-10-26 01:12:10.698   Windows architecture: x64 (64-bit)
+2026-10-26 01:12:10.698   Machine types supported by system: x86 x64
+2026-10-26 01:12:10.698   User privileges: Administrative
+2026-10-26 01:12:10.714   Administrative install mode: Yes
+2026-10-26 01:12:10.714   Install mode root key: HKEY_LOCAL_MACHINE
+2026-10-26 01:12:10.714   64-bit install mode: Yes
+2026-10-26 01:12:10.714   RedirectionGuard status for current process: Enabled in enforcing mode
+2026-10-26 01:12:10.714   Created protected temporary directory: C:\Users\RUNNER~1\AppData\Local\Temp\is-56Z6K13ZJ7.tmp
+2026-10-26 01:12:11.527   Found 5 files to register with RestartManager.
+2026-10-26 01:12:11.527   Calling RestartManager's RmGetList.
+2026-10-26 01:12:11.589   RmGetList finished successfully.
+2026-10-26 01:12:11.589   RestartManager found no applications using one of our files.
+2026-10-26 01:12:11.589   Starting the installation process.
+2026-10-26 01:12:11.605   Directory for uninstall files: C:\Program Files\Common Files\VST3
+2026-10-26 01:12:11.605   Creating new uninstall log: C:\Program Files\Common Files\VST3\unins000.dat
+2026-10-26 01:12:11.683   -- File entry --
+2026-10-26 01:12:11.683   Dest filename: C:\Program Files\Common Files\VST3\unins000.exe
+2026-10-26 01:12:11.683   Non-default bitness: 32-bit
+2026-10-26 01:12:11.808   Time stamp of our file: 2026-10-26 01:12:10.495
+2026-10-26 01:12:11.808   Installing the file.
+2026-10-26 01:12:11.824   Successfully installed the file.
+2026-10-26 01:12:11.824   -- File entry --
+2026-10-26 01:12:11.824   Dest filename: C:\Program Files\Common Files\VST3\Triad v14.vst3\Contents\Helpers\Triad Scanner.exe
+2026-10-26 01:12:11.824   Time stamp of our file: 2026-10-26 01:11:54.000
+2026-10-26 01:12:11.824   Installing the file.
+2026-10-26 01:12:11.824   Creating directory: C:\Program Files\Common Files\VST3\Triad v14.vst3
+2026-10-26 01:12:11.824   Creating directory: C:\Program Files\Common Files\VST3\Triad v14.vst3\Contents
+2026-10-26 01:12:11.824   Creating directory: C:\Program Files\Common Files\VST3\Triad v14.vst3\Contents\Helpers
+2026-10-26 01:12:11.871   Successfully installed the file.
+2026-10-26 01:12:11.871   -- File entry --
+2026-10-26 01:12:11.871   Dest filename: C:\Program Files\Common Files\VST3\Triad v14.vst3\Contents\Resources\moduleinfo.json
+2026-10-26 01:12:11.871   Time stamp of our file: 2026-10-26 01:11:54.000
+2026-10-26 01:12:11.871   Installing the file.
+2026-10-26 01:12:11.871   Creating directory: C:\Program Files\Common Files\VST3\Triad v14.vst3\Contents\Resources
+2026-10-26 01:12:11.871   Successfully installed the file.
+2026-10-26 01:12:11.871   -- File entry --
+2026-10-26 01:12:11.871   Dest filename: C:\Program Files\Common Files\VST3\Triad v14.vst3\Contents\x86_64-win\Triad v14.vst3
+2026-10-26 01:12:11.871   Time stamp of our file: 2026-10-26 01:11:54.000
+2026-10-26 01:12:11.871   Installing the file.
+2026-10-26 01:12:11.871   Creating directory: C:\Program Files\Common Files\VST3\Triad v14.vst3\Contents\x86_64-win
+2026-10-26 01:12:12.027   Successfully installed the file.
+2026-10-26 01:12:12.027   -- File entry --
+2026-10-26 01:12:12.027   Dest filename: C:\Program Files\Common Files\VST3\Triad Time.vst3\Contents\Resources\moduleinfo.json
+2026-10-26 01:12:12.027   Time stamp of our file: 2026-10-26 01:11:54.000
+2026-10-26 01:12:12.027   Installing the file.
+2026-10-26 01:12:12.027   Creating directory: C:\Program Files\Common Files\VST3\Triad Time.vst3
+2026-10-26 01:12:12.027   Creating directory: C:\Program Files\Common Files\VST3\Triad Time.vst3\Contents
+2026-10-26 01:12:12.027   Creating directory: C:\Program Files\Common Files\VST3\Triad Time.vst3\Contents\Resources
+2026-10-26 01:12:12.043   Successfully installed the file.
+2026-10-26 01:12:12.043   -- File entry --
+2026-10-26 01:12:12.043   Dest filename: C:\Program Files\Common Files\VST3\Triad Time.vst3\Contents\x86_64-win\Triad Time.vst3
+2026-10-26 01:12:12.043   Time stamp of our file: 2026-10-26 01:11:54.000
+2026-10-26 01:12:12.043   Installing the file.
+2026-10-26 01:12:12.043   Creating directory: C:\Program Files\Common Files\VST3\Triad Time.vst3\Contents\x86_64-win
+2026-10-26 01:12:12.200   Successfully installed the file.
+2026-10-26 01:12:12.200   -- File entry --
+2026-10-26 01:12:12.200   Dest filename: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents\Resources\moduleinfo.json
+2026-10-26 01:12:12.200   Time stamp of our file: 2026-10-26 01:11:54.000
+2026-10-26 01:12:12.200   Installing the file.
+2026-10-26 01:12:12.200   Creating directory: C:\Program Files\Common Files\VST3\Triad Split.vst3
+2026-10-26 01:12:12.200   Creating directory: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents
+2026-10-26 01:12:12.200   Creating directory: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents\Resources
+2026-10-26 01:12:12.215   Successfully installed the file.
+2026-10-26 01:12:12.215   -- File entry --
+2026-10-26 01:12:12.215   Dest filename: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents\x86_64-win\Triad Split.vst3
+2026-10-26 01:12:12.215   Time stamp of our file: 2026-10-26 01:11:54.000
+2026-10-26 01:12:12.215   Installing the file.
+2026-10-26 01:12:12.215   Creating directory: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents\x86_64-win
+2026-10-26 01:12:12.341   Successfully installed the file.
+2026-10-26 01:12:12.341   Saving uninstall information.
+2026-10-26 01:12:12.341   Creating new uninstall key: HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6A0E2F5B-3C1D-4E8A-9B7F-5D2C1A4E7B90}_is1
+2026-10-26 01:12:12.341   Writing uninstall key values.
+2026-10-26 01:12:12.341   Detected previous non administrative install? No
+2026-10-26 01:12:12.341   Detected previous administrative 32-bit install? No
+2026-10-26 01:12:12.356   Installation process succeeded.
+2026-10-26 01:12:12.356   Need to restart Windows? No
+2026-10-26 01:12:12.356   Deinitializing Setup.
+2026-10-26 01:12:12.372   Log closed.
