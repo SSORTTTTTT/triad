@@ -115,6 +115,13 @@ palette of shapes underneath (folder, page 49/182, the shapes with their hearts)
 - **Hearts match:** hearting a shape in the palette also fills the heart on the same shape in the numbered patterns at
   the top, and the other way round (one FAVORITES list, as now).
 
+### Triad: mix boxes instead of round knobs (Thomas, 2026-10-26) — mock-up, waiting for Thomas
+
+Every round knob in Triad (each slot's mix, each band's BAND MIX; his photo: `docs/mockups/triad-bands/thomas-request-2026-10-26.jpg`)
+becomes a box like Triad Time's MIX AND SMOOTHING: the value on top (100%) and a line meter under it that fills from
+left to right in the band's colour; drag left/right or up/down to set it, double-click to type a value. Mock-up:
+`docs/mockups/triad-bands/mix-boxes.png` and `mix-boxes-close-up.png` (`tools/mockups/build4.py`).
+
 ### Redesign of the interface (Thomas, 2026-10-23) — later
 
 A redesign of how Triad, Triad Time and Triad Split look and are used, to make them more usable, keeping everything
