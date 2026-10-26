@@ -83,6 +83,10 @@ Mock-ups to pick from (pictures only, `docs/mockups/triad-time-layout/`, made by
   patterns each has (the current one ticked), and LFO SHAPES, which opens its folders to the side (BASIC, SQUARES,
   STEPS, TRIANGLES, ANGLES, HARD + CURVE, SOFT).
 - GENERATE as it is.
+- **Go to a page (Thomas, 2026-10-26):** click the page number (1 / 200) to type or pick a page and jump straight
+  there, instead of stepping with the arrows.
+- **TIME and VOLUME the same:** Thomas approved this layout ("perfect"); the VOLUME tab gets exactly the same layout as
+  TIME. Thomas works on the rest of the plug-ins' interface next.
 
 Earlier the same morning: **Thomas picked B**, with MIX AND SMOOTHING shrunk to a small box (his sizes:
 `thomas-option-B-sizes-2026-10-26.jpg`). Four versions to choose from (`option-b-*.png`, `tools/mockups/build2.py`):
