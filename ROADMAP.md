@@ -53,7 +53,29 @@ coming in, the favorite system, and the 2,000 presets for each category ... just
 "The next big step will be working on ... the aesthetics of the plugin": the look and feel of Triad, Triad Time and
 Triad Split (see "Look and feel" below), when Thomas sends his references.
 
-### Triad Time: the numbered patterns follow the palette page (Thomas, 2026-10-23) — later
+### Triad Time: a new layout (Thomas, 2026-10-26) — next update, waiting for Thomas to pick an option
+
+Thomas (photo: `docs/mockups/triad-time-layout/thomas-request-2026-10-26.jpg`): the pattern shapes matter most, so
+make them bigger and more prominent; MIX AND SMOOTHING is good but can be a smaller window with smaller knobs.
+- **MIX AND SMOOTHING moves up** into the small area at the top (the corner), with smaller knobs.
+- **The row of pattern boxes at the top moves down** to where MIX AND SMOOTHING was, bigger, without numbers:
+  organised by category (OCTAVE DOWN, OCTAVE UP, REVERSE ...), **10 presets a page**, each with its small heart
+  (red when a favorite) and the one in use outlined in light purple. The small palette row under the grid goes into it.
+- **GENERATE stays where it is.** The purple look of the top area, everywhere. Everything else stays as it is.
+
+Mock-ups to pick from (pictures only, `docs/mockups/triad-time-layout/`, made by `tools/mockups/build.py`):
+- **A, "corner":** MIX AND SMOOTHING as a strip in the top-right corner (5 small knobs); below the grid, categories as
+  tabs across the top, the page arrows on the right, 10 big shapes (2 rows of 5).
+- **B, "category list":** the knobs smaller still in the corner; the categories as a list on the left with how many
+  patterns each has (FAVORITES, USER, the TIME folders, the LFO shapes); 10 shapes with their names; pages underneath.
+- **C, "side window":** MIX AND SMOOTHING as a small window to the right of the grid (knobs stacked); a category menu,
+  FAVORITES and a search box above 10 shapes with their names.
+
+To settle when building it: the pattern slots (1 to 12 for TIME and for VOLUME) are also an automatable parameter in
+the DAW ("TIME pattern", "VOLUME pattern"), so the new layout still needs a small way to pick one of the 12 (projects and
+automation that switch patterns keep working).
+
+### Triad Time: the numbered patterns follow the palette page (Thomas, 2026-10-23) — later (folded into the new layout above)
 
 Thomas is keeping this layout for Triad Time: the numbered patterns along the top (1, 2, 3 ...), the grid, and the
 palette of shapes underneath (folder, page 49/182, the shapes with their hearts).
