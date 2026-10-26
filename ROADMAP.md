@@ -71,7 +71,20 @@ Mock-ups to pick from (pictures only, `docs/mockups/triad-time-layout/`, made by
 - **C, "side window":** MIX AND SMOOTHING as a small window to the right of the grid (knobs stacked); a category menu,
   FAVORITES and a search box above 10 shapes with their names.
 
-**Thomas picked B (2026-10-26)**, with MIX AND SMOOTHING shrunk to a small box (his sizes:
+**The layout to build (Thomas, 2026-10-26, later the same morning)** — `chosen-1-closed.png`,
+`chosen-2-category-menu-open.png`, `chosen-3-lfo-shapes-to-the-side.png` (`tools/mockups/build3.py`; his notes:
+`thomas-choice-2026-10-26-*.jpg`):
+- **From the "next to SAVE" version, exactly as it is:** the header (tips at the top right), the grid's size, the toolbar
+  with every button, the move-the-wave buttons right of 1/2, and MIX AND SMOOTHING next to SAVE as value boxes, each
+  with its little meter (not knobs).
+- **From option C, the preset area:** the category button (OCTAVE DOWN), FAVORITES, the search box, pages (1 / 200) and
+  10 bigger shapes with their names, hearts, and the one in use outlined.
+- **The category button opens a menu** with option B's list: FAVORITES and USER, the TIME folders with how many
+  patterns each has (the current one ticked), and LFO SHAPES, which opens its folders to the side (BASIC, SQUARES,
+  STEPS, TRIANGLES, ANGLES, HARD + CURVE, SOFT).
+- GENERATE as it is.
+
+Earlier the same morning: **Thomas picked B**, with MIX AND SMOOTHING shrunk to a small box (his sizes:
 `thomas-option-B-sizes-2026-10-26.jpg`). Four versions to choose from (`option-b-*.png`, `tools/mockups/build2.py`):
 - **Where:** in the top-right corner under the gear (about 210 x 56), or in the toolbar between SAVE and the buttons on
   the right (about 230 x 56; the tips then move to the top right and the grid gets taller).

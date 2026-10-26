@@ -28,7 +28,7 @@ def mix_box(x, y, w, h, style):
 CURSOR = ('<svg style="position:absolute;left:{x}px;top:{y}px" width="16" height="22" viewBox="0 0 16 22">'
           '<path d="M1 1 L1 17 L5 13 L8 20 L11 19 L8 12 L14 12 Z" fill="#ffffff" stroke="#111" stroke-width="1.3"/></svg>')
 
-def toolbar2(y, compact=False):
+def toolbar2(y, compact=False, tip=True):
     """The toolbar with the new pair of buttons that move the wave, right of 1/2; returns (html, left end, right start)."""
     out = button(16, y, 104, 36, '1 Bar') + button(126, y, 34, 36, '&#9664;', size=11) + button(164, y, 34, 36, '&#9654;', size=11)
     out += button(208, y, 112, 36, 'GRID 1/64') + button(326, y, 76, 36, 'SNAP', C['pink'], '#2a0d24') + button(408, y, 76, 36, 'SAVE')
@@ -56,6 +56,8 @@ def toolbar2(y, compact=False):
             out += button(x, y, w, 36, lab, size=14 if len(lab) > 3 else 13)
     # Hovering the left one: what it does (as ShaperBox's status line), and the pointer
     sx, sw = shift_left
+    if not tip:
+        return out, 484, places[-1][0]
     tip = 'Move wave or selection left. Shift-click for fine adjustment.'
     out += box(sx + sw / 2 - 170, y - 34, 340, 24, tip, 'background:#f4eefc;color:#1b1030;border-radius:6px;font-size:11px;font-weight:700;'
                'display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.45);')
