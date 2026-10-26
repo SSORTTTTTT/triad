@@ -71,6 +71,17 @@ Mock-ups to pick from (pictures only, `docs/mockups/triad-time-layout/`, made by
 - **C, "side window":** MIX AND SMOOTHING as a small window to the right of the grid (knobs stacked); a category menu,
   FAVORITES and a search box above 10 shapes with their names.
 
+**Thomas picked B (2026-10-26)**, with MIX AND SMOOTHING shrunk to a small box (his sizes:
+`thomas-option-B-sizes-2026-10-26.jpg`). Four versions to choose from (`option-b-*.png`, `tools/mockups/build2.py`):
+- **Where:** in the top-right corner under the gear (about 210 x 56), or in the toolbar between SAVE and the buttons on
+  the right (about 230 x 56; the tips then move to the top right and the grid gets taller).
+- **How:** five mini knobs with their names (the value shows while turning one), or five value boxes (name, value and a
+  thin bar; drag up or down to change, as ShaperBox's Master Mix).
+
+**Move the wave (Thomas, 2026-10-26):** two small buttons right of 1/2, as in ShaperBox: move the whole wave, or the
+selected points, left or right by one grid step (shift-click: a fine step), wrapping around the pattern. Hovering one
+says so: "Move wave or selection left. Shift-click for fine adjustment." (Could go on Triad's LFO grid too.)
+
 To settle when building it: the pattern slots (1 to 12 for TIME and for VOLUME) are also an automatable parameter in
 the DAW ("TIME pattern", "VOLUME pattern"), so the new layout still needs a small way to pick one of the 12 (projects and
 automation that switch patterns keep working).
