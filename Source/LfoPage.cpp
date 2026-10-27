@@ -493,10 +493,25 @@ void LfoPage::paint (juce::Graphics& g)
                           routeView.getBounds().reduced (4, 0).removeFromTop (60), juce::Justification::topLeft, 4);
     }
     // How to edit, top right (two lines, as Triad Time's).
+    // With many bands the room left is narrow: shorter tips, or none (the status line explains each part too).
     g.setColour (dimTextColour);
-    g.setFont (juce::FontOptions (10.5f));
+    const juce::Font tipFont (juce::FontOptions (10.5f));
+    g.setFont (tipFont);
     auto tips = hintArea;
-    g.drawText (u8 ("Double-click: add point \xc2\xb7 Drag: move \xc2\xb7 Double-click a point: delete"), tips.removeFromTop (tips.getHeight() / 2),
-                juce::Justification::bottomRight);
-    g.drawText (u8 ("Drag the small dot: curve \xc2\xb7 Drag across points: select \xc2\xb7 Right-click: more"), tips, juce::Justification::topRight);
+    const auto fits = [&] (const juce::String& a, const juce::String& b)
+    {
+        return juce::GlyphArrangement::getStringWidth (tipFont, a) <= (float) tips.getWidth() && juce::GlyphArrangement::getStringWidth (tipFont, b) <= (float) tips.getWidth();
+    };
+    juce::String first = u8 ("Double-click: add point \xc2\xb7 Drag: move \xc2\xb7 Double-click a point: delete"),
+                 second = u8 ("Drag the small dot: curve \xc2\xb7 Drag across points: select \xc2\xb7 Right-click: more");
+    if (! fits (first, second))
+    {
+        first = u8 ("Double-click: add / delete \xc2\xb7 Drag: move");
+        second = u8 ("Drag across: select \xc2\xb7 Right-click: more");
+    }
+    if (fits (first, second))
+    {
+        g.drawText (first, tips.removeFromTop (tips.getHeight() / 2), juce::Justification::bottomRight);
+        g.drawText (second, tips, juce::Justification::topRight);
+    }
 }
