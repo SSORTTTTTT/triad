@@ -2025,8 +2025,8 @@ int main (int argc, char** argv)
                 require (std::abs (mod::evaluate (preview.getLfoInfo (0, lfoIndex).shape, 0.5f) - 0.75f) < 0.01f, "Dragging a point moves it");
                 shapeEditor.apply ([] (const mod::Shape& s) { return mod::repeated (s, 2); });
                 require (preview.getLfoInfo (0, lfoIndex).shape.size() >= 5, "2x from the toolbar");
-                // The grid on screen has the proportions the presets and the generator draw their angles for.
-                require (std::abs (shapeEditor.plotAspect() / mod::plotAspect - 1.0f) < 0.08f, "The LFO grid's proportions match the angles (30/45/60 degrees look right)");
+                // 0.17.0: the grid is wider than the 1.87 : 1 the GEN folders were drawn for (the shapes browser under it); the
+                // dice draws for the grid as it is on screen (checked after the generator's tests below).
                 // The generator: the dice draws a new shape in the sliders' style; Undo brings the old one back.
                 {
                     const auto shapeBefore = preview.getLfoInfo (0, lfoIndex).shape;
@@ -2050,6 +2050,24 @@ int main (int argc, char** argv)
                     page.setGeneratorStyle (0.0f, 1.0f, 0.5f);
                     page.generate();
                     require (generatorTests::look (preview.getLfoInfo (0, lfoIndex).shape).steps == 0, "Soft 100% draws curves only");
+                    // The dice's straight lines run at 30, 45, 60 or 75 degrees on the grid as it is shown.
+                    page.setGeneratorStyle (1.0f, 0.0f, 0.35f);
+                    int diceLines = 0, diceClassed = 0;
+                    for (int i = 0; i < 24; ++i)
+                    {
+                        page.generate();
+                        const auto s = preview.getLfoInfo (0, lfoIndex).shape;
+                        for (size_t k = 0; k + 1 < s.size(); ++k)
+                            if (! juce::exactlyEqual (s[k].x, s[k + 1].x) && ! juce::exactlyEqual (s[k].y, s[k + 1].y) && std::abs (s[k].curve) < 1.0e-3f)
+                            {
+                                ++diceLines;
+                                const float angle = mod::lineAngle (s[k], s[k + 1], shapeEditor.plotAspect());
+                                for (int c : { 30, 45, 60, 75 }) if (std::abs (angle - (float) c) <= 6.0f) { ++diceClassed; break; }
+                            }
+                    }
+                    std::cout << "LFO grid " << shapeEditor.plot().getWidth() << " x " << shapeEditor.plot().getHeight() << ": the dice's lines at 30/45/60/75 degrees: "
+                              << diceClassed << " of " << diceLines << std::endl;
+                    require (diceClassed >= diceLines * 80 / 100, "The dice's lines run at 30/45/60/75 degrees on the grid as shown");
                 }
                 // The preset palette: a category at a time, a page at a time; a click replaces the shape.
                 int generatedFolders = 0;
@@ -2236,7 +2254,8 @@ int main (int argc, char** argv)
                     editor->showLfo (0, 1);
                     editor->refreshNow();
                     auto& page = editor->getLfoPage();
-                    closeUp (page, page.getLocalBounds().removeFromBottom (78).withWidth (page.getEditor().getRight()), "lfo-toolbar");
+                    const auto gridInPage = page.getLocalArea (&page.getEditor(), page.getEditor().getLocalBounds());
+                    closeUp (page, juce::Rectangle<int> (0, gridInPage.getBottom(), page.getWidth(), 64), "lfo-toolbar");   // under the grid (0.17.0)
                     editor->setTab (TriadEditor::Tab::bands);
                     editor->refreshNow();
                     // GUI stress: 400 random interface actions (tabs, window sizes, bands, slopes, LIVE, LFO folders
