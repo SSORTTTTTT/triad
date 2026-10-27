@@ -150,6 +150,40 @@ Also (Thomas):
   shapes, matrix, Triad Time's) in this look. The colour editor (themes) stays as it is.
 - Smooth as now: up to 120 frames a second.
 
+### Every menu, the colour editor, Plum's dark bands (Thomas, 2026-10-26, later) — pictures; LEARN done
+
+Thomas likes the menus in the new look: "a lot more legible and easier to differentiate what's going on". Every menu in
+Triad, Triad Time and Triad Split, with the words the code uses now, is in `docs/mockups/triad-menus/all/`
+(`tools/mockups/build8.py`), so none is missed when they are built:
+1. Preset menu; gear menu (with Startup preset open); gear > THEME; gear > EFFECT LIST.
+2. The plug-in menu (VST3 > by company > plug-ins); a slot's menu (open, replace, LFO, favorite, copy / paste, move,
+   bypass, remove).
+3. A band's name menu (with Load chain preset open); right-click a band in the band display; right-click a divider;
+   the slope menu (with the delay at the crossover beside each slope); PRE / POST's menu.
+4. LFO: + ROUTE TO (with LEARN listing the band's effects); TRIGGER (with Threshold open); right-click the grid; GRID.
+5. The shape browser (LFO tab and Triad Time): the length in four columns; go to a page (type a number, or jump to a
+   folder); the folder button (with Triad Time's patterns one menu away); right-click one of your shapes; the thumbs.
+6. MATRIX: SOURCE; DESTINATION (an effect's knobs in groups, opening to the side). Triad Split: the gear (themes) and
+   LINK (OFF, groups A-H). The name box (Save as new preset, Save chain, Rename) and tooltips in the same look. The
+   Mac's own file windows (Browse for a plug-in file, Add a plug-in folder) stay as macOS draws them.
+7. Triad Time: the gear; the folder button (TIME folders first, LFO SHAPES to the side). Its other menus are the LFO
+   tab's; the VOLUME tab is the same as TIME.
+
+Also (Thomas):
+- **The bands keep Plum's own near-black band area.** The new look changes the menus and the controls, not the
+  theme's colours: on Plum the band display is #140d18, the band panels #1e1624, the window #2a1f30, so the band
+  colours stay easy to tell apart. `0 BANDS - Plum dark band area.png`.
+- **The colour editor (Custom), cleaner, same layout.** He likes its layout and wants it cleaner (this replaces "the
+  colour editor stays as it is"): the nine colours on the left (colour, name, hex, back-to-Triad's), the band colours
+  under them, the chosen colour's picker on the right drawn by Triad (a square, a hue strip, RED / GREEN / BLUE boxes
+  with meters, instead of the grey sliders), RANDOM COLOURWAY, then MAKE READABLE, the name, SAVE AS, CANCEL, DONE;
+  START FROM as a menu in the new look. `8 COLOURS - Custom.png`, `9 COLOURS - Start from open.png`.
+- **Colour previews are squares, not circles**: the theme swatches in the menus, the nine colours, the band colours.
+- **LEARN opens the effect's window** — done in main (6c0b48e), in the next version: if the window is closed LEARN
+  opens it; if it is open already it is left exactly as it is (its page, its settings: it may have taken a few clicks
+  to get there). With several effects in the band, LEARN lists them (pick the one to open); a knob moved in any of the
+  band's open windows is linked. Also fixed: the TRIGGER menu's title showed "Â·" for its dot.
+
 ### Menus in Triad Time's new look (Thomas, 2026-10-26) — mock-ups, waiting for Thomas
 
 Every menu in Triad and Triad Time (the plug-in menu, the LFO shapes menu, the presets, the gear ...) drawn in the
