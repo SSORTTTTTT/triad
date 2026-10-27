@@ -307,6 +307,23 @@ inline void run (const juce::File& screenshotFolder)
             for (size_t s = from; s < to; ++s) e += (double) out[s] * out[s];
             return std::sqrt (e / (double) (to - from));
         };
+        {
+            // TIME plays first unless the tabs are swapped: in a new Triad Time, and in projects saved before the swap.
+            TriadTime fresh;
+            require (! fresh.isVolumeFirst(), "TIME plays first to start with (TIME, then VOLUME)");
+            TriadTime swapped;
+            swapped.setVolumeFirst (true);
+            juce::MemoryBlock saved;
+            swapped.getStateInformation (saved);
+            TriadTime reopened;
+            reopened.setStateInformation (saved.getData(), (int) saved.getSize());
+            require (reopened.isVolumeFirst(), "The swapped order is saved with the project");
+            auto old = juce::parseXML (R"(<TriadTime version="2" timeMix="1" volumeMix="1"/>)");
+            juce::MemoryBlock oldState;
+            juce::AudioProcessor::copyXmlToBinary (*old, oldState);
+            swapped.setStateInformation (oldState.getData(), (int) oldState.getSize());
+            require (! swapped.isVolumeFirst(), "A project saved before the swap existed plays TIME first");
+        }
         const double timeFirst = lateLevel (false), volumeFirst = lateLevel (true);
         std::cout << "Triad Time order: second half of the bar " << timeFirst << " (TIME then VOLUME), " << volumeFirst << " (VOLUME then TIME)" << std::endl;
         require (timeFirst > 0.1 && volumeFirst < 0.01,

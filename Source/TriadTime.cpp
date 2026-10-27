@@ -546,6 +546,8 @@ void TriadTime::setStateInformation (const void* data, int size)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (p))
             if (xml->hasAttribute (withId->getParameterID()))
                 p->setValueNotifyingHost ((float) xml->getDoubleAttribute (withId->getParameterID()));
+    // Saved before the order could be swapped (0.17.0): TIME plays first, as it always did.
+    if (! xml->hasAttribute ("volumeFirst") && volumeFirst != nullptr) volumeFirst->setValueNotifyingHost (0.0f);
     for (int e = 0; e < 2; ++e)
         for (int s = 0; s < numSlots; ++s) setShape (e, s, slotPreset (e, s), false);
     for (auto* x : xml->getChildIterator())
