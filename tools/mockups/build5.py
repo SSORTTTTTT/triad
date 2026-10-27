@@ -10,6 +10,7 @@ import build4
 from build4 import BAND, mix_box, band_strip, led
 
 W, H = 1100, 760
+OUTLINES = True   # the band curves' outline (False: only the see-through colours, as Thomas sees it)
 CURSOR = ('<svg style="position:absolute;left:{x}px;top:{y}px" width="16" height="22" viewBox="0 0 16 22">'
           '<path d="M1 1 L1 17 L5 13 L8 20 L11 19 L8 12 L14 12 Z" fill="#ffffff" stroke="#111" stroke-width="1.3"/></svg>')
 
@@ -40,8 +41,9 @@ def crossovers_now(x, y, w, h):
             db = max(-30.0, min(0.0, 20 * math.log10(max(m, 1e-9))))
             pts.append((xx, top + (bottom - top) * (-db / 30.0)))
         line = ' '.join(f'{a:.1f},{c:.1f}' for a, c in pts)
-        svg.append(f'<polygon points="{gx},{bottom} {line} {gx + gw},{bottom}" fill="{BAND[b]}" fill-opacity="0.13"/>')
-        svg.append(f'<polyline points="{line}" fill="none" stroke="{BAND[b]}" stroke-opacity="0.6" stroke-width="1.3"/>')
+        svg.append(f'<polygon points="{gx},{bottom} {line} {gx + gw},{bottom}" fill="{BAND[b]}" fill-opacity="{0.13 if OUTLINES else 0.17}"/>')
+        if OUTLINES:
+            svg.append(f'<polyline points="{line}" fill="none" stroke="{BAND[b]}" stroke-opacity="0.6" stroke-width="1.3"/>')
     base = gy + gh + 6
     d = [fx(c, gx, gw) for c in cuts]
     for dd in d:
@@ -398,7 +400,7 @@ def toolbar_lfo(y, hover_right=True):
             out += button(bx, y, bw, 36, icon, C['tileHi'] if hov else C['tile'])
             if hov:
                 tip = 'Move the 4 selected points right. Shift-click for fine adjustment.'
-                out += box(bx + bw / 2 - 210, y - 34, 360, 24, tip, 'background:#f4eefc;color:#1b1030;border-radius:6px;font-size:11px;font-weight:700;'
+                out += box(bx + bw / 2 - 330, y - 34, 360, 24, tip, 'background:#f4eefc;color:#1b1030;border-radius:6px;font-size:11px;font-weight:700;'
                            'display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.45);')
                 out += box(bx + bw / 2 - 5, y - 11, 10, 6, '', 'background:#f4eefc;clip-path:polygon(0 0,100% 0,50% 100%);')
                 out += CURSOR.format(x=bx + bw - 9, y=y + 22)

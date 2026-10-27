@@ -126,6 +126,30 @@ Thomas, the same evening: he likes the boxes ("the metering thing ... looks good
 exactly as it does now, the crossover display above all (the first mock-up's band shapes were wrong). Redone with the
 display drawn as the plug-in draws it (each band's real response): `mix-boxes-crossovers-as-now.png`.
 
+### The next version: everything together (Thomas, 2026-10-26 evening) — waiting for his yes or no, then build it
+
+Thomas: "start building the plugin looking like this with a combination of all these factors" once he approves the
+pictures in `docs/mockups/together/` (`tools/mockups/build6.py`):
+1. `1-bands.png` — BANDS exactly as now, with the mix boxes (value and a line meter) instead of round knobs; the band
+   curves without outlines, only their see-through colours crossing (as he sees them in the plug-in).
+2. `2-bands-plug-in-menu.png` — the plug-in menu in the new look, FAVORITES (all, A-Z) and the favorites by type.
+3. `3-bands-gear-menu.png` — the gear menu in the new look, its items grouped (EFFECT LIST opens to the side), with
+   a new setting: **Favorites by type** (off: FAVORITES lists them all A-Z, as now).
+4. `4-lfo.png` — the LFO tab in Triad Time's layout, ROUTING at the side (his pick): each route a small card (on/off,
+   remove, amount box with its meter, INV), the list scrolls; + ROUTE TO and LEARN below; points selected and moved.
+5. `5-lfo-shape-menu.png` — its shape menu ("perfect").
+6. `6-matrix.png` — the MATRIX tab in the new look: amount boxes with meters, SOURCE / DESTINATION as menus in the
+   new look (a slot's knobs open to the side, LEARN at the bottom).
+7. `7-triad-time.png` — Triad Time's approved layout.
+
+Also (Thomas):
+- **Each plug-in shows its own shapes first:** Triad Time opens on its TIME folders, the LFO shapes one menu away
+  (LFO SHAPES); Triad's LFO tab opens on the LFO folders, Triad Time's patterns one menu away (TRIAD TIME: PITCH AND
+  CHOPS), as in the pictures.
+- **No grey system menus anywhere:** every menu (plug-ins, presets, chains, the band and slot menus, the gear, LFO
+  shapes, matrix, Triad Time's) in this look. The colour editor (themes) stays as it is.
+- Smooth as now: up to 120 frames a second.
+
 ### Menus in Triad Time's new look (Thomas, 2026-10-26) — mock-ups, waiting for Thomas
 
 Every menu in Triad and Triad Time (the plug-in menu, the LFO shapes menu, the presets, the gear ...) drawn in the
