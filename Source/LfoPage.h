@@ -61,7 +61,8 @@ public:
     juce::File saveShapeToUser (const juce::String& name) { return shapes.saveShapeToUser (name); }
     juce::Button& getSaveButton() noexcept { return shapes.getSaveButton(); }
     void showUserShapeMenu (const juce::File& file) { shapes.showUserShapeMenu (file); }
-    void startLearn();   // LEARN: the next knob moved in one of the band's effect windows is linked to this LFO
+    void startLearn (int slot);   // LEARN: the next knob moved in one of the band's effect windows is linked to this LFO
+                                  // (opens the window of this slot's effect if it is closed)
     juce::Button& getAddRouteButton() noexcept { return addRouteButton; }
     // TRIGGER (0.14.0), right of the LFO tabs: SONG or AUDIO for this band's LFOs (with what it listens to, the threshold
     // and when a new sound restarts them); while AUDIO it shows the level, the threshold and a light at every restart.

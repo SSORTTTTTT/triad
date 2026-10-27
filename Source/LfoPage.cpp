@@ -193,18 +193,39 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
     addRouteButton.onClick = [this]
     {
         if (processor.isLearningParameter()) { processor.cancelParameterLearn(); updateToolbar(); return; }
-        enum { learnId = 100000 };
+        enum { learnId = 100000 };   // + the slot whose window LEARN opens
         juce::PopupMenu menu;
         menu.addSectionHeader ("ROUTE " + processor.getLfoInfo (band, lfo).name.toUpperCase() + " TO");
         std::vector<TriadProcessor::Destination> list;
         addDestinationItems (menu, processor, band, nullptr, list);
         menu.addSeparator();
-        menu.addItem (learnId, "LEARN: move a knob in an effect's window...", processor.getSlotCount (band) > 0);
+        // LEARN opens the effect's window if it is closed (an open one is left as it is). With several effects,
+        // pick the one to open; a knob moved in any of the band's open windows is linked.
+        std::vector<int> loaded;
+        for (int s = 0; s < processor.getSlotCount (band); ++s)
+            if (processor.getSlotInfo (band, s).loaded) loaded.push_back (s);
+        if (loaded.size() == 1)
+        {
+            menu.addItem (learnId + loaded[0], "LEARN: move a knob in " + processor.getSlotInfo (band, loaded[0]).name + "'s window...");
+        }
+        else if (loaded.size() > 1)
+        {
+            juce::PopupMenu effects;
+            effects.addSectionHeader ("OPEN ITS WINDOW, THEN MOVE A KNOB");
+            for (int s : loaded)
+                effects.addItem (learnId + s, juce::String (s + 1) + u8 (" \xc2\xb7 ") + processor.getSlotInfo (band, s).name
+                                                  + (processor.isEffectWindowOpen (band, s) ? "  (open)" : ""));
+            menu.addSubMenu ("LEARN: move a knob in an effect's window", effects);
+        }
+        else
+        {
+            menu.addItem (learnId, "LEARN: move a knob in an effect's window...", false);
+        }
         juce::Component::SafePointer<LfoPage> safe (this);
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&addRouteButton), [safe, list] (int choice)
         {
             if (safe == nullptr) return;
-            if (choice == learnId) { safe->startLearn(); return; }
+            if (choice >= learnId) { safe->startLearn (choice - learnId); return; }
             if (choice < 1 || choice > (int) list.size()) return;
             safe->processor.addRoute (safe->band, safe->lfo, list[(size_t) choice - 1]);
             safe->refresh();
@@ -226,7 +247,7 @@ void LfoPage::showTriggerMenu()
     const auto s = processor.getTrigger (band);
     const auto name = TriadProcessor::isExtraChain (band) ? TriadProcessor::chainName (band) : "BAND " + juce::String (band + 1);
     juce::PopupMenu menu;
-    menu.addSectionHeader ("TRIGGER  " + name + u8 (" Â· ALL ITS LFOS"));
+    menu.addSectionHeader ("TRIGGER  " + name + u8 (" \xc2\xb7 ALL ITS LFOS"));
     menu.addItem (songId, "SONG: follow the song (as before)", true, ! s.audio);
     menu.addItem (audioId, "AUDIO: start when sound comes in", true, s.audio);
     menu.addSectionHeader ("LISTEN TO");
@@ -284,7 +305,7 @@ void LfoPage::select (int b, int l)
     builtSignature.clear();
     refresh();
 }
-void LfoPage::startLearn()
+void LfoPage::startLearn (int slot)
 {
     if (! processor.beginParameterLearn (band, lfo))
     {
@@ -292,11 +313,9 @@ void LfoPage::startLearn()
                                                                  : juce::String ("LEARN: this band has no effect loaded"));
         return;
     }
-    // With a single effect in the band, open its window to move a knob in.
-    int loaded = -1, count = 0;
-    for (int s = 0; s < processor.getSlotCount (band); ++s)
-        if (processor.getSlotInfo (band, s).loaded) { loaded = s; ++count; }
-    if (count == 1) processor.showEffect (band, loaded);
+    // Open the effect's window to move a knob in. If it is open already it is left exactly as it is: the page
+    // it is on and its settings stay (it may have taken a few clicks to get there).
+    processor.showEffectIfClosed (band, slot);
     updateToolbar();
 }
 void LfoPage::refresh()

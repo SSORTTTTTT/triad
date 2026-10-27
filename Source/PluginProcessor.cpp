@@ -1932,6 +1932,18 @@ void TriadProcessor::showEffect (int band, int slot)
     s->window->toFront (true);
     EffectGraveyard::renew();   // after the window managers this window needed
 }
+bool TriadProcessor::isEffectWindowOpen (int band, int slot) const
+{
+    const auto* s = slotAt (band, slot);
+    return s != nullptr && s->window != nullptr && s->window->isVisible();
+}
+bool TriadProcessor::showEffectIfClosed (int band, int slot)
+{
+    auto* s = slotAt (band, slot);
+    if (s == nullptr || ! s->effect || isEffectWindowOpen (band, slot)) return false;
+    showEffect (band, slot);
+    return isEffectWindowOpen (band, slot);
+}
 void TriadProcessor::refreshWindowTitles()
 {
     for (int b = 0; b <= postBand; ++b)

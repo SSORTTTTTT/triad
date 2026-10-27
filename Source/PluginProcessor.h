@@ -139,6 +139,10 @@ public:
     bool moveSlotTo (int band, int from, int to);         // drag and drop: the slots in between shift over
     void showEffect (int band, int slot);
     void showEffect (int band) { showEffect (band, 0); }
+    bool isEffectWindowOpen (int band, int slot) const;
+    // LEARN: opens the effect's window if it is closed; an open window is left exactly as it is (its page, its
+    // settings, where it sits). True if it opened.
+    bool showEffectIfClosed (int band, int slot);
     void closeWindows();
     juce::String getStatus() const;
     void setStatus (const juce::String&);

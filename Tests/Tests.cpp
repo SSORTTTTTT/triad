@@ -1277,6 +1277,18 @@ int main (int argc, char** argv)
             const int learned = q.pollParameterLearn();
             require (learned >= 0 && ! q.isLearningParameter() && q.getRouteInfo (1, learned).destinationName.endsWith (": Gain"),
                      "LEARN links the knob that was moved");
+            // LEARN opens the effect's window when it is closed, and leaves an open one exactly as it is.
+            if (juce::Desktop::getInstance().getDisplays().getPrimaryDisplay() != nullptr)
+            {
+                q.closeWindows();
+                require (! q.isEffectWindowOpen (1, 0), "The effect's window is closed");
+                require (q.showEffectIfClosed (1, 0) && q.isEffectWindowOpen (1, 0), "LEARN opens the effect's window when it is closed");
+                auto* opened = q.getHostedEffect (1, 0)->getActiveEditor();
+                require (opened != nullptr && ! q.showEffectIfClosed (1, 0) && q.getHostedEffect (1, 0)->getActiveEditor() == opened,
+                         "LEARN leaves an open window as it is (the same page, nothing reset)");
+                q.closeWindows();
+                require (! q.isEffectWindowOpen (1, 0), "Closed again");
+            }
             require (q.beginParameterLearn (1, lfo), "LEARN again");
             q.removeEffect (1, 0);
             require (! q.isLearningParameter(), "Removing the effect ends LEARN (it stops listening first)");
