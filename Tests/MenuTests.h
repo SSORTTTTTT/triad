@@ -95,9 +95,10 @@ inline void run (const juce::File& screenshots)
         ui::menusInsideWindow = true;
         const auto open = [&] (const char* file, const char* what, const std::function<void()>& show)
         {
+            // Checked and photographed at once: JUCE closes a menu soon after when its program is not the one in front
+            // (as the tests are).
             const int before = editor->getNumChildComponents();
             show();
-            pumpFor (300);
             require (editor->getNumChildComponents() > before, what);
             themeTests::snapshot (screenshots, file, *editor);
             juce::PopupMenu::dismissAllActiveMenus();
