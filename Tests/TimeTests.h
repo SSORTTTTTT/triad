@@ -476,8 +476,9 @@ inline void run (const juce::File& screenshotFolder)
         require (shapes->getPaletteCategory() >= ShapePanel::timeFolder || shapes->getPaletteCategory() < 1000 || shapes->getPaletteCategory() == ShapePanel::userFolder,
                  "TIME opens a folder");
         shapes->setPaletteCategory (ShapePanel::timeFolder + 2);
-        require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2 && shapes->getNumPaletteButtons() == 11 && shapes->getNumPalettePages() == 182,
-                 "TIME has its own folders (REVERSE: 2,000 patterns, 11 a page)");
+        require (shapes->getLayout() == ShapePanel::Layout::browser, "Triad Time's presets are in a browser under the grid (0.16.1)");
+        require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2 && shapes->getNumPaletteButtons() == 10 && shapes->getNumPalettePages() == 200,
+                 "TIME has its own folders (REVERSE: 2,000 patterns, 10 a page)");
         {
             const auto beforeFolder = t.getShape (TriadTime::timeEnvelope, 0);
             shapes->getPaletteButton (0)->onClick();
@@ -487,11 +488,54 @@ inline void run (const juce::File& screenshotFolder)
             shapes->getEditor().reload();
         }
         {
+            // The browser (0.16.1): the shape in use outlined, a search over every folder, FAVORITES, the page typed in.
+            shapes->getPaletteButton (3)->onClick();
+            require (shapes->isPaletteCurrent (3) && ! shapes->isPaletteCurrent (2), "The shape on the grid is outlined in the browser");
+            const auto wanted = shapes->getPaletteButton (5)->getName();
+            shapes->setSearch (wanted);
+            require (shapes->getNumPaletteButtons() >= 1 && shapes->getPaletteButton (0)->getName() == wanted, "The search finds a pattern by its name");
+            shapes->setSearch ("reverse " + wanted.fromLastOccurrenceOf (" ", false, false));
+            require (shapes->getNumPaletteButtons() >= 1, "...or by its folder's name and a number");
+            shapes->setSearch ("no pattern is called this");
+            require (shapes->getNumPaletteButtons() == 0, "...and nothing when nothing matches");
+            shapes->setPaletteCategory (ShapePanel::timeFolder + 2);
+            require (shapes->getSearch().isEmpty() && shapes->getNumPalettePages() == 200, "Choosing a folder ends the search");
+            shapes->toggleFavouritesFolder();
+            require (shapes->getPaletteCategory() == ShapePanel::favouritesFolder, "FAVORITES opens the favorites");
+            shapes->toggleFavouritesFolder();
+            require (shapes->getPaletteCategory() == ShapePanel::timeFolder + 2, "...and again goes back to the folder");
+            shapes->setPalettePage (149);
+            require (shapes->getPalettePage() == 149, "Any page can be reached directly (the page number is typed in)");
+            shapes->setPalettePage (0);
+            t.setShape (TriadTime::timeEnvelope, 0, triad::timePresets::shape (triad::timePresets::presetsIn (2).front()), false);
+            shapes->getEditor().reload();
+            // Move the wave: one grid step right (wrapping round), back again; then only the selected points.
+            const auto start = shapes->getEditor().getShape();
+            const float step = 1.0f / (float) shapes->getEditor().columns();
+            shapes->getMoveRightButton().onClick();
+            const auto moved = shapes->getEditor().getShape();
+            bool follows = true;
+            for (float x : { 0.1f, 0.37f, 0.5f, 0.81f })
+                follows = follows && std::abs (triad::mod::evaluate (moved, x + step) - triad::mod::evaluate (start, x)) < 0.02f;
+            require (follows && ! (moved == start), "The move button moves the whole wave one grid step right");
+            shapes->getMoveLeftButton().onClick();
+            bool back = true;
+            for (float x : { 0.1f, 0.37f, 0.5f, 0.81f })
+                back = back && std::abs (triad::mod::evaluate (shapes->getEditor().getShape(), x) - triad::mod::evaluate (start, x)) < 0.02f;
+            require (back, "...and the other one moves it back (what runs off one end comes in at the other)");
+            const auto shifted = triad::mod::shifted (start, 0.25f);
+            require (std::abs (triad::mod::evaluate (shifted, 0.3f) - triad::mod::evaluate (start, 0.05f)) < 0.02f
+                         && std::abs (triad::mod::evaluate (shifted, 0.1f) - triad::mod::evaluate (start, 0.85f)) < 0.02f,
+                     "Moving a wave wraps it round the cycle");
+            t.setShape (TriadTime::timeEnvelope, 0, start, false);
+            shapes->getEditor().reload();
+        }
+        {
             // ALL: every preset together (Triad's shapes and the 10,000 TIME patterns).
             shapes->setPaletteCategory (ShapePanel::allFolder);
             const int everything = triad::mod::numPresets() + triad::timePresets::numPresets;
             std::cout << "ALL folder: " << everything << " presets, " << shapes->getNumPalettePages() << " pages" << std::endl;
-            require (shapes->getPaletteCategory() == ShapePanel::allFolder && shapes->getNumPalettePages() == (everything + 10) / 11 && everything > 11000,
+            require (shapes->getPaletteCategory() == ShapePanel::allFolder && shapes->getNumPalettePages() == (everything + 9) / 10 && everything > 11000,
                      "ALL has every preset together, page by page");
             shapes->setPalettePage (shapes->getNumPalettePages() - 1);
             shapes->getPaletteButton (shapes->getNumPaletteButtons() - 1)->onClick();

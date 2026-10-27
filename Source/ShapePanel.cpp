@@ -1159,7 +1159,9 @@ void ShapePanel::setHost (ShapeHost* h)
         const int wanted = timeHost() ? settings->getTimePaletteCategory (timeFolder) : settings->getPaletteCategory();
         const int category = validCategory (wanted);
         if (category != paletteCategory) { paletteCategory = category; palettePage = 0; rebuildPalette(); }
+        else if (layout == Layout::browser) rebuildPalette();
     }
+    else if (layout == Layout::browser) rebuildPalette();   // the tiles in the envelope's colour, the one in use outlined
     updateToolbar();
 }
 int ShapePanel::validCategory (int category) const
