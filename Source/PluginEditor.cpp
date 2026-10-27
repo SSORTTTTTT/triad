@@ -854,8 +854,8 @@ void TriadEditor::showBandMenu (int band, juce::Component& target, bool atMouse)
     menu.addSubMenu ("Load chain preset (replaces this band's effects)", chains);
     menu.addSeparator();
     menu.addItem (lfoId, "Edit LFOs for this band...");
-    menu.addItem (leftId, "Move effects to band " + juce::String (band), band > 0);
-    menu.addItem (rightId, "Move effects to band " + juce::String (band + 2), band < count - 1);
+    if (band > 0) menu.addItem (leftId, "Move effects to band " + juce::String (band));            // only the moves there are
+    if (band < count - 1) menu.addItem (rightId, "Move effects to band " + juce::String (band + 2));
     menu.addSeparator();
     menu.addItem (removeId, "Remove band " + juce::String (band + 1), count > 1);
     auto options = juce::PopupMenu::Options().withTargetComponent (&target);

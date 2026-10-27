@@ -4,8 +4,8 @@ using namespace triad::ui;
 
 namespace
 {
-// Compact (0.16.0): three panels side by side in the window, so there is less to scroll sideways.
-constexpr int panelWidth = 348, panelGap = 12, rowHeight = 40;
+// Compact (0.16.0): three panels side by side, filling the window, so there is less to scroll sideways.
+constexpr int panelGap = 12, rowHeight = 40;
 }
 
 BandMatrix::BandMatrix (TriadProcessor& p, int b) : processor (p), band (b), colour (bandColour (b))
@@ -137,6 +137,7 @@ void MatrixPage::resized()
 {
     view.setBounds (getLocalBounds());
     const int height = getHeight() - 10;
+    const int panelWidth = juce::jmax (300, (getWidth() - 2 * panelGap) / 3);   // three whole panels in view
     for (int i = 0; i < (int) panels.size(); ++i) panels[(size_t) i]->setBounds (i * (panelWidth + panelGap), 0, panelWidth, height);
     holder.setSize (juce::jmax (getWidth(), (int) panels.size() * (panelWidth + panelGap) - panelGap), height);
 }
