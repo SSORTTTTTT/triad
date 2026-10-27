@@ -122,6 +122,38 @@ becomes a box like Triad Time's MIX AND SMOOTHING: the value on top (100%) and a
 left to right in the band's colour; drag left/right or up/down to set it, double-click to type a value. Mock-up:
 `docs/mockups/triad-bands/mix-boxes.png` and `mix-boxes-close-up.png` (`tools/mockups/build4.py`).
 
+Thomas, the same evening: he likes the boxes ("the metering thing ... looks good"), but the BANDS tab must otherwise look
+exactly as it does now, the crossover display above all (the first mock-up's band shapes were wrong). Redone with the
+display drawn as the plug-in draws it (each band's real response): `mix-boxes-crossovers-as-now.png`.
+
+### Menus in Triad Time's new look (Thomas, 2026-10-26) — mock-ups, waiting for Thomas
+
+Every menu in Triad and Triad Time (the plug-in menu, the LFO shapes menu, the presets, the gear ...) drawn in the
+plug-in's own look, as the category menu of Triad Time's new layout: rounded, in the theme's colours, section titles in
+the accent colour, the current choice highlighted and ticked, counts on the right, folders opening to the side;
+instead of the plain grey system menus (his photos: `docs/mockups/triad-menus/thomas-2026-10-26-*.jpg`).
+- `docs/mockups/triad-menus/plug-in-menu.png`: the plug-in menu (Band 2 / Slot 1): search, FAVORITES in two columns
+  with hearts and a VST3 / AU tag, BUILT IN, ALL PLUG-INS (VST3, Audio Units, Not checked), Browse / Refresh / Rescan.
+- `docs/mockups/triad-menus/favorites-by-type.png` (later, as Thomas said): FAVORITES sorted by kind of plug-in
+  (DELAY, DISTORTION, RHYTHM + TIME, REVERB, STEREO, and all A-Z), each opening to the side. The kind would come from
+  the plug-in's own VST3 / AU category, and a right-click moves a favorite to another kind.
+
+### Triad's LFO tab in Triad Time's layout (Thomas, 2026-10-26) — mock-ups, waiting for Thomas
+
+The LFO tab laid out as Triad Time's new page, with everything the LFO tab does now: PRE / BAND / POST, the LFOs of the
+band and +, TRIGGER, the grid (full width, 0-100%), the toolbar (1 Bar, GRID, SNAP, SAVE, delete, 2x, 1/2, the
+move-the-wave arrows, flips, undo / redo), the shapes as Triad Time's presets (category menu, FAVORITES, search, pages,
+10 named shapes with hearts) and GENERATE (INFILTRATOR / SHAPERBOX). ROUTING smaller, with ROUTE TO and LEARN as now:
+- `docs/mockups/triad-lfo/routing-next-to-save.png`: ROUTING in the toolbar where Triad Time has MIX AND SMOOTHING
+  (one route shown: name, amount box with its meter, INV, on/off, remove; + ROUTE TO and LEARN).
+- `docs/mockups/triad-lfo/routing-at-the-side.png`: ROUTING as a narrow window beside the grid (each route a small
+  card; room for several).
+- `docs/mockups/triad-lfo/shape-menu-open.png`: the shapes menu in the new look (EVERYTHING, SHAPES BY TYPE,
+  GENERATED, EXTRA, TRIAD TIME, YOUR SHAPES), GENERATED opened to the side.
+- **Select points and move them (Thomas):** drag across the grid to select points (outlined, "4 points selected"); the
+  arrow buttons right of 1/2 then move just those points left or right (shift-click: a fine step); with nothing
+  selected they move the whole wave. In Triad's LFO grid and in Triad Time.
+
 ### Redesign of the interface (Thomas, 2026-10-23) — later
 
 A redesign of how Triad, Triad Time and Triad Split look and are used, to make them more usable, keeping everything
