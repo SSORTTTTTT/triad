@@ -244,7 +244,8 @@ void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
         g.drawText (caption, inner.removeFromTop (11.0f), juce::Justification::centred);
         g.setColour (textColour.withMultipliedAlpha (slider.isEnabled() ? 0.97f : 0.5f));
         g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-        g.drawFittedText (label, inner.toNearestInt(), juce::Justification::centred, 1, 0.8f);
+        const auto withUnit = unit == "ms" && small ? label + " ms" : label;   // the unit, even in a narrow box
+        g.drawFittedText (withUnit, inner.toNearestInt(), juce::Justification::centred, 1, 0.75f);
         return;
     }
     if (captioned && box.getHeight() < 56.0f)
