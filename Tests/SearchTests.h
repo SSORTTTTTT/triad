@@ -85,11 +85,21 @@ inline void run (const juce::File& screenshots)
         editor->setVisible (true);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
         auto& panel = editor->getPluginSearch();
+        // Typing reaches the search through the message loop; on a busy machine a window opening (the effect just
+        // loaded) can take the 50 ms, so wait for the search to catch up (up to 3 s).
+        const auto waitFor = [] (const std::function<bool()>& done)
+        {
+            for (int i = 0; i < 150 && ! done(); ++i) juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        };
         const int band = 1, slots = p.getSlotCount (band);
         editor->openPluginSearch (band, slots, "t");
         require (panel.isVisible() && panel.getQuery() == "t" && ! panel.getResults().empty(), "Typing in the effect menu opens the search with what was typed");
         panel.getTextBox().insertTextAtCaret ("ime");
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        waitFor ([&panel, &editor]
+        {
+            const auto& results = panel.getResults();
+            return ! results.empty() && (*editor->effectList())[(size_t) results.front()].name == "Triad Time";
+        });
         require (panel.getQuery() == "time" && panel.getSelectedResult() == 0, "...it narrows as you type, the best match selected");
         const auto list = editor->effectList();
         require ((*list)[(size_t) panel.getResults().front()].name == "Triad Time", "...Triad Time (built in) found by name");
@@ -105,7 +115,7 @@ inline void run (const juce::File& screenshots)
         const auto offered = std::count_if (list->begin(), list->end(), [] (const EffectEntry& e) { return ! e.crashed; });
         require (panel.isVisible() && panel.getQuery().isEmpty() && (int) panel.getResults().size() == (int) offered, "An empty search lists every plug-in");
         panel.getTextBox().setText ("zzzz-not-a-plugin", true);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        waitFor ([&panel] { return panel.getResults().empty(); });
         require (panel.getResults().empty() && ! panel.chooseSelected() && panel.isVisible(), "No match: nothing loads");
         panel.close();
         require (! panel.isVisible(), "Esc / CLOSE closes the search");
