@@ -197,11 +197,23 @@ TriadTime::TriadTime()
     smoothing = addFloat ("smoothing", "Smoothing", { 0.0f, 50.0f, 0.1f, 0.5f }, 8.0f, "ms");
     attack = addFloat ("attack", "Attack", { 0.0f, 500.0f, 0.1f, 0.35f }, 2.0f, "ms");
     release = addFloat ("release", "Release", { 0.0f, 1000.0f, 0.1f, 0.35f }, 12.0f, "ms");
+    {
+        auto p = std::make_unique<AudioParameterBool> (ParameterID { "volumeFirst", 1 }, "VOLUME before TIME", false);
+        volumeFirst = p.get();
+        addHostedParameter (std::move (p));
+    }
     for (int e = 0; e < 2; ++e)
         for (int s = 0; s < numSlots; ++s) shapes[(size_t) e][(size_t) s] = slotPreset (e, s);
     for (auto& p : playing) p.reserve (2048);
 }
 TriadTime::~TriadTime() { cancelPendingUpdate(); }
+void TriadTime::setVolumeFirst (bool first)
+{
+    if (volumeFirst == nullptr || volumeFirst->get() == first) return;
+    volumeFirst->beginChangeGesture();
+    volumeFirst->setValueNotifyingHost (first ? 1.0f : 0.0f);
+    volumeFirst->endChangeGesture();
+}
 
 bool TriadTime::isBusesLayoutSupported (const BusesLayout& layout) const
 {
@@ -331,15 +343,25 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
     float timePhase = 0.0f, volumePhase = 0.0f;
     const int traced = tracedEnvelope.load (std::memory_order_relaxed);
     if (traced != tracing) { tracing = traced; trace.reset(); }
+    const bool gateFirst = isVolumeFirst();
     for (int s = 0; s < n; ++s)
     {
         const double at = beats + s * beatsPerSample;
-        // Into the rolling buffer.
+        // VOLUME: the gate, with attack and release (applied after TIME, or first: see below).
+        volumePhase = (float) (at / volumeBeats - std::floor (at / volumeBeats));
+        const float target = evaluate (volumeShape, volumePhase, cursors[volumeEnvelope]);
+        gate = target + (gate - target) * (target > gate ? rise : fall);
+        const float tm = timeMixSmooth.getNextValue(), vm = volumeMixSmooth.getNextValue();
+        const float gain = 1.0f - vm + vm * gate;
+        // Into the rolling buffer: the sound as it comes in, or gated first (VOLUME before TIME: TIME then plays back
+        // the gated sound, gaps and all).
         const auto slot = (size_t) (written % historySize);
-        float dry[2];
+        float dry[2], level = 0.0f;
         for (int c = 0; c < 2; ++c)
         {
             dry[c] = audio.getSample (juce::jmin (c, channels - 1), s);
+            level = juce::jmax (level, std::abs (dry[c]));
+            if (gateFirst) dry[c] *= gain;
             history.setSample (c, (int) slot, dry[c]);
         }
         ++written;
@@ -373,15 +395,10 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
             fadePosition += fadeSpeed;
             --fadeLeft;
         }
-        // VOLUME: the gate, with attack and release.
-        volumePhase = (float) (at / volumeBeats - std::floor (at / volumeBeats));
-        if (traced >= 0) trace.add (traced == timeEnvelope ? timePhase : volumePhase, juce::jmax (std::abs (dry[0]), std::abs (dry[1])));
-        const float target = evaluate (volumeShape, volumePhase, cursors[volumeEnvelope]);
-        gate = target + (gate - target) * (target > gate ? rise : fall);
-        const float tm = timeMixSmooth.getNextValue(), vm = volumeMixSmooth.getNextValue();
-        const float gain = 1.0f - vm + vm * gate;
+        if (traced >= 0) trace.add (traced == timeEnvelope ? timePhase : volumePhase, level);
+        const float after = gateFirst ? 1.0f : gain;
         for (int c = 0; c < channels; ++c)
-            audio.setSample (c, s, (dry[c] + (wet[c] - dry[c]) * tm) * gain);
+            audio.setSample (c, s, (dry[c] + (wet[c] - dry[c]) * tm) * after);
     }
     if (traced >= 0) trace.endBlock();
     if (! playingSong) freeBeats = beats + n * beatsPerSample;
@@ -529,6 +546,8 @@ void TriadTime::setStateInformation (const void* data, int size)
         if (auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (p))
             if (xml->hasAttribute (withId->getParameterID()))
                 p->setValueNotifyingHost ((float) xml->getDoubleAttribute (withId->getParameterID()));
+    // Saved before the order could be swapped (0.17.0): TIME plays first, as it always did.
+    if (! xml->hasAttribute ("volumeFirst") && volumeFirst != nullptr) volumeFirst->setValueNotifyingHost (0.0f);
     for (int e = 0; e < 2; ++e)
         for (int s = 0; s < numSlots; ++s) setShape (e, s, slotPreset (e, s), false);
     for (auto* x : xml->getChildIterator())
@@ -614,65 +633,47 @@ struct EnvelopeHost final : ShapeHost
     int labelMode = (int) TriadSettings::PitchLabels::dragging;   // the setting (Triad Time's gear, Triad's gear)
 };
 
-// A pattern slot: its number over a small picture of its shape.
-class SlotButton final : public juce::Button
+// The heart beside PATTERN (0.17.0): the pattern playing into FAVORITES as it is drawn now, or out again (the pattern
+// buttons that had their own hearts became the PATTERN menu).
+class PatternHeart final : public juce::Button
 {
 public:
-    SlotButton (int s) : Button (juce::String (s + 1)), slot (s) { setClickingTogglesState (false); }
-    void setShape (mod::Shape s, juce::Colour c, const juce::String& tip)
-    {
-        shape = std::move (s); colour = c; setTooltip (tip + " (the heart: FAVORITES)");
-        favourite = triad::favouriteShapes::contains (shape);
-        repaint();
-    }
-    // The heart (0.15.0): the pattern as it is drawn now goes into FAVORITES (or out again).
-    std::function<void()> onHeart;
+    PatternHeart() : juce::Button ("patternHeart") { setTooltip ("Add the pattern playing (as it is drawn now) to FAVORITES, or take it out"); }
     bool favourite = false;
-    juce::Rectangle<float> heartArea() const { return { 4.0f, (float) getHeight() - 15.0f, 11.0f, 11.0f }; }   // lower left, as Thomas drew it
-    void mouseDown (const juce::MouseEvent& e) override
-    {
-        if (onHeart && heartArea().expanded (3.0f).contains (e.position)) { onHeart(); return; }
-        Button::mouseDown (e);
-    }
-    void mouseMove (const juce::MouseEvent& e) override
-    {
-        const bool over = onHeart && heartArea().expanded (3.0f).contains (e.position);
-        if (over != overHeart) { overHeart = over; repaint(); }
-        Button::mouseMove (e);
-    }
-    void mouseExit (const juce::MouseEvent& e) override { overHeart = false; Button::mouseExit (e); }
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
-        const auto r = getLocalBounds().toFloat().reduced (1.0f);
-        const bool on = getToggleState();
-        g.setColour (on ? colour.withAlpha (0.25f) : down ? slotRowHover : over ? slotRowHover : slotRow);
+        auto r = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (currentPalette.controls.brighter (down ? 0.15f : over ? 0.07f : 0.0f));
         g.fillRoundedRectangle (r, 4.0f);
-        if (on) { g.setColour (colour); g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.2f); }
-        g.setColour (on ? colour : dimTextColour);
-        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-        g.drawText (juce::String (slot + 1), r.withHeight (14.0f).translated (0.0f, 2.0f), juce::Justification::centred);
-        const auto area = r.withTrimmedTop (16.0f).reduced (5.0f, 4.0f);
-        juce::Path p;
-        for (int i = 0; i <= 48; ++i)
-        {
-            const float x = (float) i / 48.0f;
-            const auto pt = juce::Point<float> (area.getX() + area.getWidth() * x, area.getBottom() - area.getHeight() * mod::evaluate (shape, x));
-            if (i == 0) p.startNewSubPath (pt); else p.lineTo (pt);
-        }
-        g.setColour ((on ? colour : textColour).withAlpha (on ? 1.0f : 0.7f));
-        g.strokePath (p, juce::PathStrokeType (1.3f));
-        if (onHeart)
-        {
-            g.setColour (on ? background.interpolatedWith (colour, 0.25f) : over || down ? slotRowHover : slotRow);
-            g.fillRoundedRectangle (heartArea().expanded (1.5f), 3.0f);
-            drawHeart (g, heartArea(), favourite, overHeart, dimTextColour.withAlpha (over ? 0.8f : 0.5f));
-        }
+        triad::ui::drawHeart (g, r.withSizeKeepingCentre (14.0f, 14.0f), favourite, over, dimTextColour.withAlpha (0.8f));
+    }
+};
+
+// MIX AND SMOOTHING (0.16.1, Thomas's layout): five small value boxes in the toolbar, right of SAVE.
+class MixBoxes final : public juce::Component
+{
+public:
+    void setKnobs (std::initializer_list<juce::Slider*> list)
+    {
+        knobs = list;
+        for (auto* k : knobs) addAndMakeVisible (*k);
+    }
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (currentPalette.grid.interpolatedWith (currentPalette.panel, 0.5f));
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), 8.0f);
+        g.setColour (accent);
+        g.setFont (juce::FontOptions (9.0f, juce::Font::bold).withKerningFactor (0.06f));
+        g.drawText ("MIX AND SMOOTHING", getLocalBounds().reduced (8, 3).removeFromTop (11), juce::Justification::centredLeft);
+    }
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (6, 4).withTrimmedTop (12);
+        const int n = juce::jmax (1, (int) knobs.size()), gap = 4, w = (r.getWidth() - gap * (n - 1)) / n;
+        for (auto* k : knobs) { k->setBounds (r.removeFromLeft (w)); r.removeFromLeft (gap); }
     }
 private:
-    int slot;
-    mod::Shape shape;
-    juce::Colour colour { accent };
-    bool overHeart = false;
+    std::vector<juce::Slider*> knobs;
 };
 
 class TriadTimeEditor final : public juce::AudioProcessorEditor, private juce::Timer
@@ -690,17 +691,24 @@ public:
         volumeTab.setTooltip ("VOLUME: the gate (top = 100%, bottom = silence).");
         timeTab.onClick = [this] { showEnvelope (TriadTime::timeEnvelope); };
         volumeTab.onClick = [this] { showEnvelope (TriadTime::volumeEnvelope); };
-        for (int s = 0; s < TriadTime::numSlots; ++s)
+        // Drag one tab past the other to swap the order the sound goes through them (0.17.0): left first.
+        for (auto* tab : { &timeTab, &volumeTab })
         {
-            auto b = std::make_unique<SlotButton> (s);
-            b->onClick = [this, s] { processor.setSlot (envelope, s); refreshSlots(); shapes.setHost (&hostFor (envelope)); };
-            b->onHeart = [this, s] { togglePatternFavourite (s); };
-            addAndMakeVisible (*b);
-            slots.push_back (std::move (b));
+            tab->addMouseListener (this, false);
+            tab->setTooltip (tab->getTooltip() + " Drag it past the other tab to swap their order (the sound goes through the left one first).");
         }
+        shownVolumeFirst = processor.isVolumeFirst();
+        // The 12 patterns of each envelope (the DAW can switch them: "TIME pattern", "VOLUME pattern"): one small button.
+        patternButton.setTooltip ("Pattern: which of the 12 patterns plays (your DAW can switch them with automation)");
+        patternButton.onClick = [this] { showPatternMenu(); };
+        addAndMakeVisible (patternButton);
+        patternHeart.onClick = [this] { togglePatternFavourite (processor.getSlot (envelope)); };
+        addAndMakeVisible (patternHeart);
         shapes.onChange = [this] { refreshSlots(); };
         shapes.getEditor().gridDivision = 64;   // ShaperBox's grid: 64 columns and 16 rows for a 1-bar pattern
+        shapes.setLayout (ShapePanel::Layout::browser);   // 0.16.1: Thomas's layout (presets in a browser under the grid)
         addAndMakeVisible (shapes);
+        addAndMakeVisible (shapes.getBrowser());
         generator.setTarget (&shapes.getEditor());
         addAndMakeVisible (generator);
         struct KnobSetup { juce::Slider* knob; juce::RangedAudioParameter* parameter; juce::Colour colour; bool ms; const char* tip; };
@@ -717,8 +725,15 @@ public:
             if (k.ms) k.knob->getProperties().set ("triadUnit", "ms");
             k.knob->setTooltip (k.tip);
             attachments.push_back (std::make_unique<juce::SliderParameterAttachment> (*k.parameter, *k.knob));
-            addAndMakeVisible (*k.knob);
         }
+        timeMixKnob.getProperties().set ("triadLabel", "TIME");
+        volumeMixKnob.getProperties().set ("triadLabel", "VOLUME");
+        smoothingKnob.getProperties().set ("triadLabel", "SMOOTH");
+        attackKnob.getProperties().set ("triadLabel", "ATTACK");
+        releaseKnob.getProperties().set ("triadLabel", "RELEASE");
+        for (auto* k : { &timeMixKnob, &volumeMixKnob, &smoothingKnob, &attackKnob, &releaseKnob }) k->setMouseDragSensitivity (160);
+        mixBoxes.setKnobs ({ &timeMixKnob, &volumeMixKnob, &smoothingKnob, &attackKnob, &releaseKnob });
+        shapes.setToolbarExtra (&mixBoxes, 310);
         gearButton.onClick = [this] { showGearMenu(); };
         addAndMakeVisible (gearButton);
         addChildComponent (themePanel);
@@ -762,26 +777,29 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (background);
-        auto header = getLocalBounds().removeFromTop (44).reduced (16, 0);
+        auto header = getLocalBounds().removeFromTop (headerHeight).reduced (16, 0);
         g.setColour (textColour);
-        g.setFont (juce::FontOptions (19.0f, juce::Font::bold));
-        g.drawText ("TRIAD TIME", header.removeFromLeft (150), juce::Justification::centredLeft);
+        g.setFont (juce::FontOptions (24.0f, juce::Font::bold));
+        g.drawText ("TRIAD TIME", header.removeFromLeft (170), juce::Justification::centredLeft);
         g.setColour (dimTextColour);
-        g.setFont (juce::FontOptions (12.0f));
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         g.drawText ("by Thomas Ross", header.removeFromLeft (110), juce::Justification::centredLeft);
-        g.setColour (panel);
-        g.fillRoundedRectangle (knobArea.toFloat(), 7.0f);
-        g.setColour (accent);
-        g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-        g.drawText ("MIX AND SMOOTHING", knobArea.reduced (12, 8).removeFromTop (16), juce::Justification::centredLeft);
-        g.setColour (dimTextColour);
-        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-        for (const auto& [knob, label] : { std::pair<juce::Slider*, const char*> { &timeMixKnob, "TIME MIX" }, { &volumeMixKnob, "VOLUME MIX" },
-                                           { &smoothingKnob, "SMOOTHING" }, { &attackKnob, "ATTACK" }, { &releaseKnob, "RELEASE" } })
-            g.drawText (label, knob->getBounds().withHeight (14).translated (0, -16).expanded (24, 0), juce::Justification::centred);
-        g.setFont (juce::FontOptions (10.0f));
-        g.drawText (u8 ("Double-click: add point  \xc2\xb7  Drag: move  \xc2\xb7  Double-click a point: delete  \xc2\xb7  Drag the small dot: curve  \xc2\xb7  Right-click: more"),
-                    getLocalBounds().removeFromTop (44).reduced (16, 0).withTrimmedLeft (480).withTrimmedRight (42), juce::Justification::centredRight);
+        // Between the tabs: which way the sound goes.
+        {
+            const auto& left = processor.isVolumeFirst() ? volumeTab : timeTab;
+            const float x = (float) left.getRight() + 4.0f, y = (float) left.getBounds().getCentreY();
+            juce::Path arrow;
+            arrow.addTriangle (x, y - 4.0f, x, y + 4.0f, x + 6.0f, y);
+            g.setColour (dimTextColour);
+            g.fillPath (arrow);
+        }
+        // The tips, top right (Thomas's layout).
+        auto tips = juce::Rectangle<int> (patternHeart.getRight() + 16, 0, getWidth() - 16 - 44 - (patternHeart.getRight() + 16), headerHeight);
+        g.setFont (juce::FontOptions (10.5f));
+        g.drawFittedText (u8 ("Double-click: add point \xc2\xb7 Drag: move \xc2\xb7 Double-click a point: delete"), tips.removeFromTop (tips.getHeight() / 2).withTrimmedTop (8),
+                          juce::Justification::bottomRight, 1, 0.9f);
+        g.drawFittedText (u8 ("Small dot: curve \xc2\xb7 Drag across: select points \xc2\xb7 Right-click: more"), tips.withTrimmedBottom (8),
+                          juce::Justification::topRight, 1, 0.9f);
     }
     // The pitch labels on the TIME lines: from the settings (shared with Triad's gear menu and every Triad Time).
     void applyLabelMode (TriadSettings::PitchLabels mode)
@@ -848,49 +866,39 @@ private:
         repaint();
     }
     static constexpr int themeBase = 100;
-    // Heights of the rows under the header, and the window height that gives the grid ShaperBox's proportions.
-    static constexpr int slotRowHeight = 46, bottomRowHeight = GeneratorPanel::preferredHeight;
+    // The header, the grid with its toolbar, then the presets and GENERATE; the window's height gives the grid ShaperBox's
+    // proportions (0.16.1: Thomas's layout).
+    static constexpr int headerHeight = 62, bottomRowHeight = GeneratorPanel::preferredHeight;
     static int shapesHeightFor (int shapesWidth)
     {
-        // ShapePanel: the grid's editor, then 72 for the toolbar and the palette; the editor trims 48 across and 30 down.
-        return juce::roundToInt ((float) (shapesWidth - 48) / ShapeHost::shaperBoxAspect) + 30 + 72;
+        // ShapePanel (browser layout): the grid's editor, then 8 and the toolbar; the editor trims 48 across and 30 down.
+        return juce::roundToInt ((float) (shapesWidth - 48) / ShapeHost::shaperBoxAspect) + 30 + 8 + ShapePanel::browserToolbarHeight;
     }
-    static int windowHeightFor (int width) { return 44 + slotRowHeight + 8 + shapesHeightFor (width - 32) + 10 + bottomRowHeight + 14; }
+    static int windowHeightFor (int width) { return headerHeight + shapesHeightFor (width - 32) + 12 + bottomRowHeight + 14; }
     void resized() override
     {
-        // As ShaperBox: the grid across the whole window, the controls in a row under it.
         auto r = getLocalBounds().reduced (16, 0);
-        auto header = r.removeFromTop (44);
-        gearButton.setBounds (header.removeFromRight (30).withSizeKeepingCentre (30, 28));
+        auto header = r.removeFromTop (headerHeight);
+        gearButton.setBounds (header.removeFromRight (32).withSizeKeepingCentre (32, 30));
         themePanel.setBounds (getLocalBounds());
-        header.removeFromLeft (270);   // TRIAD TIME by Thomas Ross
-        auto tabs = header.withSizeKeepingCentre (header.getWidth(), 30);
-        timeTab.setBounds (tabs.removeFromLeft (92));
-        tabs.removeFromLeft (6);
-        volumeTab.setBounds (tabs.removeFromLeft (92));
-        auto slotRow = r.removeFromTop (slotRowHeight);
-        const int width = slotRow.getWidth() / TriadTime::numSlots;
-        for (auto& b : slots) b->setBounds (slotRow.removeFromLeft (width).withTrimmedRight (4));
-        r.removeFromTop (8);
+        header.removeFromLeft (290);   // TRIAD TIME by Thomas Ross
+        auto tabs = header.withSizeKeepingCentre (header.getWidth(), 36);
+        // In the order the sound goes through them, left first.
+        auto& first = processor.isVolumeFirst() ? volumeTab : timeTab;
+        auto& second = processor.isVolumeFirst() ? timeTab : volumeTab;
+        first.setBounds (tabs.removeFromLeft (112));
+        tabs.removeFromLeft (14);
+        second.setBounds (tabs.removeFromLeft (112));
+        tabs.removeFromLeft (12);
+        patternButton.setBounds (tabs.removeFromLeft (124).reduced (0, 3));
+        tabs.removeFromLeft (4);
+        patternHeart.setBounds (tabs.removeFromLeft (30).reduced (0, 3));
         shapes.setBounds (r.removeFromTop (shapesHeightFor (r.getWidth())));
-        r.removeFromTop (10);
+        r.removeFromTop (12);
         auto bottom = r.removeFromTop (bottomRowHeight);
         generator.setBounds (bottom.removeFromRight (270));
         bottom.removeFromRight (12);
-        knobArea = bottom;
-        // The two mixes (big), then smoothing, attack and release; a label over each.
-        auto knobs = bottom.reduced (12, 10).withTrimmedTop (30 + 16);
-        const int fifth = knobs.getWidth() / 5, big = juce::jmin (100, knobs.getHeight()), small = juce::jmin (76, knobs.getHeight());
-        const auto place = [&] (juce::Slider& knob, int size)
-        {
-            auto cell = knobs.removeFromLeft (fifth);
-            knob.setBounds (cell.withSizeKeepingCentre (size, size).withY (cell.getY() + (big - size) / 2));
-        };
-        place (timeMixKnob, big);
-        place (volumeMixKnob, big);
-        place (smoothingKnob, small);
-        place (attackKnob, small);
-        place (releaseKnob, small);
+        shapes.getBrowser().setBounds (bottom);
     }
     ShapePanel& getShapePanel() noexcept { return shapes; }
     // The heart on pattern button s (1-12) of the envelope shown: its shape into FAVORITES, or out again.
@@ -903,23 +911,62 @@ private:
         juce::ignoreUnused (now);
         refreshSlots();
     }
-    bool isPatternFavourite (int s) const { return s >= 0 && s < (int) slots.size() && slots[(size_t) s]->favourite; }
+    bool isPatternFavourite (int s) const
+    {
+        return s >= 0 && s < TriadTime::numSlots && triad::favouriteShapes::contains (processor.getShape (envelope, s));
+    }
 private:
     juce::int64 favouritesSeen = 0;
     EnvelopeHost& hostFor (int e) { return e == TriadTime::timeEnvelope ? timeHost : volumeHost; }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        // A tab dragged past the other one: swap the order (once per drag).
+        const bool isTab = e.eventComponent == &timeTab || e.eventComponent == &volumeTab;
+        if (! isTab || swappedThisDrag) return;
+        const bool leftTab = e.eventComponent == (processor.isVolumeFirst() ? &volumeTab : &timeTab);
+        const int dx = e.getDistanceFromDragStartX();
+        if ((leftTab && dx > 60) || (! leftTab && dx < -60))
+        {
+            processor.setVolumeFirst (! processor.isVolumeFirst());
+            swappedThisDrag = true;
+            orderChanged();
+        }
+    }
+    void mouseUp (const juce::MouseEvent&) override { swappedThisDrag = false; }
+    void orderChanged()
+    {
+        shownVolumeFirst = processor.isVolumeFirst();
+        resized();
+        repaint();
+    }
     void refreshSlots()
     {
-        const int current = processor.getSlot (envelope);
-        const auto colour = envelope == TriadTime::timeEnvelope ? timeColour : volumeColour;
-        for (int s = 0; s < (int) slots.size(); ++s)
-        {
-            slots[(size_t) s]->setToggleState (s == current, juce::dontSendNotification);
-            const auto name = TriadTime::slotName (envelope, s);
-            slots[(size_t) s]->setShape (processor.getShape (envelope, s), colour,
-                                         "Pattern " + juce::String (s + 1) + (name.isNotEmpty() ? " (" + name + " to start with)" : juce::String()));
-        }
+        patternButton.setButtonText ("PATTERN " + juce::String (processor.getSlot (envelope) + 1) + u8 (" \xe2\x96\xbe"));
+        const bool favourite = isPatternFavourite (processor.getSlot (envelope));
+        if (favourite != patternHeart.favourite) { patternHeart.favourite = favourite; patternHeart.repaint(); }
         shown[0] = processor.getSlot (0);
         shown[1] = processor.getSlot (1);
+    }
+    // The 12 patterns: the one playing ticked, a heart on the favorites; the DAW's automation switches them too.
+    void showPatternMenu()
+    {
+        juce::PopupMenu menu;
+        menu.addSectionHeader (juce::String (envelope == TriadTime::timeEnvelope ? "TIME" : "VOLUME") + " PATTERN (YOUR DAW CAN SWITCH IT)");
+        const int current = processor.getSlot (envelope);
+        for (int s = 0; s < TriadTime::numSlots; ++s)
+        {
+            const bool favourite = triad::favouriteShapes::contains (processor.getShape (envelope, s));
+            triad::ui::addItemWithRight (menu, s + 1, (favourite ? u8 ("\xe2\x99\xa5 ") : juce::String()) + "Pattern " + juce::String (s + 1),
+                                         TriadTime::slotName (envelope, s), true, s == current);
+        }
+        juce::Component::SafePointer<TriadTimeEditor> safe (this);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&patternButton), [safe] (int choice)
+        {
+            if (safe == nullptr || choice < 1 || choice > TriadTime::numSlots) return;
+            safe->processor.setSlot (safe->envelope, choice - 1);
+            safe->refreshSlots();
+            safe->shapes.setHost (&safe->hostFor (safe->envelope));
+        });
     }
     void timerCallback() override
     {
@@ -930,6 +977,7 @@ private:
             applyLabelMode (settings->getPitchLabels());   // changed in Triad's gear menu
             applyBackdrop();
             if (const auto v = triad::favouriteShapes::version(); v != favouritesSeen) { favouritesSeen = v; refreshSlots(); }   // hearts marked elsewhere
+            if (processor.isVolumeFirst() != shownVolumeFirst) orderChanged();   // the DAW's automation or undo
         }
     }
     // Every frame of the screen (up to 120 a second): a pattern switched by automation (or one of Triad's LFOs)
@@ -952,12 +1000,14 @@ private:
     triad::ui::IconButton gearButton { triad::ui::IconButton::Icon::gear, "Settings: pitch labels on the TIME lines, theme and colours" };
     juce::SharedResourcePointer<TriadSettings> settings;
     int settingsTicks = 0;
-    std::vector<std::unique_ptr<SlotButton>> slots;
+    juce::TextButton patternButton;
+    PatternHeart patternHeart;
+    bool shownVolumeFirst = false, swappedThisDrag = false;
+    MixBoxes mixBoxes;
     ShapePanel shapes;
     GeneratorPanel generator;
     juce::Slider timeMixKnob, volumeMixKnob, smoothingKnob, attackKnob, releaseKnob;
     std::vector<std::unique_ptr<juce::SliderParameterAttachment>> attachments;
-    juce::Rectangle<int> knobArea;
     juce::TooltipWindow tooltips { this, 600 };
     double lastFrame = 0.0;
     juce::SharedResourcePointer<triad::ui::FramePacer> pacer;

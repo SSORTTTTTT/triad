@@ -69,6 +69,11 @@ public:
     juce::AudioParameterFloat* smoothing = nullptr;    // ms: crossfade at each jump in time
     juce::AudioParameterFloat* attack = nullptr;       // ms: the gate opening
     juce::AudioParameterFloat* release = nullptr;      // ms: the gate closing
+    // The order (0.17.0, Thomas: drag the TIME and VOLUME tabs past each other): false = TIME then VOLUME (the gate shapes
+    // what TIME plays), true = VOLUME then TIME (the gate first; TIME repeats, reverses or slows the gated sound).
+    juce::AudioParameterBool* volumeFirst = nullptr;
+    bool isVolumeFirst() const noexcept { return volumeFirst != nullptr && volumeFirst->get(); }
+    void setVolumeFirst (bool);                        // as a gesture the DAW records (undoable there)
 
     // AudioProcessor
     const juce::String getName() const override { return "Triad Time"; }

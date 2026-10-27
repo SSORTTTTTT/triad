@@ -184,7 +184,9 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
         if (askName != nullptr) askName (title, initial, std::move (done));
         else done (initial);
     };
+    shapes.setLayout (ShapePanel::Layout::browser);   // 0.16.1: as Triad Time's (the browser under the grid)
     addAndMakeVisible (shapes);
+    addAndMakeVisible (shapes.getBrowser());
     generator.setTarget (&shapes.getEditor());
     generator.setSources ({ triad::mod::Source::infiltrator, triad::mod::Source::shaperBox });   // each trained on its own set
     addAndMakeVisible (generator);
@@ -232,6 +234,13 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
         });
     };
     addAndMakeVisible (addRouteButton);
+    learnButton.setTooltip ("LEARN: opens the effect's window (left as it is when it is open already); move a knob there and it is linked to this LFO");
+    learnButton.onClick = [this] { showLearnMenu(); };
+    addAndMakeVisible (learnButton);
+    routeView.setViewedComponent (&routeHolder, false);
+    routeView.setScrollBarsShown (true, false);
+    routeView.setScrollBarThickness (5);
+    addAndMakeVisible (routeView);
     removeLfoButton.onClick = [this]
     {
         if (processor.removeLfo (band, lfo)) select (band, juce::jmax (0, lfo - 1));
@@ -380,7 +389,7 @@ void LfoPage::rebuild()
     for (int r : processor.getRoutesFrom (band, lfo))
     {
         auto row = std::make_unique<RouteRow> (processor, band, r, false, bandColour (band));
-        addAndMakeVisible (*row);
+        routeHolder.addAndMakeVisible (*row);
         routeRows.push_back (std::move (row));
     }
     const auto info = processor.getLfoInfo (band, lfo);
@@ -390,62 +399,104 @@ void LfoPage::rebuild()
 }
 void LfoPage::updateToolbar()
 {
-    addRouteButton.setButtonText (processor.isLearningParameter() ? "LEARNING: MOVE A KNOB... (CLICK TO STOP)" : "+ ROUTE TO...");
-    if (processor.isLearningParameter()) addRouteButton.setColour (juce::TextButton::buttonColourId, accent.withAlpha (0.35f));
-    else addRouteButton.removeColour (juce::TextButton::buttonColourId);
+    const bool learning = processor.isLearningParameter();
+    addRouteButton.setButtonText (learning ? "MOVE A KNOB..." : "+ ROUTE TO...");
+    learnButton.setButtonText (learning ? "STOP" : "LEARN");
+    learnButton.setColour (juce::TextButton::buttonColourId, learning ? accent.withAlpha (0.35f) : addRouteButton.findColour (juce::TextButton::buttonColourId));
+    learnButton.setColour (juce::TextButton::textColourOffId, accent);
     shapes.updateToolbar();
+}
+void LfoPage::showLearnMenu()
+{
+    if (processor.isLearningParameter()) { processor.cancelParameterLearn(); updateToolbar(); return; }
+    std::vector<int> loaded;
+    for (int s = 0; s < processor.getSlotCount (band); ++s)
+        if (processor.getSlotInfo (band, s).loaded) loaded.push_back (s);
+    if (loaded.empty())
+    {
+        processor.setStatus (TriadProcessor::isExtraChain (band) ? "LEARN: " + TriadProcessor::chainName (band) + " has no effect loaded"
+                                                                 : juce::String ("LEARN: this band has no effect loaded"));
+        return;
+    }
+    if (loaded.size() == 1) { startLearn (loaded.front()); return; }
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("OPEN ITS WINDOW, THEN MOVE A KNOB");
+    for (int s : loaded)
+        addItemWithRight (menu, s + 1, juce::String (s + 1) + u8 (" \xc2\xb7 ") + processor.getSlotInfo (band, s).name,
+                          processor.isEffectWindowOpen (band, s) ? "open" : "");
+    juce::Component::SafePointer<LfoPage> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&learnButton), [safe] (int choice)
+    {
+        if (safe != nullptr && choice > 0) safe->startLearn (choice - 1);
+    });
 }
 void LfoPage::resized()
 {
+    // 0.16.1, Thomas's layout (as Triad Time's): the bands and the tips, the LFOs and TRIGGER, the grid with ROUTING
+    // beside it, one toolbar, then the shapes browser and GENERATE.
     auto r = getLocalBounds();
-    auto bandRow = r.removeFromTop (26);
+    auto bandRow = r.removeFromTop (32);
     for (auto& b : bandButtons) { b->setBounds (bandRow.removeFromLeft (chipWidth()).withTrimmedRight (4)); }
+    hintArea = bandRow.withTrimmedLeft (12);
     r.removeFromTop (6);
     auto tabRow = r.removeFromTop (44);
-    triggerButton->setBounds (tabRow.removeFromRight (176).withSizeKeepingCentre (176, 38));
+    triggerButton->setBounds (tabRow.removeFromRight (routingWidth).withSizeKeepingCentre (routingWidth, 38));
     tabRow.removeFromRight (8);
-    addLfoButton.setBounds (tabRow.removeFromRight (30).withSizeKeepingCentre (28, 28));
-    tabRow.removeFromRight (6);
-    tabView.setBounds (tabRow);
+    tabView.setBounds (tabRow.withTrimmedRight (40));
+    addLfoButton.setBounds (juce::Rectangle<int> (tabRow.getX() + juce::jmin (tabRow.getWidth() - 34, (int) tabs.size() * 160), tabRow.getY(), 30, tabRow.getHeight())
+                                .withSizeKeepingCentre (28, 28));
     int x = 0;
     for (auto& t : tabs) { t->setBounds (x, 0, 156, 38); x += 160; }
-    tabHolder.setSize (juce::jmax (x, tabRow.getWidth()), 38);
+    tabHolder.setSize (juce::jmax (x, tabView.getWidth()), 38);
     r.removeFromTop (8);
-    routingArea = r.removeFromRight (250);
-    generatorArea = routingArea.removeFromBottom (GeneratorPanel::preferredHeight);
-    routingArea.removeFromBottom (8);
-    generator.setBounds (generatorArea);
-    r.removeFromRight (12);
+    generatorArea = r.removeFromBottom (GeneratorPanel::preferredHeight);
+    r.removeFromBottom (12);
+    generator.setBounds (generatorArea.removeFromRight (270));
+    generatorArea.removeFromRight (12);
+    shapes.getBrowser().setBounds (generatorArea);
+    shapes.setGridInsetRight (routingWidth);
     shapes.setBounds (r);
-    auto panel = routingArea.reduced (10, 0).withTrimmedTop (48);
-    for (auto& row : routeRows) { row->setBounds (panel.removeFromTop (54)); panel.removeFromTop (4); }
-    addRouteButton.setBounds (panel.removeFromTop (28));
-    removeLfoButton.setBounds (routingArea.reduced (10, 0).removeFromBottom (28).translated (0, -46));
+    routingArea = juce::Rectangle<int> (r.getRight() - routingWidth, r.getY(), routingWidth, r.getHeight() - ShapePanel::browserToolbarHeight - 8);
+    // The header (ROUTING, where from), the cards, then + ROUTE TO and LEARN side by side (0.17.0: room for two cards
+    // or more in the default window).
+    auto panel = routingArea.reduced (10, 0).withTrimmedTop (48).withTrimmedBottom (10);
+    auto buttons = panel.removeFromBottom (28);
+    learnButton.setBounds (buttons.removeFromRight (juce::jmax (70, buttons.getWidth() * 2 / 5)));
+    buttons.removeFromRight (6);
+    addRouteButton.setBounds (buttons);
+    panel.removeFromBottom (8);
+    routeView.setBounds (panel);
+    constexpr int cardHeight = 52, cardGap = 5;
+    const int width = panel.getWidth() - ((int) routeRows.size() * (cardHeight + cardGap) - cardGap > panel.getHeight() ? 7 : 0);
+    int y = 0;
+    for (auto& row : routeRows) { row->setBounds (0, y, width, cardHeight); y += cardHeight + cardGap; }
+    routeHolder.setSize (width, juce::jmax (y, 1));
+    removeLfoButton.setBounds (juce::Rectangle<int> (routingArea.getRight() - 96, routingArea.getY() + 10, 86, 22));
 }
 void LfoPage::paint (juce::Graphics& g)
 {
     g.setColour (panel);
-    g.fillRoundedRectangle (routingArea.toFloat(), 7.0f);
+    g.fillRoundedRectangle (routingArea.toFloat(), 12.0f);
     const auto info = processor.getLfoInfo (band, lfo);
-    auto header = routingArea.reduced (12, 8);
+    auto header = routingArea.reduced (14, 10);
     g.setColour (accent);
-    g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    g.setFont (juce::FontOptions (12.0f, juce::Font::bold).withKerningFactor (0.05f));
     g.drawText ("ROUTING", header.removeFromTop (16), juce::Justification::centredLeft);
-    g.setColour (textColour);
-    g.setFont (juce::FontOptions (12.0f));
-    g.drawText ((TriadProcessor::isExtraChain (band) ? TriadProcessor::chainName (band) : "Band " + juce::String (band + 1)) + u8 (" \xc2\xb7 ") + info.name + u8 (" \xe2\x86\x92"), header.removeFromTop (18),
-                juce::Justification::centredLeft);
     g.setColour (dimTextColour);
-    g.setFont (juce::FontOptions (11.0f));
-    auto notes = routingArea.reduced (12, 10).removeFromBottom (44);
-    if (notes.getY() > addRouteButton.getBottom() + 6)
-        g.drawFittedText ("Amount 100%: the knob follows the line (top = 100%, bottom = 0%). The light switches a route on or off.",
-                          notes, juce::Justification::bottomLeft, 3);
+    g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+    g.drawText ((TriadProcessor::isExtraChain (band) ? TriadProcessor::chainName (band) : "Band " + juce::String (band + 1)) + u8 (" \xc2\xb7 ") + info.name + u8 (" \xe2\x86\x92"),
+                header.removeFromTop (18), juce::Justification::centredLeft);
+    if (routeRows.empty())
+    {
+        g.setFont (juce::FontOptions (11.0f));
+        g.drawFittedText ("Not routed yet: + ROUTE TO picks a knob, LEARN links the next one you move in an effect.",
+                          routeView.getBounds().reduced (4, 0).removeFromTop (60), juce::Justification::topLeft, 4);
+    }
+    // How to edit, top right (two lines, as Triad Time's).
     g.setColour (dimTextColour);
-    // How to edit, under the band row.
     g.setFont (juce::FontOptions (10.5f));
-    g.drawText (u8 ("Double-click: add point  \xc2\xb7  Drag: move  \xc2\xb7  Double-click a point: delete  \xc2\xb7  Drag the small dot: curve"
-                    "  \xc2\xb7  Right-click: more"),
-                juce::Rectangle<int> ((int) bandButtons.size() * chipWidth() + 8, 0, getWidth() - (int) bandButtons.size() * chipWidth() - 8, 26),
-                juce::Justification::centredRight);
+    auto tips = hintArea;
+    g.drawText (u8 ("Double-click: add point \xc2\xb7 Drag: move \xc2\xb7 Double-click a point: delete"), tips.removeFromTop (tips.getHeight() / 2),
+                juce::Justification::bottomRight);
+    g.drawText (u8 ("Drag the small dot: curve \xc2\xb7 Drag across points: select \xc2\xb7 Right-click: more"), tips, juce::Justification::topRight);
 }

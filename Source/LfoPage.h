@@ -49,7 +49,7 @@ public:
     juce::Button& getGenerateButton() noexcept { return generator.getGenerateButton(); }
     juce::Slider& getChaosSlider() noexcept { return generator.getChaosSlider(); }
     // The preset palette (see ShapePanel).
-    static constexpr int paletteSize = ShapePanel::paletteSize;
+    static constexpr int paletteSize = ShapePanel::browserPageSize;   // 0.16.1: the browser under the grid, 10 a page
     static constexpr int userFolder = ShapePanel::userFolder;
     void setPaletteCategory (int category) { shapes.setPaletteCategory (category); }
     int getPaletteCategory() const noexcept { return shapes.getPaletteCategory(); }
@@ -64,6 +64,8 @@ public:
     void startLearn (int slot);   // LEARN: the next knob moved in one of the band's effect windows is linked to this LFO
                                   // (opens the window of this slot's effect if it is closed)
     juce::Button& getAddRouteButton() noexcept { return addRouteButton; }
+    juce::Button& getLearnButton() noexcept { return learnButton; }
+    void showLearnMenu();          // LEARN: straight into the effect's window (several effects: pick one)
     // TRIGGER (0.14.0), right of the LFO tabs: SONG or AUDIO for this band's LFOs (with what it listens to, the threshold
     // and when a new sound restarts them); while AUDIO it shows the level, the threshold and a light at every restart.
     juce::Button& getTriggerButton() noexcept;
@@ -109,6 +111,9 @@ private:
     ShapePanel shapes;
     GeneratorPanel generator;
     std::vector<std::unique_ptr<triad::ui::RouteRow>> routeRows;
-    juce::TextButton addRouteButton { "+ ROUTE TO..." }, removeLfoButton { "REMOVE LFO" };
-    juce::Rectangle<int> routingArea, generatorArea;
+    juce::TextButton addRouteButton { "+ ROUTE TO..." }, removeLfoButton { "REMOVE LFO" }, learnButton { "LEARN" };
+    juce::Viewport routeView;      // the ROUTING cards, scrolling (0.16.1)
+    juce::Component routeHolder;
+    juce::Rectangle<int> routingArea, generatorArea, hintArea;
+    static constexpr int routingWidth = 232;
 };

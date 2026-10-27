@@ -8,7 +8,7 @@ namespace triad::ui
 class IconButton final : public juce::Button
 {
 public:
-    enum class Icon { trash, undo, redo, reverse, flipVertical, left, right, gear, menu, plus, close, lfo, dice };
+    enum class Icon { trash, undo, redo, reverse, flipVertical, left, right, gear, menu, plus, close, lfo, dice, moveLeft, moveRight };
     IconButton (Icon, const juce::String& tooltip);
     void paintButton (juce::Graphics&, bool over, bool down) override;
     static void drawIcon (juce::Graphics&, Icon, juce::Rectangle<float>, juce::Colour);
@@ -84,6 +84,9 @@ public:
     void drawLinearSlider (juce::Graphics&, int, int, int, int, float, float, float, juce::Slider::SliderStyle, juce::Slider&) override;
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;
     juce::Font getTextButtonFont (juce::TextButton&, int height) override;
+    // A button with the property triadAlign = "left" reads as a name on its card (an LFO card's destination): one line,
+    // left-aligned, cut with "..." when long; the others are centred as JUCE's.
+    void drawButtonText (juce::Graphics&, juce::TextButton&, bool over, bool down) override;
     // Menus
     juce::Font getPopupMenuFont() override;
     void drawPopupMenuBackgroundWithOptions (juce::Graphics&, int width, int height, const juce::PopupMenu::Options&) override;

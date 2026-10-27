@@ -5,14 +5,15 @@ namespace triad::ui
 MatrixColumns matrixColumns (int rowWidth)
 {
     MatrixColumns c;
-    int x = 8;
-    const auto take = [&x] (int w) { const juce::Range<int> r (x, x + w); x += w + 6; return r; };
-    c.light = take (18);
-    c.source = take (60);
-    c.amount = take (62);
-    c.invert = take (32);
-    c.remove = { rowWidth - 8 - 20, rowWidth - 8 };
-    c.destination = { x, juce::jmax (x + 20, c.remove.getStart() - 6) };
+    // 0.17.0: narrower source, amount and INV, so DESTINATION has room for "Band Volume" on one line.
+    int x = 6;
+    const auto take = [&x] (int w) { const juce::Range<int> r (x, x + w); x += w + 4; return r; };
+    c.light = take (14);
+    c.source = take (52);
+    c.amount = take (54);
+    c.invert = take (30);
+    c.remove = { rowWidth - 6 - 16, rowWidth - 6 };
+    c.destination = { x, juce::jmax (x + 20, c.remove.getStart() - 4) };
     return c;
 }
 // ---- Route row ----------------------------------------------------------------------------------------
@@ -45,9 +46,9 @@ RouteRow::RouteRow (TriadProcessor& p, int b, int r, bool withSource, juce::Colo
         };
         addAndMakeVisible (source);
     }
-    // In the matrix: a small box (the value over a line meter), dragged left or right, a short way for the whole range
-    // (0.16.0). The LFO page keeps its bar until its new layout.
-    amount.setSliderStyle (showSource ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearHorizontal);
+    // A small box (the value over a line meter), dragged left or right, a short way for the whole range (0.16.0: the
+    // matrix; 0.16.1: the LFO tab's ROUTING cards).
+    amount.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     amount.setMouseDragSensitivity (130);
     amount.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     amount.setRange (0.0, 100.0, 0.1);
@@ -88,12 +89,23 @@ RouteRow::RouteRow (TriadProcessor& p, int b, int r, bool withSource, juce::Colo
 }
 void RouteRow::lookAndFeelChanged()
 {
-    if (! showSource) return;
     const auto pill = currentPalette.grid.interpolatedWith (currentPalette.controls, 0.3f);
     for (auto* b : { &source, &destination })
     {
         b->setColour (juce::TextButton::buttonColourId, pill);
         b->setColour (juce::TextButton::textColourOffId, textColour);
+    }
+    if (! showSource)
+    {
+        // An LFO card: where it goes reads as the card's name (a click still picks another).
+        destination.getProperties().set ("triadAlign", "left");
+        destination.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    }
+    invert.getProperties().set ("triadAlign", "centre");
+    if (showSource)
+    {
+        source.getProperties().set ("triadAlign", "arrow");
+        destination.getProperties().set ("triadAlign", "arrow");
     }
     invert.setColour (juce::TextButton::buttonColourId, pill);
     invert.setColour (juce::TextButton::buttonOnColourId, accent);
@@ -125,36 +137,32 @@ void RouteRow::resized()
     {
         const auto c = matrixColumns (getWidth());
         const auto at = [this] (juce::Range<int> x, int h) { return juce::Rectangle<int> (x.getStart(), (getHeight() - h) / 2, x.getLength(), h); };
-        light.setBounds (at (c.light, 18));
-        source.setBounds (at (c.source, 26));
+        light.setBounds (at (c.light, 14));
+        source.setBounds (at (c.source, 28));
         amount.setBounds (at (c.amount, getHeight() - 8));
-        invert.setBounds (at (c.invert, 22));
-        destination.setBounds (at (c.destination, getHeight() - 10));
+        invert.setBounds (at (c.invert, 24));
+        destination.setBounds (at (c.destination, 28));
         remove.setBounds (at (c.remove, 20));
         return;
     }
-    auto r = getLocalBounds().reduced (4, 3);
-    light.setBounds (r.removeFromLeft (18));
-    r.removeFromLeft (4);
-    remove.setBounds (r.removeFromRight (22));
-    r.removeFromRight (4);
-    if (showSource)
-    {
-        source.setBounds (r.removeFromLeft (juce::jmin (90, r.getWidth() / 4)));
-        r.removeFromLeft (6);
-        destination.setBounds (r.removeFromRight (juce::jmin (150, r.getWidth() / 3)));
-    }
-    else destination.setBounds (r.removeFromTop (r.getHeight() / 2).reduced (0, 1));
-    r.removeFromRight (4);
-    invert.setBounds (r.removeFromRight (36).reduced (0, showSource ? 0 : 1));
-    r.removeFromRight (40);   // the percentage
+    // A ROUTING card (0.16.1): the light, where it goes and remove on top; the amount box and INV under them.
+    auto r = getLocalBounds().reduced (8, 5);
+    auto top = r.removeFromTop (18);
+    light.setBounds (top.removeFromLeft (16).withSizeKeepingCentre (16, 16));
+    top.removeFromLeft (4);
+    remove.setBounds (top.removeFromRight (18));
+    top.removeFromRight (4);
+    destination.setBounds (top);
+    r.removeFromTop (3);
+    invert.setBounds (r.removeFromRight (40));
+    r.removeFromRight (6);
     amount.setBounds (r);
 }
 void RouteRow::paint (juce::Graphics& g)
 {
     g.setColour (slotRow);
-    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), showSource ? 8.0f : 4.0f);
-    if (showSource) return;   // the amount box shows its own value
+    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 8.0f);
+    if (showSource || amount.isRotary()) return;   // the amount box shows its own value
     g.setColour (textColour);
     g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
     g.drawText (juce::String (juce::roundToInt (amount.getValue())) + "%", amount.getRight() + 2, amount.getY(), 38, amount.getHeight(),
@@ -162,7 +170,6 @@ void RouteRow::paint (juce::Graphics& g)
 }
 void RouteRow::paintOverChildren (juce::Graphics& g)
 {
-    if (! showSource) return;
     // SOURCE and DESTINATION open menus: a small arrow says so.
     g.setColour (dimTextColour);
     for (auto* b : { &source, &destination })

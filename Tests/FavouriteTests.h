@@ -68,7 +68,8 @@ inline void run (const juce::File& screenshots)
         require (shapes.isPaletteFavourite (2) != shapes.isPaletteFavourite (3), "The other folders show which shapes are favourites");
     }
     {
-        // Triad Time: hearts on the numbered patterns (the pattern as drawn now), shared with Triad.
+        // Triad Time: the heart beside PATTERN (0.17.0; before, a heart on each numbered pattern) puts the pattern playing
+        // in FAVORITES as it is drawn now, shared with Triad.
         TriadTime t;
         t.prepareToPlay (48000.0, 512);
         std::unique_ptr<juce::AudioProcessorEditor> editor (t.createEditor());
@@ -76,13 +77,15 @@ inline void run (const juce::File& screenshots)
         pump (100);
         juce::Button* pattern = nullptr;
         for (auto* c : editor->getChildren())
-            if (auto* b = dynamic_cast<juce::Button*> (c); b != nullptr && b->getName() == "5") pattern = b;
-        require (pattern != nullptr, "Triad Time's pattern 5");
+            if (auto* b = dynamic_cast<juce::Button*> (c); b != nullptr && b->getName() == "patternHeart") pattern = b;
+        require (pattern != nullptr, "Triad Time's heart beside PATTERN");
+        t.setSlot (TriadTime::timeEnvelope, 4);
+        pump (200);
         const auto shape = t.getShape (TriadTime::timeEnvelope, 4);
         const int slotBefore = t.getSlot (TriadTime::timeEnvelope);
-        require (! fav::contains (shape), "...not a favourite yet");
-        clickAt (*pattern, 9.0f, (float) pattern->getHeight() - 9.0f);
-        require (fav::contains (shape) && fav::load().front().name == "TIME pattern 5", "The heart on a pattern puts it in FAVORITES (as it is drawn now)");
+        require (slotBefore == 4 && ! fav::contains (shape), "...pattern 5 playing, not a favourite yet");
+        clickAt (*pattern, (float) pattern->getWidth() * 0.5f, (float) pattern->getHeight() * 0.5f);
+        require (fav::contains (shape) && fav::load().front().name == "TIME pattern 5", "The heart puts the pattern playing in FAVORITES (as it is drawn now)");
         require (t.getSlot (TriadTime::timeEnvelope) == slotBefore, "...the heart does not switch patterns");
         ShapePanel* panel = nullptr;
         for (auto* c : editor->getChildren()) if (auto* s = dynamic_cast<ShapePanel*> (c)) panel = s;
@@ -90,7 +93,7 @@ inline void run (const juce::File& screenshots)
         require (panel->getNumPaletteButtons() == 2, "Triad Time's FAVORITES has it, and the shape marked in Triad");
         pump (1200);   // another window (Triad's) sees it within a second
         themeTests::snapshot (screenshots, "Triad-Time-favorites.png", *editor);
-        clickAt (*pattern, 9.0f, (float) pattern->getHeight() - 9.0f);
+        clickAt (*pattern, (float) pattern->getWidth() * 0.5f, (float) pattern->getHeight() * 0.5f);
         require (! fav::contains (shape), "...clicking the heart again takes it out");
     }
     TriadSettings::favouriteShapesFile().deleteFile();

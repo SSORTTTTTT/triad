@@ -34,7 +34,9 @@ class TriadEditor final : public juce::AudioProcessorEditor, public StripHost,
                           private juce::Timer, private juce::ChangeListener
 {
 public:
-    static constexpr int logicalWidth = 1000, logicalHeight = 620;
+    // 0.17.0: 80 taller (was 620), so the LFO tab's grid keeps its height with the shapes browser under it (Thomas's
+    // layout, as Triad Time's); the bands get more room for slots.
+    static constexpr int logicalWidth = 1000, logicalHeight = 700;
     enum class Tab { bands = 0, lfo, matrix };
 
     explicit TriadEditor (TriadProcessor&);
