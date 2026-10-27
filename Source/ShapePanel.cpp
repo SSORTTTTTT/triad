@@ -447,7 +447,7 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
             g.drawText (juce::String (q) + "/4", juce::Rectangle<float> (r.getX() + r.getWidth() * (float) q / 4.0f - 20.0f, 2.0f, 40.0f, 16.0f),
                         juce::Justification::centred);
         for (int v : { 100, 75, 50, 25, 0 })
-            g.drawText (host != nullptr ? host->valueLabel (v) : juce::String (v) + "%", juce::Rectangle<float> (0.0f, r.getBottom() - r.getHeight() * (float) v / 100.0f - 8.0f, 34.0f, 16.0f),
+            g.drawText (host != nullptr ? host->valueLabel (v) : juce::String (v) + "%", juce::Rectangle<float> (0.0f, r.getBottom() - r.getHeight() * (float) v / 100.0f - 8.0f, r.getX() - 11.0f, 16.0f),
                         juce::Justification::centredRight);
     }
     // The shape: hatched fill under a solid line (Triad Time's TIME: the triangle below the diagonal, as ShaperBox).

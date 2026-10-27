@@ -400,9 +400,9 @@ void LfoPage::rebuild()
 void LfoPage::updateToolbar()
 {
     const bool learning = processor.isLearningParameter();
-    addRouteButton.setButtonText (learning ? "LEARNING... (CLICK TO STOP)" : "+ ROUTE TO...");
-    learnButton.setButtonText (learning ? "MOVE A KNOB... (STOP)" : "LEARN");
-    learnButton.setColour (juce::TextButton::buttonColourId, learning ? accent.withAlpha (0.35f) : currentPalette.panel);
+    addRouteButton.setButtonText (learning ? "MOVE A KNOB..." : "+ ROUTE TO...");
+    learnButton.setButtonText (learning ? "STOP" : "LEARN");
+    learnButton.setColour (juce::TextButton::buttonColourId, learning ? accent.withAlpha (0.35f) : addRouteButton.findColour (juce::TextButton::buttonColourId));
     learnButton.setColour (juce::TextButton::textColourOffId, accent);
     shapes.updateToolbar();
 }
@@ -457,15 +457,19 @@ void LfoPage::resized()
     shapes.setGridInsetRight (routingWidth);
     shapes.setBounds (r);
     routingArea = juce::Rectangle<int> (r.getRight() - routingWidth, r.getY(), routingWidth, r.getHeight() - ShapePanel::browserToolbarHeight - 8);
-    auto panel = routingArea.reduced (10, 0).withTrimmedTop (50).withTrimmedBottom (10);
-    learnButton.setBounds (panel.removeFromBottom (32));
-    panel.removeFromBottom (6);
-    addRouteButton.setBounds (panel.removeFromBottom (32));
+    // The header (ROUTING, where from), the cards, then + ROUTE TO and LEARN side by side (0.17.0: room for two cards
+    // or more in the default window).
+    auto panel = routingArea.reduced (10, 0).withTrimmedTop (48).withTrimmedBottom (10);
+    auto buttons = panel.removeFromBottom (28);
+    learnButton.setBounds (buttons.removeFromRight (juce::jmax (70, buttons.getWidth() * 2 / 5)));
+    buttons.removeFromRight (6);
+    addRouteButton.setBounds (buttons);
     panel.removeFromBottom (8);
     routeView.setBounds (panel);
-    const int width = panel.getWidth() - (routeRows.size() * 70 > (size_t) panel.getHeight() ? 7 : 0);
+    constexpr int cardHeight = 52, cardGap = 5;
+    const int width = panel.getWidth() - ((int) routeRows.size() * (cardHeight + cardGap) - cardGap > panel.getHeight() ? 7 : 0);
     int y = 0;
-    for (auto& row : routeRows) { row->setBounds (0, y, width, 64); y += 70; }
+    for (auto& row : routeRows) { row->setBounds (0, y, width, cardHeight); y += cardHeight + cardGap; }
     routeHolder.setSize (width, juce::jmax (y, 1));
     removeLfoButton.setBounds (juce::Rectangle<int> (routingArea.getRight() - 96, routingArea.getY() + 10, 86, 22));
 }

@@ -302,6 +302,23 @@ juce::Font TriadLook::getTextButtonFont (juce::TextButton&, int height)
 {
     return juce::FontOptions (juce::jmin (12.5f, (float) height * 0.55f), juce::Font::bold);
 }
+void TriadLook::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool over, bool down)
+{
+    const auto align = b.getProperties().getWithDefault ("triadAlign", {}).toString();
+    if (align != "left" && align != "arrow" && align != "centre")
+    {
+        LookAndFeel_V4::drawButtonText (g, b, over, down);
+        return;
+    }
+    // "arrow": centred in what the menu arrow on the right leaves (the matrix's SOURCE and DESTINATION); "centre": a
+    // small button's word at its own width (INV), not squeezed.
+    g.setColour (b.findColour (b.getToggleState() ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId)
+                  .withMultipliedAlpha (b.isEnabled() ? 1.0f : 0.5f));
+    const bool left = align == "left", arrow = align == "arrow";
+    g.setFont (juce::FontOptions (left ? 12.0f : juce::jmin (12.0f, (float) b.getHeight() * 0.5f), juce::Font::bold));
+    g.drawFittedText (b.getButtonText(), b.getLocalBounds().withTrimmedLeft (left ? 2 : arrow ? 4 : 1).withTrimmedRight (left ? 16 : arrow ? 13 : 1),
+                      left ? juce::Justification::centredLeft : juce::Justification::centred, 1, 0.85f);
+}
 // ---- Menus ----------------------------------------------------------------------------------------------
 namespace
 {
