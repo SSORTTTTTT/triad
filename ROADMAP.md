@@ -45,6 +45,19 @@ Still to come (the next version): Triad Time's new layout (the preset browser wi
 a page, go to a page by its number; MIX AND SMOOTHING boxes next to SAVE; the move-the-wave arrows; select points and
 move them) and the LFO tab in that layout with ROUTING at the side and LEARN.
 
+### Next: swap TIME and VOLUME's order by dragging their tabs (Thomas, 2026-10-26 evening) — after Triad Time's new layout
+
+Thomas: "on the top where it says time and volume ... hold it down and switch it from left to right where the volume tab
+is actually modulating the audio after the time tab, and then vice versa ... if I wanted to ... duck out part of the
+audio or sidechain it, like volume gate it, and then have the time knob go through it after."
+- The TIME and VOLUME tabs show the order the sound goes through them, left to right. Press and drag one past the other
+  to swap them: **TIME then VOLUME** (as now: the gate shapes what TIME has played) or **VOLUME then TIME** (the gate
+  first, then TIME repeats, reverses or slows the gated sound, so the gaps are played back too).
+- Saved with the project (a setting of the plug-in, also on Triad's built-in Triad Time); undoable; a small arrow
+  between the tabs (TIME > VOLUME) says which way it goes.
+- To check when building it: with VOLUME first, TIME reads back the gated sound from its history, so the history stores
+  the sound after the gate; the smoothing and the gate's attack and release stay as they are.
+
 ### 0.15.0 ("Triad v14"): favorites with hearts, the sound behind the grid, 10,000 TIME patterns
 
 0.15.0 (2026-10-22), Thomas: "can you just start on all these updates for the roadmap right now, like the audio thing
