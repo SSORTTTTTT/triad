@@ -21,6 +21,7 @@ public:
     void show (const juce::String& title, const juce::String& initial, std::function<void (const juce::String&)> onSave);
     void paint (juce::Graphics&) override;
     void resized() override;
+    void lookAndFeelChanged() override;
     juce::TextEditor text;
 private:
     void finish (bool save);
@@ -52,8 +53,14 @@ public:
     void bandDrag (int band, const juce::MouseEvent&, int phase) override;
     bool isFavourite (const juce::String& format, const juce::String& name) override;
     void setFavourite (const juce::String& format, const juce::String& name, bool) override;
+    juce::String getFavouriteType (const juce::String& format, const juce::String& name) override;
+    void setFavouriteType (const juce::String& format, const juce::String& name, const juce::String& type) override;
+    // The type a plug-in is listed under in FAVORITES: one set by hand, else its own (an Audio Unit borrows the
+    // category of the VST3 of the same name; Audio Units only say "Effect").
+    juce::String favouriteTypeOf (const EffectEntry&, const std::vector<EffectEntry>& all) const;
 
     void setTab (Tab);
+    void openGearMenu() { showGearMenu(); }   // tests
     Tab getTab() const noexcept { return tab; }
     void setScale (double);
     double getScale() const noexcept { return scale; }

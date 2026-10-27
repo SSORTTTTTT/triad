@@ -157,7 +157,8 @@ inline void run (const juce::File& screenshots)
         const auto start = juce::Time::getMillisecondCounter();
         while (ui::currentTheme().name != "Plum" && juce::Time::getMillisecondCounter() - start < 3000)
             juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
-        require (ui::currentTheme().name == "Plum" && sameColour (editor->getLookAndFeel().findColour (juce::PopupMenu::backgroundColourId), themes[4][Theme::panels]),
+        require (ui::currentTheme().name == "Plum" && sameColour (ui::panel, themes[4][Theme::panels])
+                     && sameColour (editor->getLookAndFeel().findColour (juce::PopupMenu::backgroundColourId).withAlpha (1.0f), ui::menuColours().back),
                  "A theme chosen in another plug-in reaches open windows (through Triad.settings)");
         snapshot (screenshots, "Theme-Plum-Triad-Split.png", *splitEditor);
         // Edit colours: pick colours one by one; a band's own colour is moved clear of it.

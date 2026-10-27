@@ -1164,7 +1164,8 @@ void ShapePanel::showPageMenu()
         {
             if (count <= 0) return;
             const int page = start / paletteSize;
-            menu.addItem (page + 1, name + "  (page " + juce::String (page + 1) + ")", true, palettePage >= page && palettePage <= (start + count - 1) / paletteSize);
+            addItemWithRight (menu, page + 1, name, "p. " + juce::String (page + 1), true,
+                              palettePage >= page && palettePage <= (start + count - 1) / paletteSize);
             start += count;
         };
         for (int c = 0; c < mod::numPresetCategories(); ++c) addFolder (mod::presetCategoryName (c), (int) mod::presetsIn (c).size());
@@ -1239,32 +1240,54 @@ void ShapePanel::showCategoryMenu()
 {
     enum { userId = userFolder + 1, saveId = 5000, folderId };
     juce::PopupMenu menu;
-    auto add = [&] (int id, const juce::String& name, int count, bool ticked)
+    // The count on the right (2,000); each plug-in's own shapes first, the other's one menu away (0.16.0, Thomas:
+    // Triad Time opens on its TIME folders with the LFO shapes to the side; Triad's LFO tab the other way round).
+    const auto counted = [] (int n) { return n >= 1000 ? juce::String (n / 1000) + "," + juce::String (n % 1000).paddedLeft ('0', 3) : juce::String (n); };
+    auto add = [&] (juce::PopupMenu& m, int id, const juce::String& name, int count, bool ticked)
     {
-        const int pages = (count + paletteSize - 1) / paletteSize;
-        menu.addItem (id, name + "  (" + juce::String (count) + (pages > 1 ? ", " + juce::String (pages) + " pages)" : ")"), true, ticked);
+        addItemWithRight (m, id, name, counted (count), true, ticked);
     };
     menu.addSectionHeader ("EVERYTHING");
-    add (allFolder + 1, "ALL", mod::numPresets() + triad::timePresets::numPresets, paletteCategory == allFolder);
-    add (favouritesFolder + 1, u8 ("\xe2\x99\xa5 FAVORITES"), (int) triad::favouriteShapes::load().size(), paletteCategory == favouritesFolder);
-    const auto addTimeFolders = [&]
+    add (menu, allFolder + 1, "ALL", mod::numPresets() + triad::timePresets::numPresets, paletteCategory == allFolder);
+    add (menu, favouritesFolder + 1, u8 ("\xe2\x99\xa5 FAVORITES"), (int) triad::favouriteShapes::load().size(), paletteCategory == favouritesFolder);
+    const auto addTimeFolders = [&] (juce::PopupMenu& m)
     {
-        menu.addSectionHeader ("TRIAD TIME: PITCH AND CHOPS (TRAINED ON GROSS BEAT BANKS)");
+        m.addSectionHeader ("TRIAD TIME: PITCH AND CHOPS (TRAINED ON GROSS BEAT BANKS)");
         for (int f = 0; f < triad::timePresets::numFolders; ++f)
-            add (timeFolder + f + 1, triad::timePresets::folderNames[f], (int) triad::timePresets::presetsIn (f).size(), paletteCategory == timeFolder + f);
+            add (m, timeFolder + f + 1, triad::timePresets::folderNames[f], (int) triad::timePresets::presetsIn (f).size(), paletteCategory == timeFolder + f);
     };
-    if (timeHost()) addTimeFolders();   // TIME: its own folders first
-    menu.addSectionHeader ("SHAPES BY TYPE");
-    bool generatedHeader = false;
-    for (int c = 0; c < mod::numPresetCategories(); ++c)
+    const auto addShapeFolders = [&] (juce::PopupMenu& m)
     {
-        if (mod::isGeneratedCategory (c) && ! generatedHeader) { menu.addSectionHeader ("GENERATED (FROM THE DICE)"); generatedHeader = true; }
-        if (mod::isExtraCategory (c)) menu.addSectionHeader ("EXTRA (EVERY PREVIEW SHAPE)");
-        add (c + 1, mod::presetCategoryName (c), (int) mod::presetsIn (c).size(), c == paletteCategory);
+        m.addSectionHeader ("SHAPES BY TYPE");
+        bool generatedHeader = false;
+        for (int c = 0; c < mod::numPresetCategories(); ++c)
+        {
+            if (mod::isGeneratedCategory (c) && ! generatedHeader) { m.addSectionHeader ("GENERATED (FROM THE DICE)"); generatedHeader = true; }
+            if (mod::isExtraCategory (c)) m.addSectionHeader ("EXTRA (EVERY PREVIEW SHAPE)");
+            add (m, c + 1, mod::presetCategoryName (c), (int) mod::presetsIn (c).size(), c == paletteCategory);
+        }
+    };
+    const bool inTime = paletteCategory >= timeFolder && paletteCategory < timeFolder + triad::timePresets::numFolders;
+    const bool inShapes = paletteCategory >= 0 && paletteCategory < mod::numPresetCategories();
+    if (timeHost())
+    {
+        addTimeFolders (menu);
+        menu.addSeparator();
+        juce::PopupMenu shapes;
+        addShapeFolders (shapes);
+        addSubMenu (menu, "LFO SHAPES", std::move (shapes), {}, true, inShapes);
     }
-    if (! timeHost()) addTimeFolders();
+    else
+    {
+        addShapeFolders (menu);
+        menu.addSeparator();
+        juce::PopupMenu patterns;
+        addTimeFolders (patterns);
+        addSubMenu (menu, "TRIAD TIME PATTERNS", std::move (patterns), {}, true, inTime);
+    }
+    menu.addSeparator();
     menu.addSectionHeader ("YOUR SHAPES");
-    add (userId, "USER", (int) triad::userShapes::load().size(), paletteCategory == userFolder);
+    add (menu, userId, "USER", (int) triad::userShapes::load().size(), paletteCategory == userFolder);
     menu.addItem (saveId, "Save this shape to USER...");
     menu.addItem (folderId, "Show the USER folder");
     juce::Component::SafePointer<ShapePanel> safe (this);

@@ -191,6 +191,40 @@ void TriadSettings::setFavourite (const juce::String& key, bool on)
     file->saveIfNeeded();
     loadedModification = options().getDefaultFile().getLastModificationTime();
 }
+bool TriadSettings::getFavouritesByType() const
+{
+    reload();
+    return file->getBoolValue ("favouritesByType", true);
+}
+void TriadSettings::setFavouritesByType (bool on)
+{
+    reload();
+    file->setValue ("favouritesByType", on);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
+juce::String TriadSettings::getFavouriteType (const juce::String& key) const
+{
+    reload();
+    juce::StringArray lines;
+    lines.addLines (file->getValue ("favouriteTypes"));
+    for (const auto& line : lines)
+        if (line.upToLastOccurrenceOf ("=", false, false) == key) return line.fromLastOccurrenceOf ("=", false, false);
+    return {};
+}
+void TriadSettings::setFavouriteType (const juce::String& key, const juce::String& type)
+{
+    reload();
+    juce::StringArray lines;
+    lines.addLines (file->getValue ("favouriteTypes"));
+    lines.removeEmptyStrings();
+    for (int i = lines.size(); --i >= 0;)
+        if (lines[i].upToLastOccurrenceOf ("=", false, false) == key) lines.remove (i);
+    if (type.isNotEmpty()) lines.add (key + "=" + type);
+    file->setValue ("favouriteTypes", lines.joinIntoString ("\n"));
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
 juce::File TriadSettings::presetFolder()
 {
     return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Triad/Presets");

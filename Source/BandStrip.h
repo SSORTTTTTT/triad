@@ -15,6 +15,9 @@ public:
     virtual void bandDrag (int band, const juce::MouseEvent&, int phase) = 0;   // 0 down, 1 drag, 2 up
     virtual bool isFavourite (const juce::String& format, const juce::String& name) = 0;
     virtual void setFavourite (const juce::String& format, const juce::String& name, bool) = 0;
+    // The FAVORITES type a favorite is listed under (DELAY, REVERB ...; 0.16.0): the plug-in's own, or one set by hand.
+    virtual juce::String getFavouriteType (const juce::String& format, const juce::String& name) { juce::ignoreUnused (format, name); return {}; }
+    virtual void setFavouriteType (const juce::String& format, const juce::String& name, const juce::String& type) { juce::ignoreUnused (format, name, type); }
 };
 
 // One effect slot, laid out like an FL Studio mixer slot:

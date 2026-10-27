@@ -358,22 +358,37 @@ ThemeWatcher::~ThemeWatcher()
 }
 
 // ---- Menu ---------------------------------------------------------------------------------------------------------------
-void addThemeItems (juce::PopupMenu& menu, int firstId)
+juce::Array<juce::Colour> themeSwatches (const Theme& t)
 {
-    menu.addSectionHeader ("THEME");
+    return { t[Theme::background], t[Theme::buttons], t[Theme::accent], t[Theme::timeLine] };
+}
+juce::String themeDisplayName (const Theme& t)
+{
+    return t.name.startsWith ("My: ") ? t.name.substring (4) : t.name;
+}
+void addThemeItems (juce::PopupMenu& menu, int firstId, bool full)
+{
+    if (full) menu.addSectionHeader ("THEME");
     const auto& current = currentTheme();
     int i = 0;
-    for (const auto& t : builtInThemes()) menu.addItem (firstId + i++, t.name, true, current.name == t.name);
+    for (const auto& t : builtInThemes())
+    {
+        addItemWithRight (menu, firstId + i, t.name, menuSwatches (themeSwatches (t)), true, current.name == t.name);
+        ++i;
+    }
     const auto saved = savedThemeNames();
     if (! saved.isEmpty())
     {
         juce::PopupMenu mine;
-        for (int j = 0; j < saved.size() && j < 99; ++j) mine.addItem (firstId + 100 + j, saved[j], true, current.name == "My: " + saved[j]);
-        menu.addSubMenu ("My themes", mine, true, nullptr, current.name.startsWith ("My: "));
+        for (int j = 0; j < saved.size() && j < 99; ++j)
+            addItemWithRight (mine, firstId + 100 + j, saved[j], menuSwatches (themeSwatches (themeNamed ("My: " + saved[j]))), true,
+                              current.name == "My: " + saved[j]);
+        addSubMenu (menu, "My themes", std::move (mine), {}, true, current.name.startsWith ("My: "));
     }
     juce::SharedResourcePointer<TriadSettings> settings;
-    if (settings->getCustomTheme().isNotEmpty() || current.name == "Custom") menu.addItem (firstId + 200, "Custom", true, current.name == "Custom");
-    menu.addItem (firstId + 201, "Edit colours...");
+    if (settings->getCustomTheme().isNotEmpty() || current.name == "Custom")
+        addItemWithRight (menu, firstId + 200, "Custom", menuSwatches (themeSwatches (themeNamed ("Custom"))), true, current.name == "Custom");
+    if (full) menu.addItem (firstId + 201, "Edit colours...");
 }
 bool handleThemeChoice (int choice, int firstId, const std::function<void()>& openEditor)
 {
@@ -390,7 +405,7 @@ bool handleThemeChoice (int choice, int firstId, const std::function<void()>& op
     return false;
 }
 
-// ---- Edit colours -------------------------------------------------------------------------------------------------------
+// ---- Edit colours (0.16.0: the same layout, cleaner; Thomas) ---------------------------------------------------------------
 // RANDOM COLOURWAY: a dice and the words.
 struct ThemePanel::RandomButton final : public juce::Button
 {
@@ -398,26 +413,218 @@ struct ThemePanel::RandomButton final : public juce::Button
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         const auto r = getLocalBounds().toFloat().reduced (0.5f);
-        g.setColour (currentPalette.controlsOn.brighter (down ? 0.2f : over ? 0.1f : 0.0f));
-        g.fillRoundedRectangle (r, 5.0f);
-        g.setColour (accent.withAlpha (0.8f));
-        g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
-        const float size = r.getHeight() * 0.56f;
-        auto content = r.withSizeKeepingCentre (size + 8.0f + 150.0f, r.getHeight());
+        g.setColour (currentPalette.controls.brighter (down ? 0.12f : over ? 0.06f : 0.0f));
+        g.fillRoundedRectangle (r, 8.0f);
+        g.setColour (accent.withAlpha (0.7f));
+        g.drawRoundedRectangle (r.reduced (0.5f), 8.0f, 1.0f);
+        const float size = r.getHeight() * 0.52f;
+        auto content = r.withSizeKeepingCentre (size + 10.0f + 160.0f, r.getHeight());
         IconButton::drawIcon (g, IconButton::Icon::dice, content.removeFromLeft (size).withSizeKeepingCentre (size, size), textColour);
-        content.removeFromLeft (8.0f);
+        content.removeFromLeft (10.0f);
         g.setColour (textColour);
-        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.setFont (juce::FontOptions (13.5f, juce::Font::bold));
         g.drawText ("RANDOM COLOURWAY", content, juce::Justification::centredLeft);
     }
+};
+// START FROM: the theme's name and its colours as small squares; a click opens the themes.
+struct ThemePanel::StartFrom final : public juce::Button
+{
+    StartFrom() : Button ("Start from")
+    {
+        setTooltip ("Start from a ready-made or saved theme");
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    }
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        const auto m = menuColours();
+        const auto r = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (currentPalette.controls.brighter (down ? 0.1f : over ? 0.05f : 0.0f));
+        g.fillRoundedRectangle (r, 8.0f);
+        if (open)
+        {
+            g.setColour (m.chosen);
+            g.drawRoundedRectangle (r.reduced (0.75f), 8.0f, 1.5f);
+        }
+        auto inside = r.reduced (12.0f, 0.0f);
+        juce::Path arrow;
+        const float ax = inside.getRight() - 9.0f, ay = r.getCentreY();
+        arrow.addTriangle (ax, ay - 3.0f, ax + 9.0f, ay - 3.0f, ax + 4.5f, ay + 3.5f);
+        g.setColour (m.text);
+        g.fillPath (arrow);
+        inside.removeFromRight (22.0f);
+        float sx = inside.getRight() - (float) swatches.size() * 14.0f + 3.0f;
+        for (auto c : swatches)
+        {
+            const auto square = juce::Rectangle<float> (sx, ay - 5.5f, 11.0f, 11.0f);
+            g.setColour (c);
+            g.fillRoundedRectangle (square, 2.0f);
+            g.setColour (m.text.withAlpha (0.35f));
+            g.drawRoundedRectangle (square.reduced (0.5f), 2.0f, 1.0f);
+            sx += 14.0f;
+        }
+        inside.setRight (inside.getRight() - (float) swatches.size() * 14.0f - 8.0f);
+        g.setColour (m.text);
+        g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+        g.drawFittedText (name, inside.toNearestInt(), juce::Justification::centredLeft, 1, 0.8f);
+    }
+    juce::String name;
+    juce::Array<juce::Colour> swatches;
+    bool open = false;
+};
+// The picker for the chosen colour: a square (saturation across, brightness down), the hue bar standing beside it
+// with an arrow on each side (Thomas: "keep the color-changing bar on the side, not underneath it"), and the colour as
+// RED / GREEN / BLUE boxes (drag one, or double-click to type).
+struct ThemePanel::Picker final : public juce::Component, public juce::ChangeBroadcaster
+{
+    Picker()
+    {
+        const char* names[] { "RED", "GREEN", "BLUE" };
+        const juce::uint32 tints[] { 0xffff5c6a, 0xff7ce07c, 0xff6aa8ff };
+        for (int i = 0; i < 3; ++i)
+        {
+            auto& s = channels[(size_t) i];
+            s.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+            s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            s.setRange (0.0, 255.0, 1.0);
+            s.setMouseDragSensitivity (200);
+            s.getProperties().set ("triadLabel", names[i]);
+            s.getProperties().set ("triadUnit", "raw");
+            s.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (tints[i]));
+            s.setTooltip (juce::String (names[i]).toLowerCase() + " (0-255): drag left or right");
+            s.onValueChange = [this] { if (! updating) fromChannels(); };
+            addAndMakeVisible (s);
+        }
+    }
+    juce::Colour getColour() const { return colour; }
+    void setColour (juce::Colour c)   // from the editor: no change message
+    {
+        c = c.withAlpha (1.0f);
+        if (c == colour && ! first) return;
+        first = false;
+        colour = c;
+        if (c.getSaturation() > 0.001f && c.getBrightness() > 0.001f) hue = c.getHue();
+        saturation = c.getSaturation();
+        brightness = c.getBrightness();
+        showChannels();
+        repaint();
+    }
+    void resized() override
+    {
+        auto r = getLocalBounds();
+        preview = r.removeFromTop (30).toFloat();
+        r.removeFromTop (10);
+        auto boxes = r.removeFromBottom (44);
+        r.removeFromBottom (10);
+        hueBar = r.removeFromRight (34).withTrimmedLeft (7).withTrimmedRight (7).toFloat();
+        r.removeFromRight (6);
+        square = r.toFloat();
+        const int w = (boxes.getWidth() - 16) / 3;
+        for (auto& s : channels) { s.setBounds (boxes.removeFromLeft (w)); boxes.removeFromLeft (8); }
+        squareImage = {};
+    }
+    void paint (juce::Graphics& g) override
+    {
+        // The colour, with its hex code on it.
+        g.setColour (colour);
+        g.fillRoundedRectangle (preview, 8.0f);
+        g.setColour (colour.getPerceivedBrightness() > 0.55f ? inkColour : juce::Colours::white);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.5f, juce::Font::bold));
+        g.drawText ("#" + colour.toDisplayString (false), preview, juce::Justification::centred);
+        // The square for this hue (drawn again only when the hue or the size changes).
+        if (squareImage.isNull() || ! juce::approximatelyEqual (squareHue, hue)) drawSquare();
+        {
+            juce::Graphics::ScopedSaveState state (g);
+            juce::Path clip;
+            clip.addRoundedRectangle (square, 8.0f);
+            g.reduceClipRegion (clip);
+            g.drawImage (squareImage, square);
+        }
+        const auto spot = juce::Point<float> (square.getX() + saturation * square.getWidth(), square.getY() + (1.0f - brightness) * square.getHeight());
+        g.setColour (juce::Colours::black.withAlpha (0.5f));
+        g.drawEllipse (juce::Rectangle<float> (17.0f, 17.0f).withCentre (spot), 1.0f);
+        g.setColour (juce::Colours::white);
+        g.drawEllipse (juce::Rectangle<float> (15.0f, 15.0f).withCentre (spot), 2.5f);
+        // The hue bar: red at the top, round the colours to red again at the bottom.
+        juce::ColourGradient rainbow (juce::Colours::red, 0.0f, hueBar.getY(), juce::Colours::red, 0.0f, hueBar.getBottom(), false);
+        for (int i = 1; i < 6; ++i) rainbow.addColour ((double) i / 6.0, juce::Colour::fromHSV ((float) i / 6.0f, 1.0f, 1.0f, 1.0f));
+        g.setGradientFill (rainbow);
+        g.fillRoundedRectangle (hueBar, 6.0f);
+        const float y = hueBar.getY() + hue * hueBar.getHeight();
+        const auto handle = juce::Rectangle<float> (hueBar.getWidth() + 6.0f, 12.0f).withCentre ({ hueBar.getCentreX(), y });
+        g.setColour (juce::Colour::fromHSV (hue, 1.0f, 1.0f, 1.0f));
+        g.fillRoundedRectangle (handle, 4.0f);
+        g.setColour (juce::Colours::white);
+        g.drawRoundedRectangle (handle.reduced (1.25f), 4.0f, 2.5f);
+        juce::Path arrows;
+        arrows.addTriangle (hueBar.getX() - 10.0f, y - 6.0f, hueBar.getX() - 10.0f, y + 6.0f, hueBar.getX() - 4.0f, y);
+        arrows.addTriangle (hueBar.getRight() + 10.0f, y - 6.0f, hueBar.getRight() + 10.0f, y + 6.0f, hueBar.getRight() + 4.0f, y);
+        g.setColour (textColour);
+        g.fillPath (arrows);
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        dragging = square.expanded (4.0f).contains (e.position) ? 1 : hueBar.expanded (12.0f, 4.0f).contains (e.position) ? 2 : 0;
+        mouseDrag (e);
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (dragging == 1)
+        {
+            saturation = juce::jlimit (0.0f, 1.0f, (e.position.x - square.getX()) / square.getWidth());
+            brightness = juce::jlimit (0.0f, 1.0f, 1.0f - (e.position.y - square.getY()) / square.getHeight());
+        }
+        else if (dragging == 2) hue = juce::jlimit (0.0f, 0.9999f, (e.position.y - hueBar.getY()) / hueBar.getHeight());
+        else return;
+        colour = juce::Colour::fromHSV (hue, saturation, brightness, 1.0f);
+        showChannels();
+        repaint();
+        sendChangeMessage();
+    }
+    void mouseUp (const juce::MouseEvent&) override { dragging = 0; }
+    std::array<juce::Slider, 3> channels;
+private:
+    void showChannels()
+    {
+        const juce::ScopedValueSetter<bool> busy (updating, true);
+        channels[0].setValue (colour.getRed(), juce::dontSendNotification);
+        channels[1].setValue (colour.getGreen(), juce::dontSendNotification);
+        channels[2].setValue (colour.getBlue(), juce::dontSendNotification);
+    }
+    void fromChannels()
+    {
+        colour = juce::Colour ((juce::uint8) juce::roundToInt (channels[0].getValue()), (juce::uint8) juce::roundToInt (channels[1].getValue()),
+                               (juce::uint8) juce::roundToInt (channels[2].getValue()));
+        if (colour.getSaturation() > 0.001f && colour.getBrightness() > 0.001f) hue = colour.getHue();
+        saturation = colour.getSaturation();
+        brightness = colour.getBrightness();
+        repaint();
+        sendChangeMessage();
+    }
+    void drawSquare()
+    {
+        squareHue = hue;
+        const int w = juce::jmax (1, (int) square.getWidth()), h = juce::jmax (1, (int) square.getHeight());
+        squareImage = juce::Image (juce::Image::RGB, w, h, false);
+        juce::Image::BitmapData pixels (squareImage, juce::Image::BitmapData::writeOnly);
+        for (int y = 0; y < h; ++y)
+            for (int x = 0; x < w; ++x)
+                pixels.setPixelColour (x, y, juce::Colour::fromHSV (hue, (float) x / (float) juce::jmax (1, w - 1),
+                                                                    1.0f - (float) y / (float) juce::jmax (1, h - 1), 1.0f));
+    }
+    juce::Colour colour;
+    float hue = 0.0f, saturation = 0.0f, brightness = 0.0f, squareHue = -1.0f;
+    juce::Rectangle<float> preview, square, hueBar;
+    juce::Image squareImage;
+    int dragging = 0;
+    bool updating = false, first = true;
 };
 struct ThemePanel::Row final : public juce::Component
 {
     Row (ThemePanel& p, int r) : owner (p), role (r)
     {
         hex.setInputRestrictions (7, "#0123456789abcdefABCDEF");
-        hex.setFont (juce::FontOptions (12.5f));
-        hex.setIndents (6, 0);
+        hex.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.5f, juce::Font::bold));
+        hex.setIndents (8, 0);
         hex.setJustification (juce::Justification::centredLeft);
         hex.setTooltip ("The colour as a hex code (#RRGGBB): type one and press Return");
         hex.onReturnKey = [this] { typed(); };
@@ -440,27 +647,34 @@ struct ThemePanel::Row final : public juce::Component
         colour = c;
         chosen = isChosen;
         if (! hex.hasKeyboardFocus (true)) hex.setText ("#" + c.toDisplayString (false), false);
+        hex.setColour (juce::TextEditor::outlineColourId, isChosen ? menuColours().chosenInk.withAlpha (0.6f) : currentPalette.fieldOutline);
         repaint();
     }
     void paint (juce::Graphics& g) override
     {
+        const auto m = menuColours();
         const auto r = getLocalBounds().toFloat();
-        if (chosen) { g.setColour (currentPalette.controlsOn); g.fillRoundedRectangle (r, 5.0f); }
-        const auto swatch = r.withWidth (r.getHeight()).reduced (4.0f);
+        if (chosen)
+        {
+            g.setColour (m.chosen);
+            g.fillRoundedRectangle (r.expanded (6.0f, 0.0f).withX (r.getX() - 6.0f), 8.0f);
+        }
+        // The colour as a square (0.16.0, Thomas: squares, not circles).
+        const auto swatch = r.withWidth (r.getHeight()).reduced (5.0f);
         g.setColour (colour);
         g.fillRoundedRectangle (swatch, 4.0f);
-        g.setColour (textColour.withAlpha (0.45f));
-        g.drawRoundedRectangle (swatch.reduced (0.5f), 4.0f, 1.0f);
-        g.setColour (chosen ? textColour : dimTextColour);
-        g.setFont (juce::FontOptions (12.5f, chosen ? juce::Font::bold : juce::Font::plain));
-        g.drawText (Theme::roleName (role), r.withTrimmedLeft (r.getHeight() + 4.0f).withTrimmedRight (120.0f), juce::Justification::centredLeft);
+        g.setColour ((chosen ? m.chosenInk : textColour).withAlpha (0.45f));
+        g.drawRoundedRectangle (swatch.reduced (0.75f), 4.0f, 1.5f);
+        g.setColour (chosen ? m.chosenInk : textColour);
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.drawText (Theme::roleName (role), r.withTrimmedLeft (r.getHeight() + 6.0f).withTrimmedRight (128.0f), juce::Justification::centredLeft);
     }
     void resized() override
     {
-        auto r = getLocalBounds().reduced (0, 3);
-        reset.setBounds (r.removeFromRight (26));
-        r.removeFromRight (6);
-        hex.setBounds (r.removeFromRight (82));
+        auto r = getLocalBounds().reduced (0, 4);
+        reset.setBounds (r.removeFromRight (28));
+        r.removeFromRight (8);
+        hex.setBounds (r.removeFromRight (88));
     }
     void mouseDown (const juce::MouseEvent&) override { owner.selectRole (role); }
     ThemePanel& owner;
@@ -470,7 +684,6 @@ struct ThemePanel::Row final : public juce::Component
     juce::TextEditor hex;
     IconButton reset { IconButton::Icon::undo, "Back to Triad's own colour for this" };
 };
-
 ThemePanel::ThemePanel()
 {
     setVisible (false);
@@ -480,29 +693,15 @@ ThemePanel::ThemePanel()
         rows.push_back (std::make_unique<Row> (*this, r));
         addAndMakeVisible (*rows.back());
     }
-    picker.addChangeListener (this);
-    addAndMakeVisible (picker);
-    startFrom.setTooltip ("Start from a ready-made or saved theme");
-    startFrom.onChange = [this]
-    {
-        if (updating) return;
-        const int id = startFrom.getSelectedId();
-        const auto& themes = builtInThemes();
-        Theme chosen;
-        if (id >= 1 && id <= (int) themes.size()) chosen = themes[(size_t) id - 1];
-        else if (id >= 100 && id < 200) chosen = themeNamed ("My: " + startFrom.getItemText (startFrom.indexOfItemId (id)));
-        else if (id == 200) chosen = themeNamed ("Custom");
-        else return;
-        edited = chosen;
-        note = {};
-        applyTheme (edited, true);
-        pendingSave = false;
-        refresh();
-    };
-    addAndMakeVisible (startFrom);
+    picker = std::make_unique<Picker>();
+    picker->addChangeListener (this);
+    addAndMakeVisible (*picker);
+    startFrom = std::make_unique<StartFrom>();
+    startFrom->onClick = [this] { showStartFromMenu(); };
+    addAndMakeVisible (*startFrom);
     saveName.setTextToShowWhenEmpty ("Name", dimTextColour);
-    saveName.setFont (juce::FontOptions (12.5f));
-    saveName.setIndents (6, 0);
+    saveName.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    saveName.setIndents (10, 0);
     saveName.setJustification (juce::Justification::centredLeft);
     saveName.onReturnKey = [this] { saveButton.triggerClick(); };
     addAndMakeVisible (saveName);
@@ -516,7 +715,7 @@ ThemePanel::ThemePanel()
         applyTheme (edited, true);
         pendingSave = false;
         refresh();
-        problems.setText ("Saved as \"" + name + "\" (gear menu > My themes)", juce::dontSendNotification);
+        problems.setText ("Saved as \"" + name + "\" (gear menu > Theme > My themes)", juce::dontSendNotification);
     };
     addAndMakeVisible (saveButton);
     fixButton.setTooltip ("Pick text, line and accent colours that can be read on these backgrounds");
@@ -532,10 +731,57 @@ ThemePanel::ThemePanel()
     randomButton->onClick = [this] { randomise(); };
     addAndMakeVisible (*randomButton);
     problems.setJustificationType (juce::Justification::centredLeft);
-    problems.setFont (juce::FontOptions (12.0f));
+    problems.setFont (juce::FontOptions (12.0f, juce::Font::bold));
     addAndMakeVisible (problems);
 }
-ThemePanel::~ThemePanel() { picker.removeChangeListener (this); }
+void ThemePanel::startFromTheme (int id)
+{
+    const auto& themes = builtInThemes();
+    const auto saved = savedThemeNames();
+    Theme chosen;
+    if (id >= 1 && id <= (int) themes.size()) chosen = themes[(size_t) id - 1];
+    else if (id >= 100 && id < 100 + saved.size()) chosen = themeNamed ("My: " + saved[id - 100]);
+    else if (id == 200) chosen = themeNamed ("Custom");
+    else return;
+    edited = chosen;
+    note = {};
+    applyTheme (edited, true);
+    pendingSave = false;
+    refresh();
+}
+void ThemePanel::showStartFromMenu()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("READY-MADE");
+    const auto& themes = builtInThemes();
+    for (int i = 0; i < (int) themes.size(); ++i)
+        addItemWithRight (menu, i + 1, themes[(size_t) i].name, menuSwatches (themeSwatches (themes[(size_t) i])), true, edited.name == themes[(size_t) i].name);
+    const auto saved = savedThemeNames();
+    if (! saved.isEmpty())
+    {
+        menu.addSectionHeader ("MY THEMES");
+        for (int j = 0; j < saved.size() && j < 99; ++j)
+            addItemWithRight (menu, 100 + j, saved[j], menuSwatches (themeSwatches (themeNamed ("My: " + saved[j]))), true, edited.name == "My: " + saved[j]);
+    }
+    juce::SharedResourcePointer<TriadSettings> settings;
+    if (settings->getCustomTheme().isNotEmpty() || edited.name == "Custom")
+    {
+        menu.addSeparator();
+        addItemWithRight (menu, 200, "Custom", menuSwatches (themeSwatches (themeNamed ("Custom"))), true, edited.name == "Custom");
+    }
+    startFrom->open = true;
+    startFrom->repaint();
+    juce::Component::SafePointer<ThemePanel> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (startFrom.get()).withMinimumWidth (startFrom->getWidth()),
+                        [safe] (int choice)
+    {
+        if (safe == nullptr) return;
+        safe->startFrom->open = false;
+        safe->startFrom->repaint();
+        if (choice > 0) safe->startFromTheme (choice);
+    });
+}
+ThemePanel::~ThemePanel() { picker->removeChangeListener (this); }
 
 void ThemePanel::open()
 {
@@ -606,33 +852,26 @@ void ThemePanel::timerCallback()
 void ThemePanel::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     if (updating) return;
-    const auto c = picker.getCurrentColour().withAlpha (1.0f);
+    const auto c = picker->getColour().withAlpha (1.0f);
     if (c.getARGB() != edited[selected].getARGB()) setRoleColour (selected, c);
 }
 void ThemePanel::refresh()
 {
     const juce::ScopedValueSetter<bool> busy (updating, true);
     for (int r = 0; r < (int) rows.size(); ++r) rows[(size_t) r]->update (edited[r], r == selected);
-    picker.setCurrentColour (edited[selected], juce::dontSendNotification);
-    picker.setColour (juce::ColourSelector::backgroundColourId, juce::Colours::transparentBlack);
-    picker.setColour (juce::ColourSelector::labelTextColourId, dimTextColour);
-    // Start from: the ready-made themes, the saved ones, Custom.
-    startFrom.clear (juce::dontSendNotification);
-    const auto& themes = builtInThemes();
-    for (int i = 0; i < (int) themes.size(); ++i) startFrom.addItem (themes[(size_t) i].name, i + 1);
-    const auto saved = savedThemeNames();
-    if (! saved.isEmpty())
+    picker->setColour (edited[selected]);
+    startFrom->name = themeDisplayName (edited);
+    startFrom->swatches = themeSwatches (edited);
+    startFrom->repaint();
+    // The buttons in the menus' look: DONE filled with the chosen colour.
+    const auto m = menuColours();
+    doneButton.setColour (juce::TextButton::buttonColourId, m.chosen);
+    doneButton.setColour (juce::TextButton::textColourOffId, m.chosenInk);
+    for (auto* b : { &saveButton, &cancelButton, &fixButton })
     {
-        startFrom.addSectionHeading ("My themes");
-        for (int j = 0; j < saved.size() && j < 99; ++j) startFrom.addItem (saved[j], 100 + j);
+        b->setColour (juce::TextButton::buttonColourId, currentPalette.controls.brighter (0.06f));
+        b->setColour (juce::TextButton::textColourOffId, textColour);
     }
-    juce::SharedResourcePointer<TriadSettings> settings;
-    if (settings->getCustomTheme().isNotEmpty() || edited.name == "Custom") startFrom.addItem ("Custom", 200);
-    int id = 0;
-    for (int i = 0; i < (int) themes.size(); ++i) if (edited.name == themes[(size_t) i].name) id = i + 1;
-    if (edited.name.startsWith ("My: ")) id = 100 + saved.indexOf (edited.name.substring (4));
-    if (edited.name == "Custom") id = 200;
-    startFrom.setSelectedId (id, juce::dontSendNotification);
     const auto issues = readabilityProblems (edited);
     problems.setColour (juce::Label::textColourId, issues.isEmpty() ? dimTextColour : juce::Colour (0xffe8b35c));
     problems.setText (! issues.isEmpty() ? issues.joinIntoString ("; ") + "."
@@ -646,73 +885,84 @@ void ThemePanel::refresh()
 
 juce::Rectangle<int> ThemePanel::box() const
 {
-    return getLocalBounds().withSizeKeepingCentre (juce::jmin (760, getWidth() - 20), juce::jmin (470, getHeight() - 16));
+    return getLocalBounds().withSizeKeepingCentre (juce::jmin (820, getWidth() - 20), juce::jmin (560, getHeight() - 16));
 }
 void ThemePanel::paint (juce::Graphics& g)
 {
     g.fillAll (juce::Colours::black.withAlpha (0.55f));
+    const auto m = menuColours();
     const auto frame = box().toFloat();
-    g.setColour (panel);
-    g.fillRoundedRectangle (frame, 8.0f);
-    g.setColour (accent);
-    g.drawRoundedRectangle (frame.reduced (0.5f), 8.0f, 1.2f);
-    auto top = box().reduced (18, 14).removeFromTop (30);
-    g.setFont (juce::FontOptions (15.0f, juce::Font::bold));
-    g.drawText ("COLOURS", top.removeFromLeft (100), juce::Justification::centredLeft);
+    g.setColour (m.back);
+    g.fillRoundedRectangle (frame, 14.0f);
+    g.setColour (m.edge);
+    g.drawRoundedRectangle (frame.reduced (0.5f), 14.0f, 1.0f);
+    auto top = box().reduced (24, 16).removeFromTop (34);
+    g.setColour (textColour);
+    g.setFont (juce::FontOptions (17.0f, juce::Font::bold));
+    g.drawText ("COLOURS", top.removeFromLeft (112), juce::Justification::centredLeft);
     g.setColour (dimTextColour);
-    g.setFont (juce::FontOptions (12.0f));
-    g.drawText ("Triad, Triad Time and Triad Split share them", top.removeFromLeft (300), juce::Justification::centredLeft);
-    g.drawText ("Start from", top.withTrimmedRight (226).removeFromRight (80), juce::Justification::centredRight);
-    // The ten band colours, which no theme colour may come close to.
-    auto chips = bandChipArea();
-    g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-    g.drawText ("BAND COLOURS (KEPT FOR THE BANDS)", chips.removeFromTop (16), juce::Justification::centredLeft);
-    chips.removeFromTop (4);
-    const int chipWidth = juce::jmin (30, (chips.getWidth() - 9 * 4) / 10);
+    g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+    g.drawText ("Triad, Triad Time and Triad Split share them", top.withTrimmedRight (startFromLabel.getWidth() + startFrom->getWidth()),
+                juce::Justification::centredLeft);
+    const auto caps = [&g] (const juce::String& text, juce::Rectangle<int> area, juce::Colour colour, juce::Justification j)
+    {
+        g.setColour (colour);
+        g.setFont (juce::FontOptions (10.5f, juce::Font::bold).withKerningFactor (0.06f));
+        g.drawText (text, area, j);
+    };
+    caps ("START FROM", startFromLabel, currentPalette.softText, juce::Justification::centredRight);
+    caps ("THEME COLOURS", listHeader, m.header, juce::Justification::centredLeft);
+    caps (Theme::roleName (selected).toUpperCase(), pickerHeader, m.header, juce::Justification::centredLeft);
+    // The ten band colours, which no theme colour may come close to (squares, with their numbers).
+    auto chips = chipsArea;
+    caps ("BAND COLOURS (KEPT FOR THE BANDS)", chips.removeFromTop (18), m.header, juce::Justification::centredLeft);
+    chips.removeFromTop (6);
+    const int chip = juce::jmin (26, (chips.getWidth() - 9 * 8) / 10);
     for (int b = 0; b < 10; ++b)
     {
-        const auto chip = chips.removeFromLeft (chipWidth).withHeight (16).toFloat();
-        chips.removeFromLeft (4);
+        const auto square = chips.removeFromLeft (chip).withHeight (chip).toFloat();
+        chips.removeFromLeft (8);
         g.setColour (bandColour (b));
-        g.fillRoundedRectangle (chip, 3.0f);
+        g.fillRoundedRectangle (square, 5.0f);
         g.setColour (inkColour);
-        g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
-        g.drawText (juce::String (b + 1), chip, juce::Justification::centred);
+        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+        g.drawText (juce::String (b + 1), square, juce::Justification::centred);
     }
-}
-juce::Rectangle<int> ThemePanel::bandChipArea() const
-{
-    auto r = box().reduced (18, 14);
-    r.removeFromTop (40);
-    r.removeFromBottom (66);
-    return r.removeFromLeft (370).removeFromBottom (40);
+    g.setColour (m.line);
+    g.fillRect (box().reduced (24, 0).getX(), dividerY, box().getWidth() - 48, 1);
 }
 void ThemePanel::resized()
 {
-    auto r = box().reduced (18, 14);
-    auto top = r.removeFromTop (30);
-    startFrom.setBounds (top.removeFromRight (220).reduced (0, 2));
-    r.removeFromTop (10);
-    auto bottom = r.removeFromBottom (66);
-    auto buttons = bottom.removeFromBottom (30);
-    doneButton.setBounds (buttons.removeFromRight (84));
-    buttons.removeFromRight (6);
-    cancelButton.setBounds (buttons.removeFromRight (84));
-    buttons.removeFromRight (14);
-    saveButton.setBounds (buttons.removeFromRight (84));
-    buttons.removeFromRight (6);
-    saveName.setBounds (buttons.removeFromRight (160));
-    fixButton.setBounds (buttons.removeFromLeft (130));
+    auto r = box().reduced (24, 16);
+    auto top = r.removeFromTop (34);
+    startFrom->setBounds (top.removeFromRight (210).reduced (0, 1));
+    top.removeFromRight (12);
+    startFromLabel = top.removeFromRight (90);
+    r.removeFromTop (14);
+    auto bottom = r.removeFromBottom (82);
+    dividerY = bottom.getY() + 4;
+    auto buttons = bottom.removeFromBottom (34);
+    doneButton.setBounds (buttons.removeFromRight (96));
+    buttons.removeFromRight (10);
+    cancelButton.setBounds (buttons.removeFromRight (96));
+    buttons.removeFromRight (10);
+    saveButton.setBounds (buttons.removeFromRight (96));
+    buttons.removeFromRight (10);
+    saveName.setBounds (buttons.removeFromRight (juce::jmin (180, juce::jmax (100, buttons.getWidth() - 170))));
+    fixButton.setBounds (buttons.removeFromLeft (150));
     bottom.removeFromBottom (6);
-    problems.setBounds (bottom);
-    auto list = r.removeFromLeft (370);
-    list.removeFromBottom (46);   // the band colours
-    r.removeFromLeft (18);
-    const int rowHeight = juce::jmin (32, list.getHeight() / Theme::numRoles);
+    problems.setBounds (bottom.withTrimmedTop (10).withTrimmedLeft (-4));
+    auto list = r.removeFromLeft (juce::jmin (384, r.getWidth() / 2 - 10));
+    r.removeFromLeft (32);
+    listHeader = list.removeFromTop (22);
+    chipsArea = list.removeFromBottom (52);
+    list.removeFromBottom (8);
+    const int rowHeight = juce::jmin (33, list.getHeight() / Theme::numRoles);
     for (auto& row : rows) row->setBounds (list.removeFromTop (rowHeight));
-    randomButton->setBounds (r.removeFromBottom (34));
-    r.removeFromBottom (10);
-    picker.setBounds (r);
+    pickerHeader = r.removeFromTop (22);
+    randomButton->setBounds (r.removeFromBottom (38));
+    r.removeFromBottom (12);
+    picker->setBounds (r);
 }
 void ThemePanel::mouseDown (const juce::MouseEvent& e)
 {

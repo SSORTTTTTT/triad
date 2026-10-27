@@ -132,10 +132,22 @@ void Led::paintButton (juce::Graphics& g, bool over, bool)
 }
 
 // ---- Look ---------------------------------------------------------------------------------------------
+namespace
+{
+std::vector<TriadLook*>& liveLooks() { static std::vector<TriadLook*> looks; return looks; }
+}
 TriadLook::TriadLook()
 {
     syncThemeFromSettings();
     applyTheme();
+    liveLooks().push_back (this);
+    juce::LookAndFeel::setDefaultLookAndFeel (this);
+}
+TriadLook::~TriadLook()
+{
+    auto& looks = liveLooks();
+    looks.erase (std::remove (looks.begin(), looks.end(), this), looks.end());
+    juce::LookAndFeel::setDefaultLookAndFeel (looks.empty() ? nullptr : looks.back());
 }
 void TriadLook::applyTheme()
 {
@@ -146,14 +158,17 @@ void TriadLook::applyTheme()
     setColour (juce::TextButton::textColourOffId, p.text);
     setColour (juce::TextButton::textColourOnId, p.accent);
     setColour (juce::Label::textColourId, p.dimText);
-    setColour (juce::PopupMenu::backgroundColourId, p.panel);
-    setColour (juce::PopupMenu::textColourId, p.text);
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, p.controlsOn);
-    setColour (juce::PopupMenu::highlightedTextColourId, p.text);
-    setColour (juce::PopupMenu::headerTextColourId, p.accent);
-    setColour (juce::TooltipWindow::backgroundColourId, p.grid);
-    setColour (juce::TooltipWindow::textColourId, p.text);
-    setColour (juce::TooltipWindow::outlineColourId, p.fieldOutline);
+    // Menus (0.16.0): the panel's colour is not quite opaque, so the menu's window is see-through and its rounded
+    // corners show what is behind them (drawPopupMenuBackgroundWithOptions draws the panel itself, opaque).
+    const auto m = menuColours();
+    setColour (juce::PopupMenu::backgroundColourId, m.back.withAlpha ((juce::uint8) 254));
+    setColour (juce::PopupMenu::textColourId, m.text);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, m.hover);
+    setColour (juce::PopupMenu::highlightedTextColourId, m.text);
+    setColour (juce::PopupMenu::headerTextColourId, m.header);
+    setColour (juce::TooltipWindow::backgroundColourId, m.back);
+    setColour (juce::TooltipWindow::textColourId, m.text);
+    setColour (juce::TooltipWindow::outlineColourId, m.edge);
     setColour (juce::ScrollBar::thumbColourId, p.scrollThumb);
     setColour (juce::TextEditor::backgroundColourId, p.field);
     setColour (juce::TextEditor::outlineColourId, p.fieldOutline);
@@ -174,35 +189,66 @@ void TriadLook::applyTheme()
     setColour (juce::ResizableWindow::backgroundColourId, p.background);
     setColour (juce::DocumentWindow::textColourId, p.text);
 }
-void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float start, float end, juce::Slider& slider)
+// ---- Value boxes ----------------------------------------------------------------------------------------
+juce::Rectangle<float> valueBoxArea (juce::Rectangle<float> b, bool captioned)
 {
-    const bool small = juce::jmin (w, h) < 40;
-    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (small ? 1.5f : 5.0f);
-    const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
-    const float stroke = small ? 2.5f : 4.5f;
-    const auto centre = bounds.getCentre();
-    // Dark body like FL's slot knobs, with the value arc in the band colour around it.
+    // As tall as it needs (a knob's square area keeps its label above, the box at the top of it).
+    if (captioned) return b;
+    return b.withHeight (juce::jmin (b.getHeight(), juce::jmax (22.0f, b.getWidth() * 0.62f)));
+}
+juce::Rectangle<float> valueBoxMeter (juce::Rectangle<float> b, bool captioned)
+{
+    const auto box = valueBoxArea (b, captioned);
+    const bool small = box.getHeight() < 34.0f;
+    const float inset = small ? 6.0f : 10.0f, thick = small ? 3.0f : 4.0f, fromBottom = small ? 4.0f : 9.0f;
+    return { box.getX() + inset, box.getBottom() - fromBottom - thick, box.getWidth() - 2.0f * inset, thick };
+}
+void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float, juce::Slider& slider)
+{
+    // A box: the value on top, a line meter under it filling left to right in the knob's colour (0.16.0).
+    const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
+    const auto caption = slider.getProperties().getWithDefault ("triadLabel", {}).toString();
+    const bool captioned = caption.isNotEmpty();
+    const auto box = valueBoxArea (bounds, captioned).reduced (0.5f);
+    const bool small = box.getHeight() < 34.0f;
+    const float alpha = slider.isEnabled() ? 1.0f : 0.5f;
+    const auto fill = slider.findColour (juce::Slider::rotarySliderFillColourId);
     g.setColour (currentPalette.knobBody);
-    g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (centre));
-    const auto arcRadius = radius - stroke * 0.5f;
-    juce::Path track, value;
-    track.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0, start, end, true);
-    value.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0, start, start + pos * (end - start), true);
-    g.setColour (currentPalette.knobTrack); g.strokePath (track, juce::PathStrokeType (stroke));
-    g.setColour (slider.findColour (juce::Slider::rotarySliderFillColourId)); g.strokePath (value, juce::PathStrokeType (stroke));
-    // The percentage, inside the circle.
+    g.fillRoundedRectangle (box, small ? 5.0f : 7.0f);
+    const auto meter = valueBoxMeter (bounds, captioned);
+    g.setColour (currentPalette.knobTrack);
+    g.fillRoundedRectangle (meter, meter.getHeight() * 0.5f);
+    g.setColour (fill.withMultipliedAlpha (alpha));
+    g.fillRoundedRectangle (meter.withWidth (juce::jmax (meter.getHeight(), meter.getWidth() * juce::jlimit (0.0f, 1.0f, pos))), meter.getHeight() * 0.5f);
+    // The value: a percentage, or milliseconds for Triad Time's smoothing, attack and release.
     const auto v = slider.getValue();
-    // Small knobs show just the number, sized to fit inside the ring (the slot's tooltip says it is a %).
-    // A knob in milliseconds says so (Triad Time's smoothing, attack and release); every other knob is a percentage.
-    const bool ms = slider.getProperties().getWithDefault ("triadUnit", "%").toString() == "ms";
-    const auto label = ms ? (v < 10.0 ? juce::String (v, 1) : juce::String (juce::roundToInt (v))) + (small ? "" : " ms")
-                          : (v >= 99.95 ? juce::String ("100") : juce::String (juce::roundToInt (v))) + (small ? "" : "%");
-    g.setColour (textColour.withAlpha (slider.isEnabled() ? 0.95f : 0.5f));
-    const float innerWidth = (arcRadius - stroke * 0.5f) * 2.0f;
-    g.setFont (small ? juce::FontOptions (juce::jlimit (7.5f, 9.5f, innerWidth * 0.45f), juce::Font::bold)
-                     : juce::FontOptions (juce::jmax (11.0f, radius * 0.46f), juce::Font::bold));
-    const auto inner = juce::Rectangle<float> (innerWidth, radius).withCentre (centre).toNearestInt();
-    g.drawFittedText (label, inner, juce::Justification::centred, 1, 0.85f);
+    const auto unit = slider.getProperties().getWithDefault ("triadUnit", "%").toString();
+    const auto label = unit == "ms" ? (v < 10.0 ? juce::String (v, 1) : juce::String (juce::roundToInt (v))) + (small ? "" : " ms")
+                     : unit == "raw" ? juce::String (juce::roundToInt (v))
+                                     : (v >= 99.95 ? juce::String ("100") : juce::String (juce::roundToInt (v))) + "%";
+    auto valueArea = box.withBottom (meter.getY() - (small ? 0.0f : 2.0f));
+    if (captioned && box.getHeight() < 56.0f)
+    {
+        // A short box: the caption on the left, the value on the right, the meter under both (RED 255).
+        const auto line = valueArea.reduced (10.0f, 0.0f).withTrimmedTop (3.0f);
+        g.setColour (dimTextColour.withMultipliedAlpha (alpha));
+        g.setFont (juce::FontOptions (9.5f, juce::Font::bold).withKerningFactor (0.06f));
+        g.drawText (caption, line, juce::Justification::centredLeft);
+        g.setColour (textColour.withMultipliedAlpha (slider.isEnabled() ? 0.97f : 0.5f));
+        g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+        g.drawText (label, line, juce::Justification::centredRight);
+        return;
+    }
+    if (captioned)
+    {
+        g.setColour (dimTextColour.withMultipliedAlpha (alpha));
+        g.setFont (juce::FontOptions (9.5f, juce::Font::bold).withKerningFactor (0.06f));
+        g.drawText (caption, valueArea.removeFromTop (22.0f).withTrimmedTop (6.0f), juce::Justification::centredTop);
+    }
+    g.setColour (textColour.withMultipliedAlpha (slider.isEnabled() ? 0.97f : 0.5f));
+    g.setFont (juce::FontOptions (small ? juce::jlimit (9.5f, 11.5f, box.getHeight() * 0.44f)
+                                        : juce::jlimit (12.0f, 26.0f, valueArea.getHeight() * 0.62f), juce::Font::bold));
+    g.drawFittedText (label, valueArea.toNearestInt(), juce::Justification::centred, 1, 0.8f);
 }
 void TriadLook::drawLinearSlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float,
                                   juce::Slider::SliderStyle style, juce::Slider& slider)
@@ -235,12 +281,328 @@ juce::Font TriadLook::getTextButtonFont (juce::TextButton&, int height)
 {
     return juce::FontOptions (juce::jmin (12.5f, (float) height * 0.55f), juce::Font::bold);
 }
+// ---- Menus ----------------------------------------------------------------------------------------------
+namespace
+{
+const juce::juce_wchar swatchMark = 1, tagMark = 2;
+bool isTitle (const juce::String& header) { return header.containsAnyOf ("abcdefghijklmnopqrstuvwxyz"); }
+juce::Font itemFont() { return juce::FontOptions (12.5f, juce::Font::bold); }
+juce::Font headerFont() { return juce::FontOptions (10.5f, juce::Font::bold).withKerningFactor (0.06f); }
+juce::Font titleFont() { return juce::FontOptions (14.5f, juce::Font::bold); }
+juce::Font sideFont() { return juce::FontOptions (11.0f, juce::Font::bold); }
+juce::Font tagFont() { return juce::FontOptions (8.5f, juce::Font::bold).withKerningFactor (0.04f); }
+float widthOf (const juce::Font& f, const juce::String& t) { return juce::GlyphArrangement::getStringWidth (f, t); }
+juce::String fullHeart() { return u8 ("\xe2\x99\xa5 "); }
+juce::String emptyHeart() { return u8 ("\xe2\x99\xa1 "); }
+}
+MenuColours menuColours()
+{
+    const auto& p = currentPalette;
+    MenuColours m;
+    m.back = p.controls.interpolatedWith (p.panel, 0.25f);
+    // The chosen item is filled with the theme's second colour (Plum's lavender), or its accent if that is too
+    // close to the menu itself.
+    m.chosen = p.timeLine;
+    if (std::abs (m.chosen.getPerceivedBrightness() - m.back.getPerceivedBrightness()) < 0.2f) m.chosen = p.accent;
+    m.chosenInk = m.chosen.getPerceivedBrightness() > 0.42f ? p.grid.interpolatedWith (juce::Colours::black, 0.3f) : p.text;
+    m.edge = m.chosen.withAlpha (0.38f);
+    m.hover = m.chosen.withAlpha (0.2f);
+    m.text = p.text;
+    m.dim = p.dimText;
+    m.header = p.accent;
+    m.line = p.text.withAlpha (0.1f);
+    return m;
+}
+juce::String menuSwatches (const juce::Array<juce::Colour>& colours)
+{
+    auto s = juce::String::charToString (swatchMark);
+    for (auto c : colours) s << c.toDisplayString (false) << ",";
+    return s;
+}
+juce::String menuTag (const juce::String& tag) { return juce::String::charToString (tagMark) + tag; }
+void addItemWithRight (juce::PopupMenu& menu, int id, const juce::String& name, const juce::String& right, bool enabled, bool ticked)
+{
+    juce::PopupMenu::Item item (name);
+    item.itemID = id;
+    item.shortcutKeyDescription = right;
+    item.isEnabled = enabled;
+    item.isTicked = ticked;
+    menu.addItem (std::move (item));
+}
+void addSubMenu (juce::PopupMenu& menu, const juce::String& name, juce::PopupMenu sub, const juce::String& right, bool enabled, bool ticked)
+{
+    juce::PopupMenu::Item item (name);
+    item.subMenu = std::make_unique<juce::PopupMenu> (std::move (sub));
+    item.shortcutKeyDescription = right;
+    item.isEnabled = enabled;
+    item.isTicked = ticked;
+    menu.addItem (std::move (item));
+}
+
+MenuChips::MenuChips (juce::StringArray l, int c, std::shared_ptr<int> p)
+    : CustomComponent (false), labels (std::move (l)), chosen (c), picked (std::move (p))
+{
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+}
+void MenuChips::getIdealSize (int& width, int& height)
+{
+    width = 58 * labels.size() + 22;
+    height = 30;
+}
+juce::Rectangle<float> MenuChips::chip (int index) const
+{
+    const auto area = getLocalBounds().toFloat().reduced (8.0f, 5.0f);
+    const float gap = 6.0f, w = (area.getWidth() - gap * (float) (labels.size() - 1)) / (float) juce::jmax (1, labels.size());
+    return { area.getX() + (float) index * (w + gap), area.getY(), w, area.getHeight() };
+}
+int MenuChips::chipAt (juce::Point<float> p) const
+{
+    for (int i = 0; i < labels.size(); ++i)
+        if (chip (i).contains (p)) return i;
+    return -1;
+}
+void MenuChips::paint (juce::Graphics& g)
+{
+    const auto m = menuColours();
+    const int over = isMouseOver() ? chipAt (getMouseXYRelative().toFloat()) : -1;
+    for (int i = 0; i < labels.size(); ++i)
+    {
+        const auto r = chip (i);
+        g.setColour (i == chosen ? m.chosen : i == over ? currentPalette.controls.interpolatedWith (m.chosen, 0.3f) : currentPalette.controls);
+        g.fillRoundedRectangle (r, 5.0f);
+        g.setColour (i == chosen ? m.chosenInk : m.text);
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        g.drawText (labels[i], r, juce::Justification::centred);
+    }
+}
+void MenuChips::mouseUp (const juce::MouseEvent& e)
+{
+    const int i = chipAt (e.position);
+    if (i < 0) return;
+    if (picked != nullptr) *picked = i;
+    triggerMenuItem();
+}
+
+juce::Font TriadLook::getPopupMenuFont() { return itemFont(); }
+juce::Component* TriadLook::getParentComponentForMenuOptions (const juce::PopupMenu::Options& options)
+{
+    if (menusInsideWindow)
+        if (auto* target = options.getTargetComponent()) return target->getTopLevelComponent();
+    return LookAndFeel_V4::getParentComponentForMenuOptions (options);
+}
+void TriadLook::drawPopupMenuBackgroundWithOptions (juce::Graphics& g, int width, int height, const juce::PopupMenu::Options&)
+{
+    const auto m = menuColours();
+    const auto r = juce::Rectangle<float> ((float) width, (float) height).reduced (0.5f);
+    if (! juce::Desktop::canUseSemiTransparentWindows()) g.fillAll (m.back);   // a square window: no corners to see through
+    g.setColour (m.back);
+    g.fillRoundedRectangle (r, 10.0f);
+    g.setColour (m.edge);
+    g.drawRoundedRectangle (r, 10.0f, 1.0f);
+}
+void TriadLook::drawPopupMenuItemWithOptions (juce::Graphics& g, const juce::Rectangle<int>& area, bool isHighlighted,
+                                              const juce::PopupMenu::Item& item, const juce::PopupMenu::Options&)
+{
+    const auto m = menuColours();
+    if (item.isSeparator)
+    {
+        g.setColour (m.line);
+        g.fillRect (juce::Rectangle<float> ((float) area.getX() + 12.0f, (float) area.getCentreY() - 0.5f, (float) area.getWidth() - 24.0f, 1.0f));
+        return;
+    }
+    const auto row = area.toFloat().reduced (5.0f, 1.0f);
+    const bool ticked = item.isTicked, enabled = item.isEnabled;
+    if (ticked)
+    {
+        g.setColour (isHighlighted ? m.chosen.brighter (0.1f) : m.chosen);
+        g.fillRoundedRectangle (row, 6.0f);
+    }
+    else if (isHighlighted && enabled)
+    {
+        g.setColour (m.hover);
+        g.fillRoundedRectangle (row, 6.0f);
+    }
+    auto ink = ticked ? m.chosenInk : (item.colour.isTransparent() ? m.text : item.colour);
+    if (! enabled) ink = ink.withMultipliedAlpha (0.42f);
+    float x = (float) area.getX() + 16.0f;
+    const float cy = row.getCentreY();
+    if (item.image != nullptr)
+    {
+        item.image->drawWithin (g, { x, cy - 7.0f, 14.0f, 14.0f }, juce::RectanglePlacement::centred, enabled ? 1.0f : 0.4f);
+        x += 20.0f;
+    }
+    if (ticked)
+    {
+        juce::Path tick;
+        tick.startNewSubPath (x, cy);
+        tick.lineTo (x + 3.5f, cy + 3.5f);
+        tick.lineTo (x + 10.0f, cy - 4.0f);
+        g.setColour (ink);
+        g.strokePath (tick, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        x += 17.0f;
+    }
+    auto text = item.text;
+    if (text.startsWith (fullHeart()) || text.startsWith (emptyHeart()))
+    {
+        drawHeart (g, { x, cy - 6.0f, 13.0f, 12.0f }, text.startsWith (fullHeart()), isHighlighted, ink);
+        text = text.substring (2);
+        x += 19.0f;
+    }
+    float right = (float) area.getRight() - 14.0f;
+    if (item.subMenu != nullptr)
+    {
+        juce::Path arrow;
+        arrow.addTriangle (right - 5.0f, cy - 4.0f, right - 5.0f, cy + 4.0f, right, cy);
+        g.setColour (ticked ? m.chosenInk : m.dim.withMultipliedAlpha (enabled ? 1.0f : 0.5f));
+        g.fillPath (arrow);
+        right -= 13.0f;
+    }
+    if (const auto side = item.shortcutKeyDescription; side.isNotEmpty())
+    {
+        if (side[0] == swatchMark)
+        {
+            // A theme's colours, as small squares.
+            auto codes = juce::StringArray::fromTokens (side.substring (1), ",", {});
+            codes.removeEmptyStrings();
+            float sx = right - (float) codes.size() * 14.0f + 3.0f;
+            right = sx - 8.0f;
+            for (const auto& code : codes)
+            {
+                const auto square = juce::Rectangle<float> (sx, cy - 5.5f, 11.0f, 11.0f);
+                g.setColour (juce::Colour::fromString ("ff" + code));
+                g.fillRoundedRectangle (square, 2.0f);
+                g.setColour ((ticked ? m.chosenInk : m.text).withAlpha (0.35f));
+                g.drawRoundedRectangle (square.reduced (0.5f), 2.0f, 1.0f);
+                sx += 14.0f;
+            }
+        }
+        else if (side[0] == tagMark)
+        {
+            // VST3 / AU / TRIAD in a small frame.
+            const auto tag = side.substring (1);
+            const float w = widthOf (tagFont(), tag) + 12.0f;
+            const auto frame = juce::Rectangle<float> (right - w, cy - 7.5f, w, 15.0f);
+            g.setColour ((ticked ? m.chosenInk : m.edge).withMultipliedAlpha (ticked ? 0.7f : 1.0f));
+            g.drawRoundedRectangle (frame.reduced (0.5f), 4.0f, 1.0f);
+            g.setColour (ticked ? m.chosenInk : m.dim);
+            g.setFont (tagFont());
+            g.drawText (tag, frame, juce::Justification::centred);
+            right = frame.getX() - 8.0f;
+        }
+        else
+        {
+            g.setColour ((ticked ? m.chosenInk : m.dim).withMultipliedAlpha (enabled ? 1.0f : 0.5f));
+            g.setFont (sideFont());
+            const float w = widthOf (sideFont(), side);
+            g.drawText (side, juce::Rectangle<float> (right - w - 1.0f, row.getY(), w + 2.0f, row.getHeight()), juce::Justification::centredRight);
+            right -= w + 10.0f;
+        }
+    }
+    g.setColour (ink);
+    g.setFont (itemFont());
+    g.drawFittedText (text, juce::Rectangle<float> (x, row.getY(), juce::jmax (10.0f, right - x), row.getHeight()).toNearestInt(),
+                      juce::Justification::centredLeft, 1, 0.9f);
+}
 void TriadLook::drawPopupMenuSectionHeaderWithOptions (juce::Graphics& g, const juce::Rectangle<int>& area, const juce::String& text,
                                                        const juce::PopupMenu::Options&)
 {
-    g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-    g.setColour (findColour (juce::PopupMenu::headerTextColourId));
-    g.drawFittedText (text, area.getX() + 12, area.getY(), area.getWidth() - 16, (int) ((float) area.getHeight() * 0.8f),
-                      juce::Justification::bottomLeft, 1);
+    const auto m = menuColours();
+    if (isTitle (text))
+    {
+        // A name (a plug-in, a preset, "Band 2 / Slot 1"): larger, in the text colour.
+        g.setColour (m.text);
+        g.setFont (titleFont());
+        g.drawFittedText (text, area.getX() + 14, area.getY() + 2, area.getWidth() - 24, area.getHeight() - 4, juce::Justification::centredLeft, 1);
+        return;
+    }
+    g.setColour (m.header);
+    g.setFont (headerFont());
+    g.drawFittedText (text, area.getX() + 14, area.getY() + 5, area.getWidth() - 22, area.getHeight() - 7, juce::Justification::centredLeft, 1);
+}
+void TriadLook::getIdealPopupMenuItemSizeWithOptions (const juce::String& text, bool isSeparator, int, int& idealWidth, int& idealHeight,
+                                                      const juce::PopupMenu::Options&)
+{
+    if (isSeparator) { idealWidth = 40; idealHeight = menuSeparatorHeight; return; }
+    idealHeight = menuRowHeight;
+    // The text arrives with what is on the right after it ("name   right"): squares and tags are measured as drawn.
+    auto name = text;
+    float extra = 0.0f;
+    if (const int i = text.indexOfChar (swatchMark); i >= 0)
+    {
+        extra = (float) text.substring (i).retainCharacters (",").length() * 14.0f + 12.0f;
+        name = text.substring (0, i).trimEnd();
+    }
+    else if (const int j = text.indexOfChar (tagMark); j >= 0)
+    {
+        extra = widthOf (tagFont(), text.substring (j + 1)) + 24.0f;
+        name = text.substring (0, j).trimEnd();
+    }
+    if (name.startsWith (fullHeart()) || name.startsWith (emptyHeart())) { name = name.substring (2); extra += 19.0f; }
+    idealWidth = juce::jmax (120, juce::roundToInt (16.0f + 17.0f + widthOf (itemFont(), name) + extra + 40.0f));
+}
+void TriadLook::getIdealPopupMenuSectionHeaderSizeWithOptions (const juce::String& text, int, int& idealWidth, int& idealHeight,
+                                                               const juce::PopupMenu::Options&)
+{
+    const bool title = isTitle (text);
+    idealHeight = title ? menuTitleHeight : menuHeaderHeight;
+    idealWidth = juce::roundToInt (widthOf (title ? titleFont() : headerFont(), text) * (title ? 1.0f : 1.08f) + 40.0f);
+}
+void TriadLook::drawPopupMenuColumnSeparatorWithOptions (juce::Graphics& g, const juce::Rectangle<int>& bounds, const juce::PopupMenu::Options&)
+{
+    g.setColour (menuColours().line);
+    g.fillRect (bounds.toFloat().withSizeKeepingCentre (1.0f, juce::jmax (0.0f, (float) bounds.getHeight() - 20.0f)));
+}
+
+// ---- Tooltips and the START FROM box, in the menus' look -----------------------------------------------------
+namespace
+{
+juce::TextLayout tooltipLayout (const juce::String& text, juce::Colour colour)
+{
+    juce::AttributedString s;
+    s.setJustification (juce::Justification::centredLeft);
+    s.append (text, juce::FontOptions (12.0f, juce::Font::bold), colour);
+    juce::TextLayout layout;
+    layout.createLayoutWithBalancedLineLengths (s, 300.0f);
+    return layout;
+}
+}
+juce::Rectangle<int> TriadLook::getTooltipBounds (const juce::String& tipText, juce::Point<int> screenPos, juce::Rectangle<int> parentArea)
+{
+    const auto layout = tooltipLayout (tipText, textColour);
+    const int w = (int) std::ceil (layout.getWidth()) + 22, h = (int) std::ceil (layout.getHeight()) + 14;
+    return juce::Rectangle<int> (screenPos.x > parentArea.getCentreX() ? screenPos.x - (w + 12) : screenPos.x + 24,
+                                 screenPos.y > parentArea.getCentreY() ? screenPos.y - (h + 6) : screenPos.y + 6, w, h)
+        .constrainedWithin (parentArea);
+}
+void TriadLook::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
+{
+    const auto m = menuColours();
+    g.fillAll (m.back);                                   // the tooltip's window is square (opaque)
+    g.setColour (m.edge);
+    g.drawRect (0, 0, width, height, 1);
+    tooltipLayout (text, m.text).draw (g, juce::Rectangle<float> (11.0f, 7.0f, (float) width - 22.0f, (float) height - 14.0f));
+}
+void TriadLook::drawComboBox (juce::Graphics& g, int width, int height, bool down, int, int, int, int, juce::ComboBox& box)
+{
+    const auto m = menuColours();
+    const auto r = juce::Rectangle<float> ((float) width, (float) height).reduced (0.5f);
+    g.setColour (currentPalette.controls.brighter (down ? 0.08f : box.isMouseOver (true) ? 0.04f : 0.0f));
+    g.fillRoundedRectangle (r, 7.0f);
+    if (box.isPopupActive() || box.hasKeyboardFocus (true))
+    {
+        g.setColour (m.chosen);
+        g.drawRoundedRectangle (r.reduced (0.75f), 7.0f, 1.5f);
+    }
+    juce::Path arrow;
+    const float ax = (float) width - 20.0f, ay = (float) height * 0.5f;
+    arrow.addTriangle (ax, ay - 3.0f, ax + 9.0f, ay - 3.0f, ax + 4.5f, ay + 3.5f);
+    g.setColour (m.text.withMultipliedAlpha (box.isEnabled() ? 1.0f : 0.5f));
+    g.fillPath (arrow);
+}
+juce::Font TriadLook::getComboBoxFont (juce::ComboBox&) { return juce::FontOptions (13.5f, juce::Font::bold); }
+void TriadLook::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
+{
+    label.setBounds (8, 1, box.getWidth() - 34, box.getHeight() - 2);
+    label.setFont (getComboBoxFont (box));
 }
 }

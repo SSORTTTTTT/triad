@@ -788,9 +788,9 @@ private:
         {
             const auto* g = L::group (group);
             const int members = g != nullptr ? (int) g->members.load() - (group == split.getLinkGroup() ? 1 : 0) : 0;
-            menu.addItem (group, "Group " + L::groupName (group) + (members > 0 ? "  (" + juce::String (members) + " other Triad Split" + (members > 1 ? "s)" : ")")
-                                                                                 : juce::String ("  (none yet)")),
-                          true, group == split.getLinkGroup());
+            triad::ui::addItemWithRight (menu, group, "Group " + L::groupName (group),
+                                         members > 0 ? juce::String (members) + (members > 1 ? " others" : " other") : juce::String ("none yet"),
+                                         true, group == split.getLinkGroup());
         }
         juce::Component::SafePointer<TriadSplitEditor> safe (this);
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&linkButton), [safe] (int choice)

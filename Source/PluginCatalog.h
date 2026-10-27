@@ -2,6 +2,13 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <map>
 
+// The kind of effect a plug-in is (0.16.0: the FAVORITES by type in the plug-in menu): from its VST3 category
+// ("Fx|Delay", "Fx|Spatial" ...) or, when that says nothing, its name ("... Delay", "... Verb", "Gross Beat" ...).
+namespace triad
+{
+const juce::StringArray& effectTypes();   // DELAY, DISTORTION, DYNAMICS, EQ + FILTER, MODULATION, REVERB, RHYTHM + TIME, STEREO, OTHER
+juce::String effectType (const juce::String& category, const juce::String& name);
+}
 // One installed effect the user can pick.
 struct EffectEntry
 {

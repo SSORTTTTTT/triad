@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "PluginCatalog.h"
 #include "UiCommon.h"
+#include "Look.h"
 
 // Plug-in search (Thomas, 0.14.0: "a little search bar where we can search just the plugin name ... similar ... like at
 // Ableton when you press Command F"). The magnifying glass at the top of the add / replace effect menu (or just typing
@@ -23,7 +24,7 @@ class MenuItem final : public juce::PopupMenu::CustomComponent, private juce::Ke
 public:
     explicit MenuItem (std::function<void (const juce::String& typed)> openSearch);
     ~MenuItem() override;
-    void getIdealSize (int& width, int& height) override { width = 300; height = 30; }
+    void getIdealSize (int& width, int& height) override { width = 300; height = 40; }
     void paint (juce::Graphics&) override;
     void parentHierarchyChanged() override;
 private:

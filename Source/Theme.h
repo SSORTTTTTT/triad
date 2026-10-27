@@ -66,7 +66,11 @@ private:
 };
 
 // The THEME part of a settings (gear) menu: the ready-made themes, saved ones, Custom, "Edit colours...".
-void addThemeItems (juce::PopupMenu&, int firstId);
+// The themes as menu items, each with its colours as small squares (0.16.0); `full`: with the THEME title, Custom and
+// "Edit colours..." (Triad Time's and Triad Split's gear menus), else just the themes (Triad's gear: Theme >).
+void addThemeItems (juce::PopupMenu&, int firstId, bool full = true);
+juce::Array<juce::Colour> themeSwatches (const Theme&);   // the four colours a theme is shown by (background, buttons, accent, line)
+juce::String themeDisplayName (const Theme&);             // "Plum", "Custom", a saved theme's own name
 bool handleThemeChoice (int choice, int firstId, const std::function<void()>& openEditor);   // true: it was a theme item
 
 // Edit colours: laid over a whole window. A row per colour (a swatch, its hex code, back to default) and a colour
@@ -95,16 +99,20 @@ private:
     void edit (const Theme&, bool fromPicker);
     void refresh();
     juce::Rectangle<int> box() const;
-    juce::Rectangle<int> bandChipArea() const;
+    void startFromTheme (int id);                      // 1.. a ready-made theme, 100.. a saved one, 200 Custom
+    void showStartFromMenu();
+    juce::Rectangle<int> listHeader, chipsArea, pickerHeader, startFromLabel;
+    int dividerY = 0;
     Theme edited, before;
     juce::Random random;
     juce::String note;
     int selected = 0;
     bool pendingSave = false, updating = false;
     std::vector<std::unique_ptr<Row>> rows;
-    juce::ColourSelector picker { juce::ColourSelector::showColourAtTop | juce::ColourSelector::editableColour
-                                  | juce::ColourSelector::showSliders | juce::ColourSelector::showColourspace };
-    juce::ComboBox startFrom;
+    struct Picker;                                     // the square, the hue bar beside it, RED / GREEN / BLUE
+    std::unique_ptr<Picker> picker;
+    struct StartFrom;                                  // START FROM: the theme's name and colours; a click opens the themes
+    std::unique_ptr<StartFrom> startFrom;
     juce::TextEditor saveName;
     juce::TextButton saveButton { "SAVE AS" }, fixButton { "MAKE READABLE" }, doneButton { "DONE" }, cancelButton { "CANCEL" };
     struct RandomButton;

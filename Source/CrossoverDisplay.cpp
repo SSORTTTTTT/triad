@@ -1,4 +1,5 @@
 #include "CrossoverDisplay.h"
+#include "Look.h"
 
 using namespace triad::ui;
 
@@ -197,9 +198,9 @@ void CrossoverDisplay::addSlopeItems (juce::PopupMenu& menu, int current, int id
 void CrossoverDisplay::addAllDividerItems (juce::PopupMenu& menu, int idBase)
 {
     menu.addSectionHeader ("ALL DIVIDERS");
-    menu.addItem (idBase + triad::CrossoverFilter::maxOrder, "All dividers: hard wall (" + triad::slopeText (triad::CrossoverFilter::maxOrder) + ")");
-    menu.addItem (idBase + triad::CrossoverFilter::defaultOrder, "All dividers: default (" + triad::slopeText (triad::CrossoverFilter::defaultOrder) + ")");
-    menu.addItem (idBase + triad::CrossoverFilter::minOrder, "All dividers: soft (" + triad::slopeText (triad::CrossoverFilter::minOrder) + ")");
+    addItemWithRight (menu, idBase + triad::CrossoverFilter::maxOrder, "Hard wall", triad::slopeText (triad::CrossoverFilter::maxOrder));
+    addItemWithRight (menu, idBase + triad::CrossoverFilter::defaultOrder, "Default", triad::slopeText (triad::CrossoverFilter::defaultOrder));
+    addItemWithRight (menu, idBase + triad::CrossoverFilter::minOrder, "Soft", triad::slopeText (triad::CrossoverFilter::minOrder));
 }
 void CrossoverDisplay::setChainState (juce::TextButton& button, const juce::String& name, bool shown, int effects)
 {
@@ -310,16 +311,14 @@ void CrossoverDisplay::paintBandCurves (juce::Graphics& g)
             fill.closeSubPath();
         }
     }
+    // The bands as see-through colours crossing, without outlines (0.16.0, Thomas: "no outline on the band colours").
     // While a slope is being set, the two bands it joins stand out.
     for (int b = 0; b < count && b < (int) curveFills.size(); ++b)
     {
         const bool joined = activeSlope >= 0 && (b == activeSlope || b == activeSlope + 1);
         const bool dimmed = activeSlope >= 0 && ! joined;
-        const auto colour = bandColour (b);
-        g.setColour (colour.withAlpha (joined ? 0.24f : dimmed ? 0.06f : 0.13f));
+        g.setColour (bandColour (b).withAlpha (joined ? 0.3f : dimmed ? 0.07f : 0.17f));
         g.fillPath (curveFills[(size_t) b]);
-        g.setColour (colour.withAlpha (joined ? 0.95f : dimmed ? 0.3f : 0.6f));
-        g.strokePath (curveLines[(size_t) b], juce::PathStrokeType (joined ? 2.0f : 1.3f));
     }
 }
 
@@ -388,7 +387,7 @@ void CrossoverDisplay::showCrossoverMenu (int index)
     juce::PopupMenu slopes;
     const int current = host.getCrossoverSlope (index);
     addSlopeItems (slopes, current, slopeBase, index < (int) cuts.size() ? cuts[(size_t) index] : 0.0f, host.getSampleRateForDisplay());
-    menu.addSubMenu ("Slope: " + triad::slopeText (current), slopes);
+    addSubMenu (menu, "Slope", std::move (slopes), triad::slopeText (current));
     addAllDividerItems (menu, allDividersBase);
     menu.addSeparator();
     menu.addItem (removeBelow, "Remove band " + juce::String (index + 1) + " (below)");

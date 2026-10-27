@@ -133,24 +133,20 @@ bool MenuItem::keyPressed (const juce::KeyPress& key, juce::Component*)
 }
 void MenuItem::paint (juce::Graphics& g)
 {
-    auto r = getLocalBounds().reduced (8, 3);
-    if (isItemHighlighted())
-    {
-        g.setColour (findColour (juce::PopupMenu::highlightedBackgroundColourId));
-        g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (2.0f, 1.0f), 4.0f);
-    }
-    g.setColour (currentPalette.field);
-    g.fillRoundedRectangle (r.toFloat(), 5.0f);
-    g.setColour (isItemHighlighted() ? accent : currentPalette.fieldOutline);
-    g.drawRoundedRectangle (r.toFloat(), 5.0f, 1.0f);
-    auto inside = r.reduced (8, 0);
+    // A search field at the top of the plug-in menu, in the menus' look (0.16.0).
+    const auto m = triad::ui::menuColours();
+    auto r = getLocalBounds().reduced (10, 4);
+    g.setColour (currentPalette.grid);
+    g.fillRoundedRectangle (r.toFloat(), 8.0f);
+    g.setColour (isItemHighlighted() ? m.chosen : m.edge);
+    g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 8.0f, 1.0f);
+    auto inside = r.reduced (10, 0);
     drawMagnifier (g, inside.removeFromLeft (16).toFloat().withSizeKeepingCentre (14.0f, 14.0f), accent);
-    inside.removeFromLeft (8);
+    inside.removeFromLeft (10);
     g.setFont (juce::FontOptions (11.0f));
     g.setColour (dimTextColour);
     g.drawText ("or just type", inside.removeFromRight (80), juce::Justification::centredRight);
-    g.setFont (juce::FontOptions (13.0f));
-    g.setColour (textColour);
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     g.drawText ("Search plug-ins...", inside, juce::Justification::centredLeft);
 }
 

@@ -60,6 +60,12 @@ public:
     bool isFavourite (const juce::String& key) const;
     void setFavourite (const juce::String& key, bool);
     juce::StringArray getFavourites() const;
+    // The plug-in menu's FAVORITES by type (0.16.0; gear menu > Favorites by type, on to start with): DELAY, REVERB ...
+    // each opening to the side. A favorite's type comes from the plug-in; one set by hand (a slot's menu) wins.
+    bool getFavouritesByType() const;
+    void setFavouritesByType (bool);
+    juce::String getFavouriteType (const juce::String& key) const;            // "" = the plug-in's own
+    void setFavouriteType (const juce::String& key, const juce::String& type); // "" = back to the plug-in's own
 
     static juce::File presetFolder();        // ~/Music/Triad/Presets
     static juce::File chainFolder();         // ~/Music/Triad/Chains

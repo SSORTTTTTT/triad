@@ -10,7 +10,12 @@ namespace triad::ui
 void addDestinationItems (juce::PopupMenu& menu, TriadProcessor& processor, int band, const TriadProcessor::Destination* current,
                           std::vector<TriadProcessor::Destination>& chosen);
 
-// One row of a modulation matrix:  [light] SOURCE | AMOUNT ===|--- 75% | INV | DESTINATION [x]
+// The columns of a matrix row (0.16.0, compact: Thomas, "each block a little bit smaller ... so you don't have to
+// slide so much"): the light, SOURCE, the AMOUNT box, INV, DESTINATION, remove. The panel's column titles use them too.
+struct MatrixColumns { juce::Range<int> light, source, amount, invert, destination, remove; };
+MatrixColumns matrixColumns (int rowWidth);
+
+// One row of a modulation matrix:  [light] SOURCE | AMOUNT box | INV | DESTINATION [x]
 // (the LFO page shows the same rows without the source column).
 class RouteRow final : public juce::Component
 {
@@ -19,6 +24,8 @@ public:
     void update();
     void resized() override;
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
+    void lookAndFeelChanged() override;   // the pills' colours follow the theme
     std::function<void (int band, int lfo)> onEditLfo;
     juce::Slider amount;
 private:

@@ -1,5 +1,6 @@
 #include "BandStrip.h"
 #include "Settings.h"
+#include "PluginCatalog.h"
 
 using namespace triad::ui;
 
@@ -59,8 +60,8 @@ void SlotRow::update (const TriadProcessor::SlotInfo& next, int slotCount)
 }
 void SlotRow::resized()
 {
-    const int size = getHeight() - 4;
-    knob.setBounds (getWidth() - 22 - size, 2, size, size);
+    // The mix as a box: the value over a line meter (0.16.0).
+    knob.setBounds (getWidth() - 22 - 50, 3, 50, getHeight() - 6);
 }
 void SlotRow::paint (juce::Graphics& g)
 {
@@ -138,15 +139,14 @@ void SlotRow::paintOverChildren (juce::Graphics& g)
         g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.75f), 3.0f, 1.5f);
     }
     if (! info.modulated) return;
-    // Where the LFO has the mix right now: a dot riding round the knob.
-    const auto k = knob.getBounds().toFloat();
-    const auto params = knob.getRotaryParameters();
-    const float angle = params.startAngleRadians + ((shownMix < 0.0f ? info.liveMix : shownMix) / 100.0f) * (params.endAngleRadians - params.startAngleRadians);
-    const float radius = k.getWidth() * 0.5f + 1.0f;
-    const auto centre = k.getCentre();
-    const auto dot = centre.getPointOnCircumference (radius, angle);
+    // Where the LFO has the mix right now: a dot riding along the box's meter line.
+    const auto meter = valueBoxMeter (knob.getBounds().toFloat(), false);
+    const float value = juce::jlimit (0.0f, 1.0f, (shownMix < 0.0f ? info.liveMix : shownMix) / 100.0f);
+    const auto dot = juce::Point<float> (meter.getX() + value * meter.getWidth(), meter.getCentreY());
+    g.setColour (gridBackground);
+    g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre (dot));
     g.setColour (currentPalette.marker);
-    g.fillEllipse (juce::Rectangle<float> (4.5f, 4.5f).withCentre (dot));
+    g.fillEllipse (juce::Rectangle<float> (5.5f, 5.5f).withCentre (dot));
 }
 void SlotRow::mouseDown (const juce::MouseEvent& e)
 {
@@ -172,7 +172,8 @@ void SlotRow::showMenu()
     // copied, which can be pasted into it).
     const auto copied = TriadProcessor::copiedEffectName();
     if (! info.hasContent && count <= 1 && copied.isEmpty()) { host.chooseEffect (band, slot, *this); return; }
-    enum { menuOpen = 1, menuReplace, menuUp, menuDown, menuToggle, menuRemove, menuLfo, menuFavourite, menuCopyEffect, menuPasteEffect };
+    enum { menuOpen = 1, menuReplace, menuUp, menuDown, menuToggle, menuRemove, menuLfo, menuFavourite, menuCopyEffect, menuPasteEffect,
+           menuTypeBase = 100 };
     juce::PopupMenu menu;
     menu.addSectionHeader (info.name.isNotEmpty() ? info.name : "Slot " + juce::String (slot + 1));
     if (info.hasContent) menu.addItem (menuOpen, "Open window", info.loaded);
@@ -180,6 +181,16 @@ void SlotRow::showMenu()
     menu.addItem (menuLfo, "Edit LFO for this mix knob...");
     const bool favourite = info.loaded && host.isFavourite (info.format, info.name);
     if (info.loaded) menu.addItem (menuFavourite, favourite ? u8 ("\xe2\x99\xa5 Remove from FAVORITES") : u8 ("\xe2\x99\xa1 Add to FAVORITES"));
+    // A favorite can be listed under another type in FAVORITES (the plug-in says DELAY; you hear it as RHYTHM + TIME).
+    const auto type = favourite ? host.getFavouriteType (info.format, info.name) : juce::String();
+    if (type.isNotEmpty())
+    {
+        juce::PopupMenu types;
+        types.addSectionHeader ("LIST IT IN FAVORITES UNDER");
+        for (int i = 0; i < triad::effectTypes().size(); ++i)
+            types.addItem (menuTypeBase + i, triad::effectTypes()[i], true, triad::effectTypes()[i] == type);
+        addSubMenu (menu, "Favorite type", std::move (types), type);
+    }
     menu.addSeparator();
     // Copy plugin state: the effect with every knob as it is now, to paste into a slot of any band.
     menu.addItem (menuCopyEffect, "Copy plugin state", info.loaded && ! info.pending);
@@ -210,7 +221,10 @@ void SlotRow::showMenu()
             case menuFavourite: self.host.setFavourite (self.info.format, self.info.name, ! favourite); break;
             case menuCopyEffect: self.processor.copyEffectState (self.band, self.slot); break;
             case menuPasteEffect: self.processor.pasteEffectState (self.band, self.slot); break;
-            default: break;
+            default:
+                if (choice >= menuTypeBase && choice < menuTypeBase + triad::effectTypes().size())
+                    self.host.setFavouriteType (self.info.format, self.info.name, triad::effectTypes()[choice - menuTypeBase]);
+                break;
         }
     });
 }
@@ -283,6 +297,7 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
     mix.setDoubleClickReturnValue (true, 100.0);
     mix.setColour (juce::Slider::rotarySliderFillColourId, colour);
     mix.setTitle ("Band " + juce::String (band + 1) + " mix");
+    mix.getProperties().set ("triadLabel", "BAND MIX");   // drawn in its box
     mix.setTooltip ("Band mix: 0% is the unprocessed band, 100% is the band's full effect chain.");
     addAndMakeVisible (mix);
     mixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (p.parameters, TriadProcessor::bandMixID (band), mix);
@@ -457,8 +472,8 @@ void BandStrip::resized()
     layoutRows();
     layoutRows();   // again, now that the viewport knows whether it needs a scroll bar
     const int footerTop = getHeight() - footerHeight;
-    mix.setBounds (w - 76, footerTop + 8, 62, 62);
-    volume.setBounds (10, footerTop + 26, w - 96, 18);
+    mix.setBounds (w - 94, footerTop + 8, 84, 76);
+    volume.setBounds (10, footerTop + 26, w - 114, 18);
     muteButton.setBounds (12, footerTop + 62, 50, 22);
 }
 void BandStrip::lookAndFeelChanged()
@@ -491,7 +506,7 @@ void BandStrip::paint (juce::Graphics& g)
     g.drawHorizontalLine (headerHeight - 4, 10.0f, (float) getWidth() - 10.0f);
     const int footerTop = getHeight() - footerHeight;
     g.drawHorizontalLine (footerTop + 2, 10.0f, (float) getWidth() - 10.0f);
-    const int left = 12, right = getWidth() - 88;
+    const int left = 12, right = getWidth() - 106;   // the volume's value ends before the BAND MIX box
     if (isExtra())
     {
         // PRE / POST: what it is for, how many slots, and its latency (it adds to every band's).
@@ -554,8 +569,6 @@ void BandStrip::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
         g.drawText ("MUTED", getWidth() - 110, 8, 46, 24, juce::Justification::centredRight);
     }
-    g.setColour (dimTextColour); g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-    g.drawText ("BAND MIX", getWidth() - 80, footerTop + 70, 70, 16, juce::Justification::centred);
 }
 void BandStrip::paintOverChildren (juce::Graphics& g)
 {

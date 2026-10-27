@@ -558,3 +558,41 @@ void PluginCatalog::loadCache()
         records[f->getStringAttribute ("path")] = std::move (r);
     }
 }
+
+// ---- Kinds of effect (the favorites by type) ---------------------------------------------------------------------------
+const juce::StringArray& triad::effectTypes()
+{
+    static const juce::StringArray types { "DELAY", "DISTORTION", "DYNAMICS", "EQ + FILTER", "MODULATION", "REVERB", "RHYTHM + TIME", "STEREO", "OTHER" };
+    return types;
+}
+juce::String triad::effectType (const juce::String& category, const juce::String& name)
+{
+    const auto n = name.toLowerCase(), c = category.toLowerCase();
+    juce::StringArray words;
+    words.addTokens (n, " -_.:/()+", {});
+    words.removeEmptyStrings();
+    const auto has = [&n] (std::initializer_list<const char*> parts) { for (auto* p : parts) if (n.contains (p)) return true; return false; };
+    const auto word = [&words] (std::initializer_list<const char*> list) { for (auto* w : list) if (words.contains (w)) return true; return false; };
+    // Rhythm and time effects (gates, stutters, Gross Beat, ShaperBox ...) often call themselves "modulation" or nothing.
+    if (has ({ "gross beat", "triad time", "shaperbox", "infiltrator", "stutter", "repeater", "glitch", "halftime", "half time", "slicer",
+               "trancegate", "beat repeat", "timeshaper", "volumeshaper", "chopper" }) || word ({ "gate", "chop", "chops", "beat" }))
+        return "RHYTHM + TIME";
+    // What the plug-in's VST3 category says (when it says more than "Fx").
+    if (c.contains ("delay")) return "DELAY";
+    if (c.contains ("reverb")) return "REVERB";
+    if (c.contains ("distortion")) return "DISTORTION";
+    if (c.contains ("dynamics")) return "DYNAMICS";
+    if (c.contains ("eq") || c.contains ("filter")) return "EQ + FILTER";
+    if (c.contains ("spatial") || c.contains ("surround")) return "STEREO";
+    if (c.contains ("modulation")) return "MODULATION";
+    // Else its name.
+    if (has ({ "delay", "echo", "replika", "memory man" })) return "DELAY";
+    if (has ({ "verb", "room", "hall", "plate", "spring", "raum", "cathedral", "shimmer" })) return "REVERB";
+    if (has ({ "dist", "drive", "satur", "fuzz", "crush", "tube", "decapitator", "trash", "clip", "rift", "coldfire", "opamp", "bite", "dirt" }))
+        return "DISTORTION";
+    if (has ({ "chorus", "flang", "phaser", "vibrato", "tremolo", "rotary", "ensemble" })) return "MODULATION";
+    if (has ({ "stereo", "width", "wider", "spread", "imager", "panner", "haas" })) return "STEREO";
+    if (word ({ "eq", "q", "filter", "filters", "filt", "lowpass", "highpass" }) || has ({ "pro-q", "proq", "filter" })) return "EQ + FILTER";
+    if (has ({ "comp", "limit", "dynamic", "transient", "maxim", "multiband" })) return "DYNAMICS";
+    return "OTHER";
+}

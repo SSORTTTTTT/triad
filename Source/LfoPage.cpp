@@ -213,9 +213,9 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
             juce::PopupMenu effects;
             effects.addSectionHeader ("OPEN ITS WINDOW, THEN MOVE A KNOB");
             for (int s : loaded)
-                effects.addItem (learnId + s, juce::String (s + 1) + u8 (" \xc2\xb7 ") + processor.getSlotInfo (band, s).name
-                                                  + (processor.isEffectWindowOpen (band, s) ? "  (open)" : ""));
-            menu.addSubMenu ("LEARN: move a knob in an effect's window", effects);
+                addItemWithRight (effects, learnId + s, juce::String (s + 1) + u8 (" \xc2\xb7 ") + processor.getSlotInfo (band, s).name,
+                                  processor.isEffectWindowOpen (band, s) ? "open" : "");
+            addSubMenu (menu, "LEARN: move a knob in an effect's window", std::move (effects));
         }
         else
         {
@@ -260,7 +260,7 @@ void LfoPage::showTriggerMenu()
     for (int db = -60; db <= -6; db += 6)
         thresholds.addItem (thresholdBase - db, juce::String (db) + " dB", true, std::abs (s.thresholdDb - (float) db) < 0.5f);
     thresholds.addItem (thresholdBase + 3, "-3 dB", true, std::abs (s.thresholdDb + 3.0f) < 0.5f);
-    menu.addSubMenu ("Threshold: " + juce::String (juce::roundToInt (s.thresholdDb)) + " dB", thresholds, s.audio);
+    addSubMenu (menu, "Threshold", std::move (thresholds), juce::String (juce::roundToInt (s.thresholdDb)) + " dB", s.audio);
     juce::Component::SafePointer<LfoPage> safe (this);
     const int forBand = band;
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (triggerButton.get()), [safe, forBand] (int choice)

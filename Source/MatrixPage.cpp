@@ -4,7 +4,8 @@ using namespace triad::ui;
 
 namespace
 {
-constexpr int panelWidth = 468, panelGap = 10, rowHeight = 34;
+// Compact (0.16.0): three panels side by side in the window, so there is less to scroll sideways.
+constexpr int panelWidth = 348, panelGap = 12, rowHeight = 40;
 }
 
 BandMatrix::BandMatrix (TriadProcessor& p, int b) : processor (p), band (b), colour (bandColour (b))
@@ -61,50 +62,51 @@ void BandMatrix::refresh()
 }
 void BandMatrix::resized()
 {
-    view.setBounds (getLocalBounds().withTrimmedTop (68).reduced (8, 0).withTrimmedBottom (8));
+    view.setBounds (getLocalBounds().withTrimmedTop (76).reduced (8, 0).withTrimmedBottom (8));
     const int width = view.getWidth() - 8;
     int y = 0;
-    for (auto& row : rows) { row->setBounds (0, y, width, rowHeight); y += rowHeight + 3; }
-    addButton.setBounds (0, y + 4, 120, 26);
-    holder.setSize (width, y + 36);
+    for (auto& row : rows) { row->setBounds (0, y, width, rowHeight); y += rowHeight + 6; }
+    addButton.setBounds (0, y + 4, 132, 30);
+    holder.setSize (width, y + 40);
 }
 void BandMatrix::paint (juce::Graphics& g)
 {
     g.setColour (panel);
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 7.0f);
-    g.setColour (colour.withAlpha (0.75f));
-    g.fillRoundedRectangle (12.0f, 11.0f, 4.0f, 17.0f, 2.0f);
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), 12.0f);
     g.setColour (colour);
-    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    g.fillRoundedRectangle (14.0f, 14.0f, 4.0f, 20.0f, 2.0f);
+    g.setFont (juce::FontOptions (15.0f, juce::Font::bold));
     const bool extra = TriadProcessor::isExtraChain (band);
-    g.drawText ((extra ? TriadProcessor::chainName (band) : "BAND " + juce::String (band + 1)) + "  MATRIX", 23, 8, 200, 24, juce::Justification::centredLeft);
+    g.drawText ((extra ? TriadProcessor::chainName (band) : "BAND " + juce::String (band + 1)) + "  MATRIX", 26, 12, 170, 24, juce::Justification::centredLeft);
     g.setColour (dimTextColour);
-    g.setFont (juce::FontOptions (11.5f));
+    g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
     if (extra)
-        g.drawText (band == TriadProcessor::preBand ? "full range, before the bands" : "full range, after the bands", getWidth() - 220, 8, 206, 24,
+        g.drawText (band == TriadProcessor::preBand ? "before the bands" : "after the bands", getWidth() - 160, 12, 146, 24,
                     juce::Justification::centredRight);
     else
     {
         const auto cuts = processor.effectiveCrossovers();
         const float lo = band == 0 ? 0.0f : cuts[(size_t) band - 1];
         const float hi = band < (int) cuts.size() ? cuts[(size_t) band] : processor.nyquistFrequency();
-        g.drawText (formatHz (lo) + u8 ("  \xe2\x86\x92  ") + formatHz (hi), getWidth() - 190, 8, 176, 24, juce::Justification::centredRight);
+        g.drawText (formatHz (lo) + u8 ("  \xe2\x86\x92  ") + formatHz (hi), getWidth() - 160, 12, 146, 24, juce::Justification::centredRight);
     }
-    // Column titles, as in Serum's and Omnisphere's matrix.
-    g.setColour (currentPalette.controls.interpolatedWith (currentPalette.panel, 0.2f));
-    g.fillRect (8, 40, getWidth() - 16, 22);
+    // Column titles over the rows' columns, as in Serum's and Omnisphere's matrix.
+    const auto strip = juce::Rectangle<float> (8.0f, 46.0f, (float) getWidth() - 16.0f, 24.0f);
+    g.setColour (currentPalette.grid.interpolatedWith (currentPalette.panel, 0.4f));
+    g.fillRoundedRectangle (strip, 6.0f);
     g.setColour (currentPalette.softText);
-    g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-    const int x0 = 8 + 4 + 22;
-    const int usable = getWidth() - 16 - 8 - 22 - 26 - 8;
-    const int sourceWidth = juce::jmin (90, usable / 4);
-    const int destinationWidth = juce::jmin (150, (usable - sourceWidth - 6) / 3);
-    g.drawText ("SOURCE", x0, 40, sourceWidth, 22, juce::Justification::centred);
-    g.drawText ("AMOUNT", x0 + sourceWidth + 6, 40, usable - sourceWidth - destinationWidth - 90, 22, juce::Justification::centred);
-    g.drawText ("INV", getWidth() - 8 - 4 - 26 - destinationWidth - 4 - 36, 40, 36, 22, juce::Justification::centred);
-    g.drawText ("DESTINATION", getWidth() - 8 - 4 - 26 - destinationWidth, 40, destinationWidth, 22, juce::Justification::centred);
+    g.setFont (juce::FontOptions (9.5f, juce::Font::bold).withKerningFactor (0.06f));
+    const auto c = triad::ui::matrixColumns (view.getWidth() - 8);
+    const int x0 = view.getX();
+    const auto title = [&] (juce::Range<int> x, const char* text)
+    {
+        g.drawText (text, x0 + x.getStart() - 4, 46, x.getLength() + 8, 24, juce::Justification::centred);
+    };
+    title (c.source, "SOURCE");
+    title (c.amount, "AMOUNT");
+    title (c.invert, "INV");
+    title (c.destination, "DESTINATION");
 }
-
 MatrixPage::MatrixPage (TriadProcessor& p) : processor (p)
 {
     setTitle ("Matrix");
