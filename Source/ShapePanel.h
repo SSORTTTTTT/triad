@@ -97,6 +97,10 @@ public:
     void showMenu();
     void selectAll();
     void deleteSelected();
+    // Move the wave, or the points selected, one grid step left (-1) or right (+1); fine: an eighth of a step
+    // (0.16.1, ShaperBox's move buttons). The whole wave wraps round the cycle; selected points stop at their neighbours.
+    void moveWave (int direction, bool fine);
+    int numSelected() const;
     void copyShape();
     void pasteShape();
     bool undo();
@@ -183,6 +187,24 @@ public:
     // The preset palette shows one category (folder) at a time, a page of up to 11 shapes at a time;
     // big folders have several pages (< and >, or the mouse wheel over the palette).
     static constexpr int paletteSize = 11;
+    // The layout (0.16.1). `strip`: Triad's LFO tab, the toolbar and a row of 11 small shapes under the grid. `browser`:
+    // Triad Time's approved layout, the toolbar with room for the window's own boxes (MIX AND SMOOTHING) right of SAVE
+    // and the move buttons; the presets in a browser of their own (getBrowser(), placed by the window): the folder
+    // button, FAVORITES, a search box, the pages (click the page number to type one) and 10 shapes with their names.
+    enum class Layout { strip, browser };
+    void setLayout (Layout);
+    Layout getLayout() const noexcept { return layout; }
+    juce::Component& getBrowser();
+    static constexpr int browserPageSize = 10, browserToolbarHeight = 52;
+    int pageSize() const noexcept { return layout == Layout::browser ? browserPageSize : paletteSize; }
+    void setToolbarExtra (juce::Component*, int width);   // the window's own controls in the toolbar, right of SAVE
+    // The browser's search: the shapes whose names have every word typed (from every folder and USER); "" = the folder.
+    void setSearch (const juce::String&);
+    juce::String getSearch() const { return search; }
+    void toggleFavouritesFolder();                         // FAVORITES: open it, or back to the folder before
+    juce::Button& getMoveLeftButton() noexcept { return moveLeftButton; }
+    juce::Button& getMoveRightButton() noexcept { return moveRightButton; }
+    bool isPaletteCurrent (int paletteButton) const;       // the shape on the grid (outlined)
     static constexpr int userFolder = 1000;   // the USER folder (saved shapes), after the preset folders
     static constexpr int timeFolder = 2000;   // Triad Time's TIME folders: timeFolder + 0 ... (first in the menu for TIME)
     static constexpr int allFolder = 3000;    // ALL: every preset together (Triad's shapes and the TIME patterns)
@@ -243,6 +265,23 @@ private:
     juce::Label pageLabel;
     juce::Rectangle<int> paletteArea;
     juce::SharedResourcePointer<TriadSettings> settings;
+    // 0.16.1: the browser layout
+    struct Browser;
+    friend struct Browser;
+    void layoutBrowser();
+    void refreshCurrent();
+    juce::Component& paletteParent();
+    int searchCount() const;
+    Layout layout = Layout::strip;
+    std::unique_ptr<Browser> browser;
+    juce::Component* toolbarExtra = nullptr;
+    int toolbarExtraWidth = 0;
+    juce::String search;
+    int folderBeforeFavourites = 0;
+    triad::ui::IconButton moveLeftButton { triad::ui::IconButton::Icon::moveLeft, "Move wave or selection left. Shift-click for fine adjustment." },
+                          moveRightButton { triad::ui::IconButton::Icon::moveRight, "Move wave or selection right. Shift-click for fine adjustment." };
+    juce::TextButton favouritesButton;
+    juce::TextEditor searchBox;
 };
 
 // The shape generator: Angular / Soft / Chaos, HARD / MIX / SOFT, and the dice that draws a new shape on the

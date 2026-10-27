@@ -125,6 +125,34 @@ Shape reversed (const Shape& in)
     return out;
 }
 
+Shape shifted (const Shape& in, float dx)
+{
+    float d = dx - std::floor (dx);              // 0..1: how far right
+    if (in.size() < 2 || d < 1.0e-6f || d > 1.0f - 1.0e-6f) return in;
+    // Cut the cycle where it will wrap (u: the part from u to 1 comes round to the start), splitting the segment there.
+    const float u = 1.0f - d;
+    Shape cut;
+    for (size_t i = 0; i < in.size(); ++i)
+    {
+        cut.push_back (in[i]);
+        if (i + 1 < in.size() && in[i].x < u && in[i + 1].x > u)
+        {
+            const auto& a = in[i];
+            const auto& b = in[i + 1];
+            const float t = (u - a.x) / (b.x - a.x);
+            const float y = a.y + (b.y - a.y) * curveFraction (t, a.curve);
+            cut.back().curve = a.curve * t;
+            cut.push_back (Point { u, y, a.curve * (1.0f - t) });
+        }
+    }
+    Shape out;
+    for (const auto& p : cut) if (p.x >= u) out.push_back (Point { p.x - u, p.y, p.curve });   // the end comes round first
+    if (! out.empty()) out.back().curve = 0.0f;                                                 // (from u to 1, then a step)
+    for (const auto& p : cut) if (p.x <= u) out.push_back (Point { p.x + d, p.y, p.curve });
+    normalise (out);
+    return removeRedundant (out);
+}
+
 Shape flippedVertical (const Shape& in)
 {
     Shape out = in;

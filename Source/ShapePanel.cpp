@@ -21,7 +21,14 @@ public:
     std::function<void()> onMenu;
     std::function<void()> onHeart;   // the heart in the lower left corner (FAVORITES)
     bool favourite = false;
-    juce::Rectangle<float> heartArea() const { return { 3.0f, (float) getHeight() - 15.0f, 12.0f, 12.0f }; }
+    bool showName = false;           // the browser's tiles (0.16.1): the name under the shape, the heart beside it
+    bool current = false;            // the shape on the grid: outlined
+    const mod::Shape& getShape() const noexcept { return shape; }
+    juce::Rectangle<float> heartArea() const
+    {
+        return showName ? juce::Rectangle<float> (9.0f, (float) getHeight() - 20.0f, 13.0f, 12.0f)
+                        : juce::Rectangle<float> (3.0f, (float) getHeight() - 15.0f, 12.0f, 12.0f);
+    }
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (e.mods.isPopupMenu() && onMenu) { onMenu(); return; }
@@ -38,9 +45,11 @@ public:
     void paintButton (juce::Graphics& g, bool over, bool down) override
     {
         const auto r = getLocalBounds().toFloat().reduced (1.0f);
-        g.setColour (down ? currentPalette.controlsOn : over ? slotRowHover : currentPalette.paletteButton);
-        g.fillRoundedRectangle (r, 4.0f);
-        const auto area = r.reduced (6.0f, 5.0f);
+        const auto fill = showName ? (down ? currentPalette.controlsOn : over ? currentPalette.controls.brighter (0.08f) : currentPalette.controls)
+                                   : (down ? currentPalette.controlsOn : over ? slotRowHover : currentPalette.paletteButton);
+        g.setColour (fill);
+        g.fillRoundedRectangle (r, showName ? 8.0f : 4.0f);
+        const auto area = showName ? r.reduced (12.0f, 10.0f).withTrimmedBottom (18.0f) : r.reduced (6.0f, 5.0f);
         // Drawn from the shape's own points (steps exactly, curves finely), so dense shapes stay crisp.
         juce::Path p;
         auto at = [&area] (float x, float y) { return juce::Point<float> (area.getX() + area.getWidth() * x, area.getBottom() - area.getHeight() * y); };
@@ -58,14 +67,27 @@ public:
                 }
             p.lineTo (at (b.x, b.y));
         }
-        g.setColour (over ? colour : textColour.withAlpha (0.85f));
-        g.strokePath (p, juce::PathStrokeType (shape.size() > 40 ? 1.1f : 1.6f, juce::PathStrokeType::beveled, juce::PathStrokeType::butt));
+        g.setColour (over || current ? colour : textColour.withAlpha (0.85f));
+        g.strokePath (p, juce::PathStrokeType (shape.size() > 40 ? 1.1f : (showName ? 1.8f : 1.6f), juce::PathStrokeType::beveled, juce::PathStrokeType::butt));
+        if (showName)
+        {
+            g.setColour (current ? textColour : dimTextColour);
+            g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+            g.drawFittedText (getName(), juce::Rectangle<float> (heartArea().getRight() + 6.0f, (float) getHeight() - 24.0f,
+                                                                  r.getWidth() - heartArea().getRight() - 12.0f, 20.0f).toNearestInt(),
+                              juce::Justification::centredLeft, 1, 0.8f);
+        }
         if (onHeart)
         {
             // A small patch of the button's own colour under the heart, so the shape's line does not run through it.
-            g.setColour ((down ? currentPalette.controlsOn : over ? slotRowHover : currentPalette.paletteButton).withAlpha (0.9f));
+            g.setColour (fill.withAlpha (0.9f));
             g.fillRoundedRectangle (heartArea().expanded (1.5f), 3.0f);
             drawHeart (g, heartArea(), favourite, overHeart, dimTextColour.withAlpha (over ? 0.8f : 0.5f));
+        }
+        if (current && showName)
+        {
+            g.setColour (triad::ui::menuColours().chosen);
+            g.drawRoundedRectangle (r.reduced (1.0f), 8.0f, 2.0f);
         }
     }
 private:
@@ -659,6 +681,35 @@ void ShapeEditor::deleteSelected()
     selected.assign (shape.size(), false);
     commit (false);
 }
+int ShapeEditor::numSelected() const
+{
+    return selected.size() == shape.size() ? (int) std::count (selected.begin(), selected.end(), true) : 0;
+}
+void ShapeEditor::moveWave (int direction, bool fine)
+{
+    const float step = (fine ? 0.125f : 1.0f) / (float) juce::jmax (1, columns()) * (float) (direction < 0 ? -1 : 1);
+    if (numSelected() == 0)
+    {
+        apply ([step] (const mod::Shape& s) { return mod::shifted (s, step); });
+        return;
+    }
+    // The selected points: each run of them moves together, but not past the points either side of it (the first and
+    // last points of the cycle stay at its ends).
+    if (host != nullptr) host->beginEdit();
+    const int n = (int) shape.size();
+    int i = 1;
+    while (i < n - 1)
+    {
+        if (! selected[(size_t) i]) { ++i; continue; }
+        int j = i;
+        while (j + 1 < n - 1 && selected[(size_t) j + 1]) ++j;
+        const float room = step < 0.0f ? juce::jmax (step, shape[(size_t) i - 1].x - shape[(size_t) i].x)
+                                       : juce::jmin (step, shape[(size_t) j + 1].x - shape[(size_t) j].x);
+        for (int k = i; k <= j; ++k) shape[(size_t) k].x = juce::jlimit (0.0f, 1.0f, shape[(size_t) k].x + room);
+        i = j + 1;
+    }
+    commit (false);
+}
 void ShapeEditor::copyShape()
 {
     ShapeEditor::clipboard = shape;
@@ -955,10 +1006,45 @@ juce::int64 version() { current(); return cache().version; }
 }
 
 // ---- Shape panel: the grid, its toolbar and the palette ---------------------------------------------------
+// ---- The browser (0.16.1) ---------------------------------------------------------------------------------------
+struct ShapePanel::Browser final : public juce::Component
+{
+    explicit Browser (ShapePanel& o) : owner (o) { setTitle ("Presets"); }
+    void resized() override { owner.layoutBrowser(); }
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (panel);
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), 12.0f);
+        if (! owner.presetButtons.empty()) return;
+        const auto message = owner.search.isNotEmpty() ? "Nothing is called \"" + owner.search + "\""
+                           : owner.paletteCategory == userFolder ? juce::String ("No saved shapes yet: press SAVE to keep the shape on the grid here")
+                           : owner.paletteCategory == favouritesFolder ? juce::String ("No favorites yet: click the heart on a shape")
+                                                                       : juce::String();
+        g.setColour (dimTextColour);
+        g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+        g.drawText (message, owner.paletteArea, juce::Justification::centred);
+    }
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        // The search box's magnifying glass.
+        const auto box = owner.searchBox.getBounds().toFloat();
+        if (box.isEmpty()) return;
+        const auto glass = juce::Rectangle<float> (box.getX() + 12.0f, box.getCentreY() - 7.0f, 10.0f, 10.0f);
+        g.setColour (accent);
+        g.drawEllipse (glass, 2.0f);
+        g.drawLine (glass.getRight() - 1.5f, glass.getBottom() - 1.5f, glass.getRight() + 4.0f, glass.getBottom() + 4.0f, 2.2f);
+    }
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override
+    {
+        const float delta = std::abs (wheel.deltaY) > std::abs (wheel.deltaX) ? wheel.deltaY : -wheel.deltaX;
+        if (std::abs (delta) > 0.0f) owner.setPalettePage (owner.palettePage + (delta < 0.0f ? 1 : -1));
+    }
+    ShapePanel& owner;
+};
 ShapePanel::ShapePanel()
 {
     addAndMakeVisible (editor);
-    editor.onChange = [this] { updateToolbar(); if (onChange) onChange(); };
+    editor.onChange = [this] { updateToolbar(); refreshCurrent(); if (onChange) onChange(); };
     lengthButton.setTooltip (lengthTooltip);
     lengthButton.onClick = [this] { showLengthMenu(); };
     prevLength.onClick = [this] { stepLength (-1); };
@@ -981,9 +1067,24 @@ ShapePanel::ShapePanel()
     flipButton.onClick = [this] { editor.apply (mod::flippedVertical); };
     undoButton.onClick = [this] { if (editor.undo()) updateToolbar(); };
     redoButton.onClick = [this] { if (editor.redo()) updateToolbar(); };
+    // Move the wave (or the points selected) by a grid step; Shift: an eighth of one (0.16.1).
+    moveLeftButton.onClick = [this] { editor.moveWave (-1, juce::ModifierKeys::currentModifiers.isShiftDown()); };
+    moveRightButton.onClick = [this] { editor.moveWave (1, juce::ModifierKeys::currentModifiers.isShiftDown()); };
     for (auto* c : std::initializer_list<juce::Component*> { &lengthButton, &prevLength, &nextLength, &gridButton, &snapButton, &clearButton,
-                                                            &doubleButton, &halfButton, &reverseButton, &flipButton, &undoButton, &redoButton })
+                                                            &doubleButton, &halfButton, &moveLeftButton, &moveRightButton, &reverseButton, &flipButton,
+                                                            &undoButton, &redoButton })
         addAndMakeVisible (*c);
+    // The browser's FAVORITES and search (shown in the browser layout).
+    favouritesButton.setButtonText (u8 ("\xe2\x99\xa5 FAVORITES"));
+    favouritesButton.setTooltip ("The shapes and patterns you marked with the heart (click again: back to the folder)");
+    favouritesButton.onClick = [this] { toggleFavouritesFolder(); };
+    searchBox.setTextToShowWhenEmpty ("Search", dimTextColour);
+    searchBox.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    searchBox.setIndents (34, 0);
+    searchBox.setJustification (juce::Justification::centredLeft);
+    searchBox.setTooltip ("Search every folder by name (a folder's name works too: \"octave down 12\"); Esc clears it");
+    searchBox.onTextChange = [this] { setSearch (searchBox.getText()); };
+    searchBox.onEscapeKey = [this] { searchBox.clear(); setSearch ({}); };
     // Preset palette: one category at a time.
     categoryButton.setTooltip ("Preset shapes: choose a category");
     categoryButton.onClick = [this] { showCategoryMenu(); };
@@ -1008,6 +1109,22 @@ ShapePanel::ShapePanel()
     pageLabel.setTooltip ("Page: click to jump to a page (in ALL, to a folder); the mouse wheel over the shapes turns the pages");
     pageLabel.setMouseCursor (juce::MouseCursor::PointingHandCursor);
     pageLabel.addMouseListener (this, false);
+    // In the browser: click the page number and type one (Thomas: "click where it has 1/200 and you can just pick a page").
+    pageLabel.onEditorShow = [this]
+    {
+        if (auto* typing = pageLabel.getCurrentTextEditor())
+        {
+            typing->setInputRestrictions (5, "0123456789");
+            typing->setText (juce::String (palettePage + 1), false);
+            typing->setJustification (juce::Justification::centred);
+            typing->selectAll();
+        }
+    };
+    pageLabel.onTextChange = [this]
+    {
+        if (const int typed = pageLabel.getText().getIntValue(); typed >= 1) setPalettePage (typed - 1);
+        pageLabel.setText (juce::String (palettePage + 1) + " / " + juce::String (getNumPalettePages()), juce::dontSendNotification);
+    };
     for (auto* c : std::initializer_list<juce::Component*> { &prevPage, &nextPage, &pageLabel }) addAndMakeVisible (*c);
     favouritesSeen = triad::favouriteShapes::version();
     rebuildPalette();
@@ -1049,9 +1166,56 @@ int ShapePanel::validCategory (int category) const
     if (isTimeFolder (category)) return juce::jlimit (timeFolder, timeFolder + triad::timePresets::numFolders - 1, category);
     return juce::jlimit (0, mod::numPresetCategories() - 1, category);
 }
+namespace
+{
+// The browser's search: every word typed is in the name, or in the folder's name and the name together.
+struct SearchWords
+{
+    explicit SearchWords (const juce::String& text) { words.addTokens (text.toLowerCase(), " ", {}); words.removeEmptyStrings(); }
+    bool matches (const juce::String& name, const juce::String& folder) const
+    {
+        const auto n = name.toLowerCase(), both = folder.toLowerCase() + " " + n;
+        for (const auto& w : words) if (! both.contains (w)) return false;
+        return ! words.isEmpty();
+    }
+    juce::StringArray words;
+};
+}
+int ShapePanel::searchCount() const
+{
+    const SearchWords words (search);
+    int count = 0;
+    for (const auto& e : triad::userShapes::load()) count += words.matches (e.name, "USER") ? 1 : 0;
+    for (int c = 0; c < mod::numPresetCategories(); ++c)
+        for (const int i : mod::presetsIn (c)) count += words.matches (mod::presetName (i), mod::presetCategoryName (c)) ? 1 : 0;
+    for (int f = 0; f < triad::timePresets::numFolders; ++f)
+        for (const int i : triad::timePresets::presetsIn (f)) count += words.matches (triad::timePresets::entries[i].name, triad::timePresets::folderNames[f]) ? 1 : 0;
+    return count;
+}
 std::vector<ShapePanel::PaletteShape> ShapePanel::paletteShapes() const
 {
     std::vector<PaletteShape> list;
+    if (search.isNotEmpty())
+    {
+        // Each plug-in's own shapes first: Triad Time's TIME patterns, Triad's LFO shapes.
+        const SearchWords words (search);
+        for (auto& e : triad::userShapes::load()) if (words.matches (e.name, "USER")) list.push_back ({ e.name, std::move (e.shape), e.file });
+        const auto addTime = [&]
+        {
+            for (int f = 0; f < triad::timePresets::numFolders; ++f)
+                for (const int i : triad::timePresets::presetsIn (f))
+                    if (words.matches (triad::timePresets::entries[i].name, triad::timePresets::folderNames[f]))
+                        list.push_back ({ triad::timePresets::entries[i].name, triad::timePresets::shape (i), {} });
+        };
+        const auto addShapes = [&]
+        {
+            for (int c = 0; c < mod::numPresetCategories(); ++c)
+                for (const int i : mod::presetsIn (c))
+                    if (words.matches (mod::presetName (i), mod::presetCategoryName (c))) list.push_back ({ mod::presetName (i), mod::preset (i), {} });
+        };
+        if (timeHost()) { addTime(); addShapes(); } else { addShapes(); addTime(); }
+        return list;
+    }
     if (paletteCategory == userFolder)
         for (auto& e : triad::userShapes::load()) list.push_back ({ e.name, std::move (e.shape), e.file });
     else if (paletteCategory == favouritesFolder)
@@ -1084,12 +1248,16 @@ void ShapePanel::rebuildPalette()
     for (auto& b : presetButtons) removeChildComponent (b.get());
     presetButtons.clear();
     const auto list = paletteShapes();
-    const int pages = juce::jmax (1, ((int) list.size() + paletteSize - 1) / paletteSize);
+    const int size = pageSize();
+    const int pages = juce::jmax (1, ((int) list.size() + size - 1) / size);
     palettePage = juce::jlimit (0, pages - 1, palettePage);
-    for (int k = palettePage * paletteSize; k < juce::jmin ((int) list.size(), (palettePage + 1) * paletteSize); ++k)
+    const auto onGrid = triad::favouriteShapes::keyOf (editor.getShape());
+    for (int k = palettePage * size; k < juce::jmin ((int) list.size(), (palettePage + 1) * size); ++k)
     {
         const auto& entry = list[(size_t) k];
-        auto b = std::make_unique<ShapeButton> (entry.name, entry.shape, accent);
+        auto b = std::make_unique<ShapeButton> (entry.name, entry.shape, layout == Layout::browser && host != nullptr ? host->getColour() : accent);
+        b->showName = layout == Layout::browser;
+        b->current = triad::favouriteShapes::keyOf (entry.shape) == onGrid;
         b->onClick = [this, shape = entry.shape] { editor.apply ([shape] (const mod::Shape&) { return shape; }); };
         b->favourite = triad::favouriteShapes::contains (entry.shape);
         b->onHeart = [this, name = entry.name, shape = entry.shape, button = b.get()]
@@ -1109,30 +1277,40 @@ void ShapePanel::rebuildPalette()
             b->setTooltip (entry.name + " (replaces the shape; right-click to rename or delete)");
             b->onMenu = [this, file = entry.file] { showUserShapeMenu (file); };
         }
-        addAndMakeVisible (*b);
+        paletteParent().addAndMakeVisible (*b);
         presetButtons.push_back (std::move (b));
     }
-    categoryButton.setButtonText (paletteFolderName() + u8 (" \xe2\x96\xbe"));
-    pageLabel.setText (juce::String (palettePage + 1) + "/" + juce::String (pages), juce::dontSendNotification);
+    categoryButton.setButtonText ((search.isNotEmpty() ? juce::String ("SEARCH") : paletteFolderName()) + u8 (" \xe2\x96\xbe"));
+    favouritesButton.setToggleState (paletteCategory == favouritesFolder && search.isEmpty(), juce::dontSendNotification);
+    pageLabel.setText (juce::String (palettePage + 1) + (layout == Layout::browser ? " / " : "/") + juce::String (pages), juce::dontSendNotification);
     prevPage.setEnabled (palettePage > 0);
     nextPage.setEnabled (palettePage < pages - 1);
     resized();
+    if (browser != nullptr) { layoutBrowser(); browser->repaint(); }
     repaint();
 }
 int ShapePanel::getNumPalettePages() const
 {
     // Counted without building the shapes (ALL has over 11,000).
     int count = 0;
-    if (paletteCategory == userFolder) count = (int) triad::userShapes::load().size();
+    if (search.isNotEmpty()) count = searchCount();
+    else if (paletteCategory == userFolder) count = (int) triad::userShapes::load().size();
     else if (paletteCategory == favouritesFolder) count = (int) triad::favouriteShapes::load().size();
     else if (isTimeFolder (paletteCategory)) count = (int) triad::timePresets::presetsIn (paletteCategory - timeFolder).size();
     else if (paletteCategory == allFolder) count = mod::numPresets() + triad::timePresets::numPresets;
     else count = (int) mod::presetsIn (paletteCategory).size();
-    return juce::jmax (1, (count + paletteSize - 1) / paletteSize);
+    return juce::jmax (1, (count + pageSize() - 1) / pageSize());
 }
 void ShapePanel::setPaletteCategory (int category)
 {
     category = validCategory (category);
+    if (search.isNotEmpty())
+    {
+        // Choosing a folder ends a search.
+        search = {};
+        searchBox.clear();
+        paletteCategory = -1;
+    }
     if (category == paletteCategory && ! presetButtons.empty()) return;
     paletteCategory = category;
     palettePage = 0;
@@ -1149,7 +1327,8 @@ void ShapePanel::setPalettePage (int page)
 }
 void ShapePanel::mouseUp (const juce::MouseEvent& e)
 {
-    if (e.eventComponent == &pageLabel && getNumPalettePages() > 1) showPageMenu();
+    // The strip's page number opens the page menu; the browser's is typed into (a click edits it).
+    if (e.eventComponent == &pageLabel && layout == Layout::strip && getNumPalettePages() > 1) showPageMenu();
 }
 void ShapePanel::showPageMenu()
 {
@@ -1377,6 +1556,35 @@ void ShapePanel::showGridMenu()
 void ShapePanel::resized()
 {
     auto r = getLocalBounds();
+    if (layout == Layout::browser)
+    {
+        // Triad Time's layout: the grid, then one toolbar (as ShaperBox's): length, grid, snap, SAVE, the window's own
+        // boxes, and on the right delete, 2x, 1/2, the move buttons, the flips, undo and redo.
+        auto toolbar = r.removeFromBottom (browserToolbarHeight);
+        r.removeFromBottom (8);
+        editor.setBounds (r);
+        auto row = toolbar.withSizeKeepingCentre (toolbar.getWidth(), 34);
+        const auto left = [&row] (juce::Component& c, int w, int gap) { c.setBounds (row.removeFromLeft (w)); row.removeFromLeft (gap); };
+        const auto right = [&row] (juce::Component& c, int w, int gap) { c.setBounds (row.removeFromRight (w)); row.removeFromRight (gap); };
+        left (lengthButton, 84, 4);
+        left (prevLength, 30, 3);
+        left (nextLength, 30, 10);
+        left (gridButton, 96, 6);
+        left (snapButton, 62, 6);
+        left (saveButton, 62, 12);
+        right (redoButton, 32, 4);
+        right (undoButton, 32, 10);
+        right (flipButton, 32, 4);
+        right (reverseButton, 32, 10);
+        right (moveRightButton, 32, 4);
+        right (moveLeftButton, 32, 10);
+        right (halfButton, 44, 4);
+        right (doubleButton, 44, 4);
+        right (clearButton, 32, 12);
+        if (toolbarExtra != nullptr)
+            toolbarExtra->setBounds (row.getX(), toolbar.getY(), juce::jmin (toolbarExtraWidth, row.getWidth()), toolbar.getHeight());
+        return;
+    }
     auto palette = r.removeFromBottom (30);
     r.removeFromBottom (6);
     auto toolbar = r.removeFromBottom (30);
@@ -1400,7 +1608,11 @@ void ShapePanel::resized()
     flipButton.setBounds (toolbar.removeFromRight (30));
     toolbar.removeFromRight (3);
     reverseButton.setBounds (toolbar.removeFromRight (30));
+    toolbar.removeFromRight (12);
+    moveRightButton.setBounds (toolbar.removeFromRight (30));
     toolbar.removeFromRight (3);
+    moveLeftButton.setBounds (toolbar.removeFromRight (30));
+    toolbar.removeFromRight (12);
     halfButton.setBounds (toolbar.removeFromRight (40));
     toolbar.removeFromRight (3);
     doubleButton.setBounds (toolbar.removeFromRight (40));
@@ -1417,13 +1629,111 @@ void ShapePanel::resized()
 }
 void ShapePanel::paint (juce::Graphics& g)
 {
-    if (paletteCategory == userFolder && presetButtons.empty())
+    if (layout == Layout::strip && paletteCategory == userFolder && presetButtons.empty() && search.isEmpty())
     {
         g.setColour (dimTextColour);
         g.setFont (juce::FontOptions (11.5f));
         g.drawText ("No saved shapes yet: press SAVE to keep this shape here", paletteArea.withTrimmedLeft (226),
                     juce::Justification::centredLeft);
     }
+}
+
+juce::Component& ShapePanel::paletteParent()
+{
+    if (layout == Layout::browser && browser != nullptr) return *browser;
+    return *this;
+}
+juce::Component& ShapePanel::getBrowser()
+{
+    if (browser == nullptr) browser = std::make_unique<Browser> (*this);
+    return *browser;
+}
+void ShapePanel::setLayout (Layout l)
+{
+    if (l == layout) return;
+    layout = l;
+    if (layout == Layout::browser) getBrowser();
+    auto& parent = paletteParent();
+    for (auto* c : std::initializer_list<juce::Component*> { &categoryButton, &prevPage, &nextPage, &pageLabel }) parent.addAndMakeVisible (*c);
+    if (layout == Layout::browser)
+    {
+        browser->addAndMakeVisible (favouritesButton);
+        browser->addAndMakeVisible (searchBox);
+        pageLabel.setEditable (true, false, false);
+        pageLabel.setFont (juce::FontOptions (13.5f, juce::Font::bold));
+        pageLabel.setTooltip ("Page: click it and type a page number (the arrows or the mouse wheel step through)");
+    }
+    else
+    {
+        for (auto* c : std::initializer_list<juce::Component*> { &favouritesButton, &searchBox })
+            if (auto* p = c->getParentComponent()) p->removeChildComponent (c);
+        pageLabel.setEditable (false, false, false);
+        pageLabel.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    }
+    palettePage = 0;
+    rebuildPalette();
+}
+void ShapePanel::setToolbarExtra (juce::Component* c, int width)
+{
+    if (toolbarExtra != nullptr && toolbarExtra != c) removeChildComponent (toolbarExtra);
+    toolbarExtra = c;
+    toolbarExtraWidth = width;
+    if (c != nullptr) addAndMakeVisible (*c);
+    resized();
+}
+void ShapePanel::layoutBrowser()
+{
+    if (browser == nullptr || layout != Layout::browser) return;
+    auto r = browser->getLocalBounds().reduced (14, 12);
+    auto top = r.removeFromTop (34);
+    categoryButton.setBounds (top.removeFromLeft (juce::jmin (220, top.getWidth() / 4)));
+    top.removeFromLeft (10);
+    favouritesButton.setBounds (top.removeFromLeft (140));
+    top.removeFromLeft (10);
+    nextPage.setBounds (top.removeFromRight (34));
+    top.removeFromRight (4);
+    pageLabel.setBounds (top.removeFromRight (92));
+    top.removeFromRight (4);
+    prevPage.setBounds (top.removeFromRight (34));
+    top.removeFromRight (14);
+    searchBox.setBounds (top.withWidth (juce::jmin (340, top.getWidth())));
+    r.removeFromTop (12);
+    paletteArea = r;
+    constexpr int columns = 5, gap = 12;
+    const int w = (r.getWidth() - gap * (columns - 1)) / columns, h = (r.getHeight() - gap) / 2;
+    for (int i = 0; i < (int) presetButtons.size(); ++i)
+        presetButtons[(size_t) i]->setBounds (r.getX() + (i % columns) * (w + gap), r.getY() + (i / columns) * (h + gap), w, h);
+}
+void ShapePanel::setSearch (const juce::String& text)
+{
+    const auto next = text.trim();
+    if (next == search) return;
+    search = next;
+    if (searchBox.getText().trim() != search) searchBox.setText (text, false);
+    palettePage = 0;
+    rebuildPalette();
+}
+void ShapePanel::toggleFavouritesFolder()
+{
+    if (paletteCategory == favouritesFolder && search.isEmpty()) setPaletteCategory (folderBeforeFavourites);
+    else
+    {
+        if (paletteCategory != favouritesFolder) folderBeforeFavourites = paletteCategory;
+        setPaletteCategory (favouritesFolder);
+    }
+}
+bool ShapePanel::isPaletteCurrent (int index) const
+{
+    auto* b = dynamic_cast<ShapeButton*> (getPaletteButton (index));
+    return b != nullptr && b->current;
+}
+void ShapePanel::refreshCurrent()
+{
+    if (presetButtons.empty()) return;
+    const auto onGrid = triad::favouriteShapes::keyOf (editor.getShape());
+    for (auto& button : presetButtons)
+        if (auto* b = dynamic_cast<ShapeButton*> (button.get()))
+            if (const bool now = triad::favouriteShapes::keyOf (b->getShape()) == onGrid; now != b->current) { b->current = now; b->repaint(); }
 }
 
 // ---- Generator ----------------------------------------------------------------------------------------------

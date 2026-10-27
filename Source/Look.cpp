@@ -64,6 +64,14 @@ void IconButton::drawIcon (juce::Graphics& g, Icon icon, juce::Rectangle<float> 
         case Icon::right:
             p.addTriangle (x + w * 0.3f, y + h * 0.15f, x + w * 0.3f, y + h * 0.85f, x + w * 0.75f, y + h * 0.5f);
             g.fillPath (p); return;
+        case Icon::moveLeft:    // move the wave: an arrow head and its bar (ShaperBox's move buttons)
+            p.addTriangle (x + w * 0.05f, y + h * 0.5f, x + w * 0.45f, y + h * 0.18f, x + w * 0.45f, y + h * 0.82f);
+            p.addRectangle (x + w * 0.42f, y + h * 0.4f, w * 0.48f, h * 0.2f);
+            g.fillPath (p); return;
+        case Icon::moveRight:
+            p.addTriangle (x + w * 0.95f, y + h * 0.5f, x + w * 0.55f, y + h * 0.18f, x + w * 0.55f, y + h * 0.82f);
+            p.addRectangle (x + w * 0.1f, y + h * 0.4f, w * 0.48f, h * 0.2f);
+            g.fillPath (p); return;
         case Icon::gear:
         {
             const auto cx = x + w * 0.5f, cy = y + h * 0.5f, r = juce::jmin (w, h) * 0.5f;
@@ -199,8 +207,8 @@ juce::Rectangle<float> valueBoxArea (juce::Rectangle<float> b, bool captioned)
 juce::Rectangle<float> valueBoxMeter (juce::Rectangle<float> b, bool captioned)
 {
     const auto box = valueBoxArea (b, captioned);
-    const bool small = box.getHeight() < 34.0f;
-    const float inset = small ? 6.0f : 10.0f, thick = small ? 3.0f : 4.0f, fromBottom = small ? 4.0f : 9.0f;
+    const bool small = box.getHeight() < 34.0f, short_ = box.getHeight() < 44.0f;
+    const float inset = small || box.getWidth() < 70.0f ? 6.0f : 10.0f, thick = short_ ? 3.0f : 4.0f, fromBottom = small ? 4.0f : short_ ? 5.0f : 9.0f;
     return { box.getX() + inset, box.getBottom() - fromBottom - thick, box.getWidth() - 2.0f * inset, thick };
 }
 void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float, float, juce::Slider& slider)
@@ -227,6 +235,18 @@ void TriadLook::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
                      : unit == "raw" ? juce::String (juce::roundToInt (v))
                                      : (v >= 99.95 ? juce::String ("100") : juce::String (juce::roundToInt (v))) + "%";
     auto valueArea = box.withBottom (meter.getY() - (small ? 0.0f : 2.0f));
+    if (captioned && box.getHeight() < 56.0f && box.getWidth() < 90.0f)
+    {
+        // A narrow box (Triad Time's MIX AND SMOOTHING): the caption small at the top, the value under it.
+        auto inner = valueArea.withTrimmedTop (3.0f);
+        g.setColour (dimTextColour.withMultipliedAlpha (alpha));
+        g.setFont (juce::FontOptions (8.5f, juce::Font::bold).withKerningFactor (0.05f));
+        g.drawText (caption, inner.removeFromTop (11.0f), juce::Justification::centred);
+        g.setColour (textColour.withMultipliedAlpha (slider.isEnabled() ? 0.97f : 0.5f));
+        g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        g.drawFittedText (label, inner.toNearestInt(), juce::Justification::centred, 1, 0.8f);
+        return;
+    }
     if (captioned && box.getHeight() < 56.0f)
     {
         // A short box: the caption on the left, the value on the right, the meter under both (RED 255).

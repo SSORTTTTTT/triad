@@ -29,6 +29,9 @@ Shape repeated (const Shape&, int times);         // "2x": the pattern twice (th
 Shape halved (const Shape&);                      // "1/2": the first half stretched over the cycle (undoes 2x)
 Shape reversed (const Shape&);                    // flip horizontal
 Shape flippedVertical (const Shape&);
+// Move the wave along the cycle by dx (0.16.1, ShaperBox's move buttons): what runs off one end comes back in at the
+// other (dx < 0: to the left).
+Shape shifted (const Shape&, float dx);
 Shape snapped (const Shape&, int columns, int rows);
 Shape removeRedundant (const Shape&);
 
