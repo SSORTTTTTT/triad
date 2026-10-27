@@ -45,9 +45,9 @@ RouteRow::RouteRow (TriadProcessor& p, int b, int r, bool withSource, juce::Colo
         };
         addAndMakeVisible (source);
     }
-    // In the matrix: a small box (the value over a line meter), dragged left or right, a short way for the whole range
-    // (0.16.0). The LFO page keeps its bar until its new layout.
-    amount.setSliderStyle (showSource ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearHorizontal);
+    // A small box (the value over a line meter), dragged left or right, a short way for the whole range (0.16.0: the
+    // matrix; 0.16.1: the LFO tab's ROUTING cards).
+    amount.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
     amount.setMouseDragSensitivity (130);
     amount.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     amount.setRange (0.0, 100.0, 0.1);
@@ -88,7 +88,6 @@ RouteRow::RouteRow (TriadProcessor& p, int b, int r, bool withSource, juce::Colo
 }
 void RouteRow::lookAndFeelChanged()
 {
-    if (! showSource) return;
     const auto pill = currentPalette.grid.interpolatedWith (currentPalette.controls, 0.3f);
     for (auto* b : { &source, &destination })
     {
@@ -133,28 +132,24 @@ void RouteRow::resized()
         remove.setBounds (at (c.remove, 20));
         return;
     }
-    auto r = getLocalBounds().reduced (4, 3);
-    light.setBounds (r.removeFromLeft (18));
-    r.removeFromLeft (4);
-    remove.setBounds (r.removeFromRight (22));
-    r.removeFromRight (4);
-    if (showSource)
-    {
-        source.setBounds (r.removeFromLeft (juce::jmin (90, r.getWidth() / 4)));
-        r.removeFromLeft (6);
-        destination.setBounds (r.removeFromRight (juce::jmin (150, r.getWidth() / 3)));
-    }
-    else destination.setBounds (r.removeFromTop (r.getHeight() / 2).reduced (0, 1));
-    r.removeFromRight (4);
-    invert.setBounds (r.removeFromRight (36).reduced (0, showSource ? 0 : 1));
-    r.removeFromRight (40);   // the percentage
+    // A ROUTING card (0.16.1): the light, where it goes and remove on top; the amount box and INV under them.
+    auto r = getLocalBounds().reduced (8, 6);
+    auto top = r.removeFromTop (22);
+    light.setBounds (top.removeFromLeft (18));
+    top.removeFromLeft (4);
+    remove.setBounds (top.removeFromRight (20));
+    top.removeFromRight (4);
+    destination.setBounds (top);
+    r.removeFromTop (4);
+    invert.setBounds (r.removeFromRight (40).reduced (0, 2));
+    r.removeFromRight (6);
     amount.setBounds (r);
 }
 void RouteRow::paint (juce::Graphics& g)
 {
     g.setColour (slotRow);
-    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), showSource ? 8.0f : 4.0f);
-    if (showSource) return;   // the amount box shows its own value
+    g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 8.0f);
+    if (showSource || amount.isRotary()) return;   // the amount box shows its own value
     g.setColour (textColour);
     g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
     g.drawText (juce::String (juce::roundToInt (amount.getValue())) + "%", amount.getRight() + 2, amount.getY(), 38, amount.getHeight(),
@@ -162,7 +157,6 @@ void RouteRow::paint (juce::Graphics& g)
 }
 void RouteRow::paintOverChildren (juce::Graphics& g)
 {
-    if (! showSource) return;
     // SOURCE and DESTINATION open menus: a small arrow says so.
     g.setColour (dimTextColour);
     for (auto* b : { &source, &destination })

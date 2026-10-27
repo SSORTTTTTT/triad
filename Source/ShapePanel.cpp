@@ -349,6 +349,22 @@ void ShapeEditor::paint (juce::Graphics& g)
     }
     triad::ui::drawPixelExact (g, layer, scale);
     const auto colour = shapeColour();
+    // "4 points selected" under the selected points, in the grid's colour (0.16.1): the move buttons move them.
+    if (const int count = numSelected(); count >= 2 && drag != Drag::select)
+    {
+        float lo = 1.0e9f, hi = -1.0e9f;
+        for (size_t i = 0; i < shape.size(); ++i)
+            if (selected[i]) { lo = juce::jmin (lo, toScreen (shape[i]).x); hi = juce::jmax (hi, toScreen (shape[i]).x); }
+        const auto text = juce::String (count) + " points selected";
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        const float w = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 16.0f;
+        const auto r = plot();
+        const auto pill = juce::Rectangle<float> (juce::jlimit (r.getX(), r.getRight() - w, (lo + hi) * 0.5f - w * 0.5f), r.getBottom() - 22.0f, w, 18.0f);
+        g.setColour (colour);
+        g.fillRoundedRectangle (pill, 5.0f);
+        g.setColour (colour.getPerceivedBrightness() > 0.45f ? inkColour : textColour);
+        g.drawText (text, pill, juce::Justification::centred);
+    }
     if (drag == Drag::select)
     {
         // In the band's own colour (Triad Time: TIME's or VOLUME's), lighter (0.16.0, Thomas).
@@ -1573,7 +1589,7 @@ void ShapePanel::resized()
         // boxes, and on the right delete, 2x, 1/2, the move buttons, the flips, undo and redo.
         auto toolbar = r.removeFromBottom (browserToolbarHeight);
         r.removeFromBottom (8);
-        editor.setBounds (r);
+        editor.setBounds (gridInsetRight > 0 ? r.withTrimmedRight (gridInsetRight + 12) : r);
         auto row = toolbar.withSizeKeepingCentre (toolbar.getWidth(), 34);
         const auto left = [&row] (juce::Component& c, int w, int gap) { c.setBounds (row.removeFromLeft (w)); row.removeFromLeft (gap); };
         const auto right = [&row] (juce::Component& c, int w, int gap) { c.setBounds (row.removeFromRight (w)); row.removeFromRight (gap); };
@@ -1690,6 +1706,11 @@ void ShapePanel::setToolbarExtra (juce::Component* c, int width)
     toolbarExtra = c;
     toolbarExtraWidth = width;
     if (c != nullptr) addAndMakeVisible (*c);
+    resized();
+}
+void ShapePanel::setGridInsetRight (int width)
+{
+    gridInsetRight = juce::jmax (0, width);
     resized();
 }
 void ShapePanel::layoutBrowser()

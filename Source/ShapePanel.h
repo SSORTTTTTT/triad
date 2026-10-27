@@ -198,6 +198,7 @@ public:
     static constexpr int browserPageSize = 10, browserToolbarHeight = 52;
     int pageSize() const noexcept { return layout == Layout::browser ? browserPageSize : paletteSize; }
     void setToolbarExtra (juce::Component*, int width);   // the window's own controls in the toolbar, right of SAVE
+    void setGridInsetRight (int width);                    // room beside the grid for the window's own panel (LFO: ROUTING)
     // The browser's search: the shapes whose names have every word typed (from every folder and USER); "" = the folder.
     void setSearch (const juce::String&);
     juce::String getSearch() const { return search; }
@@ -275,7 +276,7 @@ private:
     Layout layout = Layout::strip;
     std::unique_ptr<Browser> browser;
     juce::Component* toolbarExtra = nullptr;
-    int toolbarExtraWidth = 0;
+    int toolbarExtraWidth = 0, gridInsetRight = 0;
     juce::String search;
     int folderBeforeFavourites = 0;
     juce::Colour builtColour;
