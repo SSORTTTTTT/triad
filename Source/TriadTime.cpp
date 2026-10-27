@@ -633,6 +633,22 @@ struct EnvelopeHost final : ShapeHost
     int labelMode = (int) TriadSettings::PitchLabels::dragging;   // the setting (Triad Time's gear, Triad's gear)
 };
 
+// The heart beside PATTERN (0.17.0): the pattern playing into FAVORITES as it is drawn now, or out again (the pattern
+// buttons that had their own hearts became the PATTERN menu).
+class PatternHeart final : public juce::Button
+{
+public:
+    PatternHeart() : juce::Button ("patternHeart") { setTooltip ("Add the pattern playing (as it is drawn now) to FAVORITES, or take it out"); }
+    bool favourite = false;
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (currentPalette.controls.brighter (down ? 0.15f : over ? 0.07f : 0.0f));
+        g.fillRoundedRectangle (r, 4.0f);
+        triad::ui::drawHeart (g, r.withSizeKeepingCentre (14.0f, 14.0f), favourite, over, dimTextColour.withAlpha (0.8f));
+    }
+};
+
 // MIX AND SMOOTHING (0.16.1, Thomas's layout): five small value boxes in the toolbar, right of SAVE.
 class MixBoxes final : public juce::Component
 {
@@ -686,6 +702,8 @@ public:
         patternButton.setTooltip ("Pattern: which of the 12 patterns plays (your DAW can switch them with automation)");
         patternButton.onClick = [this] { showPatternMenu(); };
         addAndMakeVisible (patternButton);
+        patternHeart.onClick = [this] { togglePatternFavourite (processor.getSlot (envelope)); };
+        addAndMakeVisible (patternHeart);
         shapes.onChange = [this] { refreshSlots(); };
         shapes.getEditor().gridDivision = 64;   // ShaperBox's grid: 64 columns and 16 rows for a 1-bar pattern
         shapes.setLayout (ShapePanel::Layout::browser);   // 0.16.1: Thomas's layout (presets in a browser under the grid)
@@ -776,12 +794,12 @@ public:
             g.fillPath (arrow);
         }
         // The tips, top right (Thomas's layout).
-        auto tips = juce::Rectangle<int> (patternButton.getRight() + 16, 0, getWidth() - 16 - 44 - (patternButton.getRight() + 16), headerHeight);
-        g.setFont (juce::FontOptions (11.0f));
-        g.drawText (u8 ("Double-click: add point \xc2\xb7 Drag: move \xc2\xb7 Double-click a point: delete"), tips.removeFromTop (tips.getHeight() / 2).withTrimmedTop (8),
-                    juce::Justification::bottomRight);
-        g.drawText (u8 ("Drag the small dot: curve \xc2\xb7 Drag across: select points \xc2\xb7 Right-click: more"), tips.withTrimmedBottom (8),
-                    juce::Justification::topRight);
+        auto tips = juce::Rectangle<int> (patternHeart.getRight() + 16, 0, getWidth() - 16 - 44 - (patternHeart.getRight() + 16), headerHeight);
+        g.setFont (juce::FontOptions (10.5f));
+        g.drawFittedText (u8 ("Double-click: add point \xc2\xb7 Drag: move \xc2\xb7 Double-click a point: delete"), tips.removeFromTop (tips.getHeight() / 2).withTrimmedTop (8),
+                          juce::Justification::bottomRight, 1, 0.9f);
+        g.drawFittedText (u8 ("Small dot: curve \xc2\xb7 Drag across: select points \xc2\xb7 Right-click: more"), tips.withTrimmedBottom (8),
+                          juce::Justification::topRight, 1, 0.9f);
     }
     // The pitch labels on the TIME lines: from the settings (shared with Triad's gear menu and every Triad Time).
     void applyLabelMode (TriadSettings::PitchLabels mode)
@@ -873,6 +891,8 @@ private:
         second.setBounds (tabs.removeFromLeft (112));
         tabs.removeFromLeft (12);
         patternButton.setBounds (tabs.removeFromLeft (124).reduced (0, 3));
+        tabs.removeFromLeft (4);
+        patternHeart.setBounds (tabs.removeFromLeft (30).reduced (0, 3));
         shapes.setBounds (r.removeFromTop (shapesHeightFor (r.getWidth())));
         r.removeFromTop (12);
         auto bottom = r.removeFromTop (bottomRowHeight);
@@ -922,6 +942,8 @@ private:
     void refreshSlots()
     {
         patternButton.setButtonText ("PATTERN " + juce::String (processor.getSlot (envelope) + 1) + u8 (" \xe2\x96\xbe"));
+        const bool favourite = isPatternFavourite (processor.getSlot (envelope));
+        if (favourite != patternHeart.favourite) { patternHeart.favourite = favourite; patternHeart.repaint(); }
         shown[0] = processor.getSlot (0);
         shown[1] = processor.getSlot (1);
     }
@@ -979,6 +1001,7 @@ private:
     juce::SharedResourcePointer<TriadSettings> settings;
     int settingsTicks = 0;
     juce::TextButton patternButton;
+    PatternHeart patternHeart;
     bool shownVolumeFirst = false, swappedThisDrag = false;
     MixBoxes mixBoxes;
     ShapePanel shapes;
