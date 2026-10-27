@@ -1,5 +1,21 @@
 # Validation — Triad
 
+## Triad v15 (0.16.0), Triad Time and Triad Split on macOS — 2026-10-26
+
+Commit `f8bf808`, run 40458528536 (macos-15 runner, virtual Apple M1). New in 0.16.0: every menu in Triad's own look
+(no grey menus), knobs as value boxes, the cleaner colour editor (square swatches, hue bar beside the square), the
+compact matrix, the LFO selection in the band's colour, and LEARN opening the effect's window (an open one left as it is).
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v15-0.16.0`, `Triad-Time-0.16.0`, `Triad-Split-0.16.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (Triad v15 over simulated Triad ... v14 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| Menus | The gear, plug-in and band menus open in the theme's colours (photographed as they open); the theme's swatches, the chosen item's fill, the value boxes' meters checked pixel by pixel |
+| Stress | 3,000 random edits while audio plays: PASS; real plug-ins (56): PASS, no crashes, no NaN/Inf output, all checks held |
+
+Runs 40456516617 (`5b7e4df`) and an earlier one failed on test timing, not on Triad: the plug-in search test looked
+50 ms after typing, too soon on a busy runner (now it waits for the search to catch up); before that, one recording
+check at 96 kHz / 64 samples silenced 1 block of 7,500 once (passed on the re-run).
+
 ## Triad v14 (0.15.0), Triad Time and Triad Split on macOS — 2026-10-22
 
 Commit `8d9ac54`, run 39888064388 attempt 2 (macos-15 runner, virtual Apple M1). New in 0.15.0: favorites with hearts
