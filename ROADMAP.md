@@ -4,7 +4,48 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.15.0 ("Triad v14"): favorites with hearts, the sound behind the grid, 10,000 TIME patterns
+## Current testing version — 0.16.0 ("Triad v15"): every menu in Triad's own look, mix boxes, the colour editor, a compact matrix
+
+0.16.0 (2026-10-26), Thomas: "Yeah, this all looks great. Can you start building it with all these menu changes? ... keep the
+smoothness to the max level ... as on V13, 120 FPS." Built from the approved pictures (`docs/mockups/triad-menus/all/`,
+`docs/mockups/together/`):
+- **Every menu in the new look** (no grey menus): JUCE draws a menu in a window of its own with the program's default
+  look, not the look of the window it opens from, which is why every menu was JUCE's grey one. While a Triad, Triad
+  Time or Triad Split window is open, Triad's look is that default: a rounded panel in the theme's colours (Plum: purple),
+  section titles in the accent colour, a name (a plug-in, a preset, "Band 2 / Slot 1") as a larger title, the chosen
+  item filled (Plum: lavender) and ticked, the item under the mouse lit, counts and values on the right ("Theme  Plum >",
+  "DELAY  8 >", "24 dB/oct", "p. 4", "2,000"), folders to the side, a theme's colours as small squares, VST3 / AU /
+  TRIAD tags, the hearts. Tooltips and the name box (Save as new preset, Save chain, Rename) in the same look. The Mac's
+  own file windows stay as macOS draws them.
+- **The gear menu regrouped**: EFFECT LIST (sorting, folders and rescans to the side), FAVORITES (**Favorites by type**,
+  on to start with), WINDOW SIZE (chips), COLOURS (Theme >, Edit the colours...), LFO TAB: BEHIND THE GRID, TRIAD TIME,
+  PRESETS (Startup preset > ...).
+- **The plug-in menu**: the search, then **♥ FAVORITES** (all, A-Z) and the favorites **by type** (DELAY, DISTORTION,
+  DYNAMICS, EQ + FILTER, MODULATION, REVERB, RHYTHM + TIME, STEREO, OTHER), each opening to the side; the type comes from
+  the plug-in's VST3 category or its name (an Audio Unit borrows its VST3's). A slot's menu has **Favorite type >** to
+  list a favorite under another type (instead of a right-click in the menu, which JUCE's menus cannot do). Then BUILT
+  IN, ALL PLUG-INS (VST3 / Audio Units / Not checked, with counts), Add an empty slot, Browse, Refresh, Rescan.
+- **Each plug-in's shapes first**: Triad's LFO folder menu lists the LFO folders, Triad Time's patterns one menu away
+  (TRIAD TIME PATTERNS >); Triad Time's lists its TIME folders, the LFO shapes one menu away (LFO SHAPES >).
+- **Mix boxes instead of round knobs**: the value over a line meter filling left to right in the band colour (slot
+  mixes, BAND MIX with its caption in the box, Triad Time's mix, smoothing, attack and release); an LFO's dot rides the
+  meter line.
+- **Band curves without outlines**: only their see-through colours crossing. Plum keeps its near-black band area.
+- **The colour editor, cleaner, same layout**: the nine colours with square swatches, hex and back-to-Triad's; the band
+  colours as squares; the picker drawn by Triad: the colour with its hex, a square, the hue bar standing beside it with
+  an arrow each side (as before), RED / GREEN / BLUE boxes; RANDOM COLOURWAY; MAKE READABLE, the name, SAVE AS, CANCEL,
+  DONE; START FROM opens a menu with each theme's colours.
+- **MATRIX, compact** (Thomas: "make each block ... a little bit smaller ... so you don't have to slide so much to left
+  or right"): three panels side by side in the window (348 wide, were 468), each row SOURCE | AMOUNT (a box, a short
+  drag for the whole range, was a long bar) | INV | DESTINATION.
+- **LEARN opens the effect's window** if it is closed, and leaves an open one exactly as it is (see below).
+- Drawing stays at up to 120 frames a second (the boxes are lighter to draw than the knobs were).
+
+Still to come (the next version): Triad Time's new layout (the preset browser with categories, search, 10 named presets
+a page, go to a page by its number; MIX AND SMOOTHING boxes next to SAVE; the move-the-wave arrows; select points and
+move them) and the LFO tab in that layout with ROUTING at the side and LEARN.
+
+### 0.15.0 ("Triad v14"): favorites with hearts, the sound behind the grid, 10,000 TIME patterns
 
 0.15.0 (2026-10-22), Thomas: "can you just start on all these updates for the roadmap right now, like the audio thing
 coming in, the favorite system, and the 2,000 presets for each category ... just ship me a new installer":
