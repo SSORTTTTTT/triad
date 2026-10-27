@@ -197,11 +197,23 @@ TriadTime::TriadTime()
     smoothing = addFloat ("smoothing", "Smoothing", { 0.0f, 50.0f, 0.1f, 0.5f }, 8.0f, "ms");
     attack = addFloat ("attack", "Attack", { 0.0f, 500.0f, 0.1f, 0.35f }, 2.0f, "ms");
     release = addFloat ("release", "Release", { 0.0f, 1000.0f, 0.1f, 0.35f }, 12.0f, "ms");
+    {
+        auto p = std::make_unique<AudioParameterBool> (ParameterID { "volumeFirst", 1 }, "VOLUME before TIME", false);
+        volumeFirst = p.get();
+        addHostedParameter (std::move (p));
+    }
     for (int e = 0; e < 2; ++e)
         for (int s = 0; s < numSlots; ++s) shapes[(size_t) e][(size_t) s] = slotPreset (e, s);
     for (auto& p : playing) p.reserve (2048);
 }
 TriadTime::~TriadTime() { cancelPendingUpdate(); }
+void TriadTime::setVolumeFirst (bool first)
+{
+    if (volumeFirst == nullptr || volumeFirst->get() == first) return;
+    volumeFirst->beginChangeGesture();
+    volumeFirst->setValueNotifyingHost (first ? 1.0f : 0.0f);
+    volumeFirst->endChangeGesture();
+}
 
 bool TriadTime::isBusesLayoutSupported (const BusesLayout& layout) const
 {
@@ -331,15 +343,25 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
     float timePhase = 0.0f, volumePhase = 0.0f;
     const int traced = tracedEnvelope.load (std::memory_order_relaxed);
     if (traced != tracing) { tracing = traced; trace.reset(); }
+    const bool gateFirst = isVolumeFirst();
     for (int s = 0; s < n; ++s)
     {
         const double at = beats + s * beatsPerSample;
-        // Into the rolling buffer.
+        // VOLUME: the gate, with attack and release (applied after TIME, or first: see below).
+        volumePhase = (float) (at / volumeBeats - std::floor (at / volumeBeats));
+        const float target = evaluate (volumeShape, volumePhase, cursors[volumeEnvelope]);
+        gate = target + (gate - target) * (target > gate ? rise : fall);
+        const float tm = timeMixSmooth.getNextValue(), vm = volumeMixSmooth.getNextValue();
+        const float gain = 1.0f - vm + vm * gate;
+        // Into the rolling buffer: the sound as it comes in, or gated first (VOLUME before TIME: TIME then plays back
+        // the gated sound, gaps and all).
         const auto slot = (size_t) (written % historySize);
-        float dry[2];
+        float dry[2], level = 0.0f;
         for (int c = 0; c < 2; ++c)
         {
             dry[c] = audio.getSample (juce::jmin (c, channels - 1), s);
+            level = juce::jmax (level, std::abs (dry[c]));
+            if (gateFirst) dry[c] *= gain;
             history.setSample (c, (int) slot, dry[c]);
         }
         ++written;
@@ -373,15 +395,10 @@ void TriadTime::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer&
             fadePosition += fadeSpeed;
             --fadeLeft;
         }
-        // VOLUME: the gate, with attack and release.
-        volumePhase = (float) (at / volumeBeats - std::floor (at / volumeBeats));
-        if (traced >= 0) trace.add (traced == timeEnvelope ? timePhase : volumePhase, juce::jmax (std::abs (dry[0]), std::abs (dry[1])));
-        const float target = evaluate (volumeShape, volumePhase, cursors[volumeEnvelope]);
-        gate = target + (gate - target) * (target > gate ? rise : fall);
-        const float tm = timeMixSmooth.getNextValue(), vm = volumeMixSmooth.getNextValue();
-        const float gain = 1.0f - vm + vm * gate;
+        if (traced >= 0) trace.add (traced == timeEnvelope ? timePhase : volumePhase, level);
+        const float after = gateFirst ? 1.0f : gain;
         for (int c = 0; c < channels; ++c)
-            audio.setSample (c, s, (dry[c] + (wet[c] - dry[c]) * tm) * gain);
+            audio.setSample (c, s, (dry[c] + (wet[c] - dry[c]) * tm) * after);
     }
     if (traced >= 0) trace.endBlock();
     if (! playingSong) freeBeats = beats + n * beatsPerSample;
@@ -656,6 +673,13 @@ public:
         volumeTab.setTooltip ("VOLUME: the gate (top = 100%, bottom = silence).");
         timeTab.onClick = [this] { showEnvelope (TriadTime::timeEnvelope); };
         volumeTab.onClick = [this] { showEnvelope (TriadTime::volumeEnvelope); };
+        // Drag one tab past the other to swap the order the sound goes through them (0.17.0): left first.
+        for (auto* tab : { &timeTab, &volumeTab })
+        {
+            tab->addMouseListener (this, false);
+            tab->setTooltip (tab->getTooltip() + " Drag it past the other tab to swap their order (the sound goes through the left one first).");
+        }
+        shownVolumeFirst = processor.isVolumeFirst();
         // The 12 patterns of each envelope (the DAW can switch them: "TIME pattern", "VOLUME pattern"): one small button.
         patternButton.setTooltip ("Pattern: which of the 12 patterns plays (your DAW can switch them with automation)");
         patternButton.onClick = [this] { showPatternMenu(); };
@@ -740,6 +764,15 @@ public:
         g.setColour (dimTextColour);
         g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         g.drawText ("by Thomas Ross", header.removeFromLeft (110), juce::Justification::centredLeft);
+        // Between the tabs: which way the sound goes.
+        {
+            const auto& left = processor.isVolumeFirst() ? volumeTab : timeTab;
+            const float x = (float) left.getRight() + 4.0f, y = (float) left.getBounds().getCentreY();
+            juce::Path arrow;
+            arrow.addTriangle (x, y - 4.0f, x, y + 4.0f, x + 6.0f, y);
+            g.setColour (dimTextColour);
+            g.fillPath (arrow);
+        }
         // The tips, top right (Thomas's layout).
         auto tips = juce::Rectangle<int> (patternButton.getRight() + 16, 0, getWidth() - 16 - 44 - (patternButton.getRight() + 16), headerHeight);
         g.setFont (juce::FontOptions (11.0f));
@@ -830,9 +863,12 @@ private:
         themePanel.setBounds (getLocalBounds());
         header.removeFromLeft (290);   // TRIAD TIME by Thomas Ross
         auto tabs = header.withSizeKeepingCentre (header.getWidth(), 36);
-        timeTab.setBounds (tabs.removeFromLeft (112));
-        tabs.removeFromLeft (8);
-        volumeTab.setBounds (tabs.removeFromLeft (112));
+        // In the order the sound goes through them, left first.
+        auto& first = processor.isVolumeFirst() ? volumeTab : timeTab;
+        auto& second = processor.isVolumeFirst() ? timeTab : volumeTab;
+        first.setBounds (tabs.removeFromLeft (112));
+        tabs.removeFromLeft (14);
+        second.setBounds (tabs.removeFromLeft (112));
         tabs.removeFromLeft (12);
         patternButton.setBounds (tabs.removeFromLeft (124).reduced (0, 3));
         shapes.setBounds (r.removeFromTop (shapesHeightFor (r.getWidth())));
@@ -860,6 +896,27 @@ private:
 private:
     juce::int64 favouritesSeen = 0;
     EnvelopeHost& hostFor (int e) { return e == TriadTime::timeEnvelope ? timeHost : volumeHost; }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        // A tab dragged past the other one: swap the order (once per drag).
+        const bool isTab = e.eventComponent == &timeTab || e.eventComponent == &volumeTab;
+        if (! isTab || swappedThisDrag) return;
+        const bool leftTab = e.eventComponent == (processor.isVolumeFirst() ? &volumeTab : &timeTab);
+        const int dx = e.getDistanceFromDragStartX();
+        if ((leftTab && dx > 60) || (! leftTab && dx < -60))
+        {
+            processor.setVolumeFirst (! processor.isVolumeFirst());
+            swappedThisDrag = true;
+            orderChanged();
+        }
+    }
+    void mouseUp (const juce::MouseEvent&) override { swappedThisDrag = false; }
+    void orderChanged()
+    {
+        shownVolumeFirst = processor.isVolumeFirst();
+        resized();
+        repaint();
+    }
     void refreshSlots()
     {
         patternButton.setButtonText ("PATTERN " + juce::String (processor.getSlot (envelope) + 1) + u8 (" \xe2\x96\xbe"));
@@ -896,6 +953,7 @@ private:
             applyLabelMode (settings->getPitchLabels());   // changed in Triad's gear menu
             applyBackdrop();
             if (const auto v = triad::favouriteShapes::version(); v != favouritesSeen) { favouritesSeen = v; refreshSlots(); }   // hearts marked elsewhere
+            if (processor.isVolumeFirst() != shownVolumeFirst) orderChanged();   // the DAW's automation or undo
         }
     }
     // Every frame of the screen (up to 120 a second): a pattern switched by automation (or one of Triad's LFOs)
@@ -919,6 +977,7 @@ private:
     juce::SharedResourcePointer<TriadSettings> settings;
     int settingsTicks = 0;
     juce::TextButton patternButton;
+    bool shownVolumeFirst = false, swappedThisDrag = false;
     MixBoxes mixBoxes;
     ShapePanel shapes;
     GeneratorPanel generator;

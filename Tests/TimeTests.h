@@ -285,6 +285,33 @@ inline void run (const juce::File& screenshotFolder)
             require ((int) seen.size() == tp::numPresets, "10,000 different TIME patterns");
         }
     }
+    // ---- The order (0.17.0): VOLUME before TIME plays back the gated sound -------------------------------------------
+    {
+        auto lateLevel = [&] (bool volumeFirst)
+        {
+            TriadTime t;
+            t.prepareToPlay (rate, block);
+            setPlain (t.smoothing, 0.0f);
+            setPlain (t.attack, 0.0f);
+            setPlain (t.release, 0.0f);
+            t.setVolumeFirst (volumeFirst);
+            // TIME: half a bar back all the time; VOLUME: silent for the first half of each bar.
+            t.setShape (TriadTime::timeEnvelope, 0, { { 0.0f, 0.5f, 0.0f }, { 1.0f, 0.5f, 0.0f } }, false);
+            t.setShape (TriadTime::volumeEnvelope, 0, { { 0.0f, 0.0f, 0.0f }, { 0.5f, 0.0f, 0.0f }, { 0.5f, 1.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } }, false);
+            Head head;
+            const auto in = noise (samplesPerBeat * 8);
+            const auto out = run (t, head, in, block);
+            // Bar 2's second half: TIME plays its first half again (gated to silence when VOLUME comes first).
+            double e = 0.0;
+            const size_t from = samplesPerBeat * 6 + 2000, to = samplesPerBeat * 8 - 2000;
+            for (size_t s = from; s < to; ++s) e += (double) out[s] * out[s];
+            return std::sqrt (e / (double) (to - from));
+        };
+        const double timeFirst = lateLevel (false), volumeFirst = lateLevel (true);
+        std::cout << "Triad Time order: second half of the bar " << timeFirst << " (TIME then VOLUME), " << volumeFirst << " (VOLUME then TIME)" << std::endl;
+        require (timeFirst > 0.1 && volumeFirst < 0.01,
+                 "VOLUME before TIME: TIME plays back the gated sound (here silence); TIME before VOLUME: the sound itself, then the gate");
+    }
     // ---- SMOOTHING: repeats do not click ---------------------------------------------------------------------------------
     {
         auto clickiness = [&] (float smoothingMs, int& jumps)
