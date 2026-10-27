@@ -71,7 +71,7 @@ inline void run (const juce::File& screenshots)
             editor->getPluginSearch().close();
             search::MenuItem item ([] (const juce::String&) {});
             item.setLookAndFeel (&editor->getLookAndFeel());
-            item.setSize (300, 30);
+            item.setSize (300, 40);
             themeTests::snapshot (screenshots, "Triad-plugin-search-menu-item.png", item, 2.0f);
             item.setLookAndFeel (nullptr);
         }

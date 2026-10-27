@@ -143,7 +143,8 @@ inline void run (const juce::File& screenshots)
         require (ui::currentTheme().name == "Midnight" && settings->getThemeName() == "Midnight", "Choosing a theme stores it in Triad.settings");
         require (sameColour (ui::background, midnight[Theme::background]) && sameColour (ui::panel, midnight[Theme::panels]),
                  "...and every colour drawn next is the theme's");
-        require (sameColour (editor->getLookAndFeel().findColour (juce::PopupMenu::backgroundColourId), midnight[Theme::panels])
+        require (sameColour (editor->getLookAndFeel().findColour (juce::PopupMenu::backgroundColourId).withAlpha (1.0f), ui::menuColours().back)
+                     && sameColour (ui::panel, midnight[Theme::panels])
                      && sameColour (timeEditor->getLookAndFeel().findColour (juce::TextEditor::textColourId), midnight[Theme::text])
                      && sameColour (splitEditor->getLookAndFeel().findColour (juce::ComboBox::backgroundColourId), midnight[Theme::buttons]),
                  "Open windows of Triad, Triad Time and Triad Split take the new theme at once");
