@@ -1,5 +1,24 @@
 # Validation — Triad
 
+## Triad v16 (0.17.0), Triad Time and Triad Split on macOS — 2026-10-27
+
+Commit `8f8f555`, run 40467466418 (macos-15 runner, virtual Apple M1). New in 0.17.0: Triad Time's new layout (PATTERN
+menu and its heart, MIX AND SMOOTHING boxes, the shapes browser with search and pages, move-the-wave arrows, selecting
+points), VOLUME before TIME by dragging the tabs, the LFO tab in the same layout with ROUTING beside the grid, and
+Triad's window 80 taller (1000 x 700).
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v16-0.17.0`, `Triad-Time-0.17.0`, `Triad-Split-0.17.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (Triad v16 over simulated Triad ... v15 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| TIME / VOLUME order | TIME plays first by default and in projects saved before the swap existed; the second half of a bar gated by VOLUME: 0.231 with TIME then VOLUME, 0 with VOLUME then TIME; saved and reopened |
+| LFO tab | Grid 660 x 202 beside ROUTING; the dice's straight lines at 30/45/60/75 degrees on it: 81 of 82; the shapes browser shows whole pages, every shape in a folder once, the mouse wheel turns pages |
+| Stress | 3,000 random edits while audio plays: PASS; real plug-ins (56): PASS, no crashes, no NaN/Inf output, all checks held |
+
+The first full run of this release (`08566f5`, run 40460787986) passed everything but one random-edit sequence with
+real plug-ins (seed 777): a crash inside Graillon 3's own pitch code on the audio thread; the sequence passed without
+the Chowdhury plug-ins (the known intermittent third-party crash). Run 40459227622 (`98484c4`) failed one test that
+still expected the LFO grid's old 1.87 : 1 shape; it now checks the dice's angles on the grid as shown.
+
 ## Triad v15 (0.16.0), Triad Time and Triad Split on macOS — 2026-10-26
 
 Commit `f8bf808`, run 40458528536 (macos-15 runner, virtual Apple M1). New in 0.16.0: every menu in Triad's own look

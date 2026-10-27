@@ -4,7 +4,7 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.17.0 ("Triad v16"): Triad Time's new layout, the LFO tab in it, VOLUME before TIME
+## Current testing version — 0.17.0 ("Triad v16", delivered 2026-10-27): Triad Time's new layout, the LFO tab in it, VOLUME before TIME
 
 0.17.0 (2026-10-26 night), Thomas: "Just work on refining and getting the plugin to be in a place where all the menus
 and visual cues that I went through are all changed and finished". Built from the approved pictures
