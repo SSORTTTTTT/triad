@@ -48,9 +48,11 @@ inline void run (const juce::File& screenshots)
                  "While a Triad window is open, its look draws the menus and tooltips (no grey system menus)");
         const juce::PopupMenu::Options options;
         int w = 0, h = 0, plainW = 0, plainH = 0;
-        look.getIdealPopupMenuItemSizeWithOptions ("Plum   " + ui::menuSwatches ({ juce::Colours::red, juce::Colours::green, juce::Colours::blue, juce::Colours::white }),
+        // (a long name, so neither is the menus' narrowest width)
+        const juce::String name ("A theme with quite a long name for this test");
+        look.getIdealPopupMenuItemSizeWithOptions (name + "   " + ui::menuSwatches ({ juce::Colours::red, juce::Colours::green, juce::Colours::blue, juce::Colours::white }),
                                                    false, 0, w, h, options);
-        look.getIdealPopupMenuItemSizeWithOptions ("Plum", false, 0, plainW, plainH, options);
+        look.getIdealPopupMenuItemSizeWithOptions (name, false, 0, plainW, plainH, options);
         require (h == ui::menuRowHeight && w >= plainW + 4 * 14, "A theme's item makes room for its four colour squares");
         int hw = 0, hh = 0, tw = 0, th = 0;
         look.getIdealPopupMenuSectionHeaderSizeWithOptions ("FAVORITES", 0, hw, hh, options);

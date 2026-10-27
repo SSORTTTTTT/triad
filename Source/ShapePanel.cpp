@@ -329,8 +329,9 @@ void ShapeEditor::paint (juce::Graphics& g)
     const auto colour = shapeColour();
     if (drag == Drag::select)
     {
-        g.setColour (colour.withAlpha (0.12f)); g.fillRect (selection);
-        g.setColour (colour.withAlpha (0.7f)); g.drawRect (selection, 1.0f);
+        // In the band's own colour (Triad Time: TIME's or VOLUME's), lighter (0.16.0, Thomas).
+        g.setColour (colour.withAlpha (0.16f)); g.fillRect (selection);
+        g.setColour (colour.brighter (0.3f)); g.drawRect (selection, 1.5f);
     }
     // While a point is dragged: what the straight lines either side of it do (Triad Time's TIME: their pitch).
     if (drag == Drag::points && host != nullptr && host->segmentLabelMode() > 0 && dragIndex >= 0 && dragIndex < (int) shape.size())
@@ -479,10 +480,11 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
     {
         const auto p = toScreen (shape[i]);
         const bool sel = i < selected.size() && selected[i];
-        const float radius = pointRadius + (hoverPoint == (int) i ? 1.5f : 0.0f);
-        g.setColour (sel ? colour : currentPalette.marker);
+        // A selected point: bigger, filled with a lighter shade of the band's colour, ringed in the colour itself.
+        const float radius = pointRadius + (hoverPoint == (int) i ? 1.5f : 0.0f) + (sel ? 1.5f : 0.0f);
+        g.setColour (sel ? colour.brighter (0.35f) : currentPalette.marker);
         g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (p));
-        if (sel) { g.setColour (currentPalette.marker); g.drawEllipse (juce::Rectangle<float> (radius * 2.0f + 3.0f, radius * 2.0f + 3.0f).withCentre (p), 1.2f); }
+        if (sel) { g.setColour (colour); g.drawEllipse (juce::Rectangle<float> (radius * 2.0f + 4.0f, radius * 2.0f + 4.0f).withCentre (p), 2.0f); }
     }
 }
 
