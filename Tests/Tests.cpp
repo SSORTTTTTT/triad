@@ -2068,7 +2068,8 @@ int main (int argc, char** argv)
                         const int expected = juce::jmin (LfoPage::paletteSize, (int) list.size() - pg * LfoPage::paletteSize);
                         require (page.getPalettePage() == pg && page.getNumPaletteButtons() == expected, "The palette shows the chosen page");
                         auto* last = page.getPaletteButton (expected - 1);
-                        require (last != nullptr && last->getRight() <= page.getEditor().getRight() + 1, "The palette row fits beside the grid");
+                        require (last != nullptr && last->getParentComponent() != nullptr && last->getRight() <= last->getParentComponent()->getWidth()
+                                     && last->getBottom() <= last->getParentComponent()->getHeight(), "The shapes browser shows the whole page");
                         last->onClick();
                         const int presetIndex = list[(size_t) (pg * LfoPage::paletteSize + expected - 1)];
                         require (preview.getLfoInfo (0, lfoIndex).shape == mod::preset (presetIndex), "A palette button replaces the shape");
@@ -2117,7 +2118,7 @@ int main (int argc, char** argv)
                 for (int c = 0; c < mod::numPresetCategories(); ++c)
                     if (mod::isGeneratedCategory (c)) { page.setPaletteCategory (c); break; }
                 {
-                    auto& shapesPanel = page.getShapePanel();   // the palette lives in the shape panel (shared with Triad Time)
+                    auto& shapesPanel = page.getShapePanel().getBrowser();   // the shapes browser under the grid (shared with Triad Time)
                     auto* first = page.getPaletteButton (0);
                     juce::MouseWheelDetails wheel {};
                     wheel.deltaY = -0.2f;

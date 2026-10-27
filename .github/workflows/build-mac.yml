@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           ls -l Installer/*.pkg
-          test "$(ls Installer/*.pkg | wc -l | tr -d ' ')" = 3   # Triad v15, Triad Time and Triad Split
+          test "$(ls Installer/*.pkg | wc -l | tr -d ' ')" = 3   # Triad v16, Triad Time and Triad Split
           for pkg in Installer/*.pkg; do
             echo "==== $pkg"
             pkgutil --check-signature "$pkg" || true
@@ -41,12 +41,12 @@ jobs:
       - name: Install the .pkg on the runner
         run: |
           set -euo pipefail
-          # Simulate earlier "Triad", "Triad v2" ... "Triad v14" installs: the v15 package must remove them.
-          for old in "Triad" "Triad v2" "Triad v3" "Triad v4" "Triad v5" "Triad v6" "Triad v7" "Triad v8" "Triad v9" "Triad v10" "Triad v11" "Triad v12" "Triad v13" "Triad v14"; do
-            sudo ditto "build-mac/Triad_artefacts/Release/VST3/Triad v15.vst3" "/Library/Audio/Plug-Ins/VST3/$old.vst3"
-            sudo ditto "build-mac/Triad_artefacts/Release/AU/Triad v15.component" "/Library/Audio/Plug-Ins/Components/$old.component"
+          # Simulate earlier "Triad", "Triad v2" ... "Triad v15" installs: the v16 package must remove them.
+          for old in "Triad" "Triad v2" "Triad v3" "Triad v4" "Triad v5" "Triad v6" "Triad v7" "Triad v8" "Triad v9" "Triad v10" "Triad v11" "Triad v12" "Triad v13" "Triad v14" "Triad v15"; do
+            sudo ditto "build-mac/Triad_artefacts/Release/VST3/Triad v16.vst3" "/Library/Audio/Plug-Ins/VST3/$old.vst3"
+            sudo ditto "build-mac/Triad_artefacts/Release/AU/Triad v16.component" "/Library/Audio/Plug-Ins/Components/$old.component"
           done
-          sudo installer -pkg Installer/Triad-v15-*.pkg -target / -verboseR
+          sudo installer -pkg Installer/Triad-v16-*.pkg -target / -verboseR
           sudo installer -pkg Installer/Triad-Time-*.pkg -target / -verboseR
           sudo installer -pkg Installer/Triad-Split-*.pkg -target / -verboseR
           pkgutil --pkgs | grep thomasross
@@ -63,7 +63,8 @@ jobs:
                      "/Library/Audio/Plug-Ins/VST3/Triad v11.vst3" "/Library/Audio/Plug-Ins/Components/Triad v11.component" \
                      "/Library/Audio/Plug-Ins/VST3/Triad v12.vst3" "/Library/Audio/Plug-Ins/Components/Triad v12.component" \
                      "/Library/Audio/Plug-Ins/VST3/Triad v13.vst3" "/Library/Audio/Plug-Ins/Components/Triad v13.component" \
-                     "/Library/Audio/Plug-Ins/VST3/Triad v14.vst3" "/Library/Audio/Plug-Ins/Components/Triad v14.component"; do
+                     "/Library/Audio/Plug-Ins/VST3/Triad v14.vst3" "/Library/Audio/Plug-Ins/Components/Triad v14.component" \
+                     "/Library/Audio/Plug-Ins/VST3/Triad v15.vst3" "/Library/Audio/Plug-Ins/Components/Triad v15.component"; do
             if [ -e "$old" ]; then echo "::error::$old was not removed"; exit 1; fi
             echo "removed old $old"
           done
@@ -72,12 +73,12 @@ jobs:
               ls -ld "$b"; lipo -archs "$b/Contents/MacOS/$name"; codesign --verify --deep --strict --verbose=2 "$b"; du -sh "$b"
             done
           done
-          for b in "/Library/Audio/Plug-Ins/Components/Triad v15.component" "/Library/Audio/Plug-Ins/VST3/Triad v15.vst3"; do
-            ls -ld "$b"; lipo -archs "$b/Contents/MacOS/Triad v15"; codesign --verify --deep --strict --verbose=2 "$b"
+          for b in "/Library/Audio/Plug-Ins/Components/Triad v16.component" "/Library/Audio/Plug-Ins/VST3/Triad v16.vst3"; do
+            ls -ld "$b"; lipo -archs "$b/Contents/MacOS/Triad v16"; codesign --verify --deep --strict --verbose=2 "$b"
             du -sh "$b"
             # The installed scanner helper works (it checks Triad itself here).
-            "$b/Contents/Helpers/Triad Scanner" --scan "/Library/Audio/Plug-Ins/VST3/Triad v15.vst3" "$RUNNER_TEMP/scan.xml"
-            grep -q 'name="Triad v15"' "$RUNNER_TEMP/scan.xml" && echo "Triad Scanner in $b works"
+            "$b/Contents/Helpers/Triad Scanner" --scan "/Library/Audio/Plug-Ins/VST3/Triad v16.vst3" "$RUNNER_TEMP/scan.xml"
+            grep -q 'name="Triad v16"' "$RUNNER_TEMP/scan.xml" && echo "Triad Scanner in $b works"
           done
 
       - name: Validate the Audio Unit (auval)
@@ -109,7 +110,7 @@ jobs:
                  "$PWD/build-tests/fixtures/Triad Crash Fixture.vst3" \
                  "$PWD/$scanner" \
                  "$PWD/ci-ui/Triad-preview-mac.png" \
-                 "$PWD/build-tests/Triad_artefacts/Release/VST3/Triad v15.vst3" \
+                 "$PWD/build-tests/Triad_artefacts/Release/VST3/Triad v16.vst3" \
                  "/Library/Audio/Plug-Ins/VST3/Triad Split.vst3" 2>&1 | tee test-results-mac.txt
           status=${PIPESTATUS[0]}
           echo "Integration tests exit code: $status" | tee -a test-results-mac.txt
@@ -165,9 +166,9 @@ jobs:
           curl -fsSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
           unzip -q pluginval.zip
           pv=pluginval.app/Contents/MacOS/pluginval
-          "$pv" --strictness-level 5 --skip-gui-tests --validate "/Library/Audio/Plug-Ins/VST3/Triad v15.vst3" | tee pluginval-vst3.log
+          "$pv" --strictness-level 5 --skip-gui-tests --validate "/Library/Audio/Plug-Ins/VST3/Triad v16.vst3" | tee pluginval-vst3.log
           vst3=${PIPESTATUS[0]}
-          "$pv" --strictness-level 5 --skip-gui-tests --validate "/Library/Audio/Plug-Ins/Components/Triad v15.component" | tee pluginval-au.log
+          "$pv" --strictness-level 5 --skip-gui-tests --validate "/Library/Audio/Plug-Ins/Components/Triad v16.component" | tee pluginval-au.log
           au=${PIPESTATUS[0]}
           "$pv" --strictness-level 5 --skip-gui-tests --validate "/Library/Audio/Plug-Ins/VST3/Triad Time.vst3" | tee pluginval-time-vst3.log
           tvst3=${PIPESTATUS[0]}

@@ -4,7 +4,30 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.16.0 ("Triad v15"): every menu in Triad's own look, mix boxes, the colour editor, a compact matrix
+## Current testing version — 0.17.0 ("Triad v16"): Triad Time's new layout, the LFO tab in it, VOLUME before TIME
+
+0.17.0 (2026-10-26 night), Thomas: "Just work on refining and getting the plugin to be in a place where all the menus
+and visual cues that I went through are all changed and finished". Built from the approved pictures
+(`docs/mockups/triad-time-layout/chosen-*.png`, `docs/mockups/together/4-lfo.png`, `7-triad-time.png`):
+- **Triad Time's layout**: TIME and VOLUME tabs in the order the sound goes through them, PATTERN ▾ (the 12 patterns,
+  a heart on the favorites, the one playing ticked; DAW automation still switches them) and a **heart beside it** for
+  the pattern playing; the grid across the whole window; one toolbar with **MIX AND SMOOTHING** (TIME, VOLUME, SMOOTH,
+  ATTACK, RELEASE boxes) next to SAVE and the **move-the-wave arrows**; under it the **shapes browser** (folder ▾,
+  ♥ FAVORITES, search by name, page "1 / 200" — click it to type a page — and 10 named presets a page) and GENERATE.
+- **VOLUME before TIME**: drag the TIME or VOLUME tab past the other to swap the order. TIME plays first unless they
+  are swapped (new plug-ins, and projects saved before the swap existed); with VOLUME first the gate shapes the sound
+  TIME then plays back. Saved with the project.
+- **Select points and move them**: drag across points to select them ("3 points selected" under the grid, in the
+  band's or the tab's colour); the arrows move the selection one grid step (Shift: an eighth), stopping at its
+  neighbours, or the whole wave round the cycle when nothing is selected.
+- **The LFO tab in the same layout**: bands and tips, the LFO tabs with TRIGGER at the right, the grid with
+  **ROUTING** beside it (a card per knob the LFO moves: on/off, where it goes, amount box, INV, remove; + ROUTE TO and
+  LEARN under them), the toolbar, the shapes browser and GENERATE.
+- **Triad's window is 80 taller (1000 x 700, was 620)** so the LFO grid keeps its height with the browser under it; the
+  bands get the room for more slots. WINDOW SIZE in the gear menu scales it as before.
+- MATRIX: narrower SOURCE, AMOUNT and INV so DESTINATION reads in full ("Band Volume").
+
+## 0.16.0 ("Triad v15"): every menu in Triad's own look, mix boxes, the colour editor, a compact matrix
 
 0.16.0 (2026-10-26), Thomas: "Yeah, this all looks great. Can you start building it with all these menu changes? ... keep the
 smoothness to the max level ... as on V13, 120 FPS." Built from the approved pictures (`docs/mockups/triad-menus/all/`,
@@ -41,11 +64,9 @@ smoothness to the max level ... as on V13, 120 FPS." Built from the approved pic
 - **LEARN opens the effect's window** if it is closed, and leaves an open one exactly as it is (see below).
 - Drawing stays at up to 120 frames a second (the boxes are lighter to draw than the knobs were).
 
-Still to come (the next version): Triad Time's new layout (the preset browser with categories, search, 10 named presets
-a page, go to a page by its number; MIX AND SMOOTHING boxes next to SAVE; the move-the-wave arrows; select points and
-move them) and the LFO tab in that layout with ROUTING at the side and LEARN.
+Built in 0.17.0: Triad Time's new layout and the LFO tab in it (above).
 
-### Next: swap TIME and VOLUME's order by dragging their tabs (Thomas, 2026-10-26 evening) — after Triad Time's new layout
+### Swap TIME and VOLUME's order by dragging their tabs (Thomas, 2026-10-26 evening) — built in 0.17.0
 
 Thomas: "on the top where it says time and volume ... hold it down and switch it from left to right where the volume tab
 is actually modulating the audio after the time tab, and then vice versa ... if I wanted to ... duck out part of the
