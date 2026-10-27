@@ -1161,7 +1161,13 @@ void ShapePanel::setHost (ShapeHost* h)
         if (category != paletteCategory) { paletteCategory = category; palettePage = 0; rebuildPalette(); }
         else if (layout == Layout::browser) rebuildPalette();
     }
-    else if (layout == Layout::browser) rebuildPalette();   // the tiles in the envelope's colour, the one in use outlined
+    else if (layout == Layout::browser)
+    {
+        // The tiles in the envelope's colour (TIME's, VOLUME's), the one in use outlined; built again only for a new
+        // colour (automation may switch patterns quickly).
+        if (host != nullptr && host->getColour() != builtColour) rebuildPalette();
+        else refreshCurrent();
+    }
     updateToolbar();
 }
 int ShapePanel::validCategory (int category) const
@@ -1256,6 +1262,7 @@ void ShapePanel::rebuildPalette()
     const int pages = juce::jmax (1, ((int) list.size() + size - 1) / size);
     palettePage = juce::jlimit (0, pages - 1, palettePage);
     const auto onGrid = triad::favouriteShapes::keyOf (editor.getShape());
+    builtColour = host != nullptr ? host->getColour() : accent;
     for (int k = palettePage * size; k < juce::jmin ((int) list.size(), (palettePage + 1) * size); ++k)
     {
         const auto& entry = list[(size_t) k];

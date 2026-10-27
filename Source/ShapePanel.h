@@ -278,6 +278,7 @@ private:
     int toolbarExtraWidth = 0;
     juce::String search;
     int folderBeforeFavourites = 0;
+    juce::Colour builtColour;
     triad::ui::IconButton moveLeftButton { triad::ui::IconButton::Icon::moveLeft, "Move wave or selection left. Shift-click for fine adjustment." },
                           moveRightButton { triad::ui::IconButton::Icon::moveRight, "Move wave or selection right. Shift-click for fine adjustment." };
     juce::TextButton favouritesButton;
