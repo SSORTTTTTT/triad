@@ -175,7 +175,7 @@ Also (Thomas):
   colours stay easy to tell apart. `0 BANDS - Plum dark band area.png`.
 - **The colour editor (Custom), cleaner, same layout.** He likes its layout and wants it cleaner (this replaces "the
   colour editor stays as it is"): the nine colours on the left (colour, name, hex, back-to-Triad's), the band colours
-  under them, the chosen colour's picker on the right drawn by Triad (a square, a hue strip, RED / GREEN / BLUE boxes
+  under them, the chosen colour's picker on the right drawn by Triad (a square with the hue bar standing beside it, as now; RED / GREEN / BLUE boxes
   with meters, instead of the grey sliders), RANDOM COLOURWAY, then MAKE READABLE, the name, SAVE AS, CANCEL, DONE;
   START FROM as a menu in the new look. `8 COLOURS - Custom.png`, `9 COLOURS - Start from open.png`.
 - **Colour previews are squares, not circles**: the theme swatches in the menus, the nine colours, the band colours.

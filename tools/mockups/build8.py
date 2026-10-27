@@ -391,14 +391,17 @@ def colours_panel(menu_open=False):
     out += text(rx, ry0, 'ACCENT (TITLES, LIT BUTTONS)', 10, C['pink'], 800, 'letter-spacing:0.6px;')
     out += box(rx, ry0 + 20, rw, 30, '#FF6BD0', 'background:#ff6bd0;border-radius:8px;color:#1b1030;font-size:13px;font-weight:800;'
                                                 'display:flex;align-items:center;justify-content:center;font-family:Menlo,monospace;')
-    sq_y = ry0 + 60
-    out += box(rx, sq_y, rw, 150, '', 'border-radius:8px;background:linear-gradient(to top,#000,rgba(0,0,0,0)),linear-gradient(to right,#fff,hsl(318,100%,50%));')
-    out += box(rx + rw * 0.58 - 8, sq_y + 2, 16, 16, '', 'border:2.5px solid #fff;border-radius:9px;box-shadow:0 0 0 1px rgba(0,0,0,0.5);box-sizing:border-box;')
-    hy = sq_y + 160
-    out += box(rx, hy, rw, 14, '', 'border-radius:7px;background:linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);')
-    hx = rx + rw * 318 / 360
-    out += box(hx - 7, hy - 3, 14, 20, '', 'background:#ff00c0;border:2.5px solid #fff;border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,0.5);box-sizing:border-box;')
-    vy = hy + 26
+    # the colour square, and the hue bar standing beside it (Thomas: on the side, as now, not underneath)
+    sq_y, sq_h, sq_w = ry0 + 60, 172, rw - 50
+    out += box(rx, sq_y, sq_w, sq_h, '', 'border-radius:8px;background:linear-gradient(to top,#000,rgba(0,0,0,0)),linear-gradient(to right,#fff,hsl(318,100%,50%));')
+    out += box(rx + sq_w * 0.58 - 8, sq_y + 2, 16, 16, '', 'border:2.5px solid #fff;border-radius:9px;box-shadow:0 0 0 1px rgba(0,0,0,0.5);box-sizing:border-box;')
+    hx = rx + rw - 30
+    out += box(hx, sq_y, 20, sq_h, '', 'border-radius:6px;background:linear-gradient(to bottom,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);')
+    hy = sq_y + sq_h * 318 / 360
+    out += box(hx - 3, hy - 6, 26, 12, '', 'background:#ff00c0;border:2.5px solid #fff;border-radius:5px;box-shadow:0 0 0 1px rgba(0,0,0,0.5);box-sizing:border-box;')
+    out += (f'<svg style="position:absolute;left:{hx - 12}px;top:{hy - 6}px" width="44" height="12" viewBox="0 0 44 12">'
+            f'<path d="M0 0 L7 6 L0 12 Z" fill="#f4eefc"/><path d="M44 0 L37 6 L44 12 Z" fill="#f4eefc"/></svg>')
+    vy = sq_y + sq_h + 14
     vw = (rw - 16) / 3
     out += value_box(rx, vy, vw, 'RED', '255', 1.0, '#ff5c6a')
     out += value_box(rx + vw + 8, vy, vw, 'GREEN', '107', 107 / 255, '#7ce07c')
