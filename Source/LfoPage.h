@@ -95,6 +95,10 @@ public:
     bool edgeSpectrum = true;
     juce::TextButton spectrumButton { "SPECTRUM" };
     void visibilityChanged() override;
+    // BAND NOW (design, Thomas): in the ROUTING card of a band-edge LFO, the band's curve where its edges are right now
+    // (no spectrum), with dashed curves where the LFO takes it at its lowest and highest.
+    class EdgeNow;
+    bool isEdgeNowShowing() const;
 
 private:
     void rebuild();
@@ -127,5 +131,6 @@ private:
     juce::Viewport routeView;      // the ROUTING cards, scrolling (0.16.1)
     juce::Component routeHolder;
     juce::Rectangle<int> routingArea, generatorArea, hintArea;
+    std::unique_ptr<EdgeNow> edgeNow;
     static constexpr int routingWidth = 232;
 };

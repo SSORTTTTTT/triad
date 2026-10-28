@@ -92,6 +92,125 @@ juce::String changeText (float from, float to)
     return (d > 0.0f ? "+" : juce::String::fromUTF8 ("\xe2\x88\x92")) + triad::ui::formatHz (std::abs (d));
 }
 }
+// ---- BAND NOW: the band's curve as it is right now, and where the LFO takes it --------------------------------------
+class LfoPage::EdgeNow final : public juce::Component, private juce::Timer
+{
+public:
+    explicit EdgeNow (TriadProcessor& p) : processor (p) { setInterceptsMouseClicks (false, false); }
+    void show (int b, int l) { band = b; lfo = l; key.clear(); repaint(); }
+    void visibilityChanged() override { if (isVisible()) startTimerHz (30); else stopTimer(); }
+    void paint (juce::Graphics& g) override
+    {
+        auto r = getLocalBounds().toFloat();
+        g.setColour (currentPalette.controls.withAlpha (0.55f));
+        g.fillRoundedRectangle (r, 6.0f);
+        r.reduce (10.0f, 7.0f);
+        const int count = processor.getBandCount();
+        const auto cuts = processor.heardCrossovers();
+        if (band < 0 || band >= count || (int) cuts.size() < count - 1) return;
+        const auto colour = bandColour (band);
+        const float top = processor.nyquistFrequency();
+        const float lo = band > 0 ? cuts[(size_t) band - 1] : 0.0f, hi = band < count - 1 ? cuts[(size_t) band] : top;
+        auto head = r.removeFromTop (16.0f);
+        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+        g.setColour (dimTextColour);
+        g.drawText ("BAND " + juce::String (band + 1) + " NOW", head, juce::Justification::centredLeft);
+        g.setColour (colour);
+        g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        g.drawFittedText (formatHz (lo) + juce::String::fromUTF8 (" \xe2\x80\x93 ") + formatHz (hi), head.withTrimmedLeft (78.0f).toNearestInt(),
+                          juce::Justification::centredRight, 1, 0.8f);
+        const auto plot = r.withTrimmedTop (4.0f);
+        // 20 Hz .. 20 kHz across, 0 .. -36 dB down; a faint line at 100 Hz, 1 kHz and 10 kHz.
+        const auto xOf = [&] (float hz) { return plot.getX() + plot.getWidth() * uOf (hz); };
+        g.setColour (currentPalette.gridLines.withAlpha (0.12f));
+        for (float hz : { 100.0f, 1000.0f, 10000.0f }) g.drawVerticalLine (juce::roundToInt (xOf (hz)), plot.getY(), plot.getBottom());
+        std::vector<int> slopes;
+        for (int j = 0; j + 1 < count; ++j) slopes.push_back (processor.getCrossoverSlope (j));
+        const double sr = processor.getSampleRateForDisplay();
+        const auto curve = [&] (int b, const std::vector<float>& at, bool floor = true)
+        {
+            juce::Path p;
+            bool started = false;
+            for (int i = 0; i <= 120; ++i)
+            {
+                const float f = hzOf ((float) i / 120.0f);
+                float m = 1.0f;
+                if (b > 0) m *= triad::CrossoverFilter::highMagnitude (slopes[(size_t) b - 1], f, at[(size_t) b - 1], sr);
+                if (b < count - 1) m *= triad::CrossoverFilter::lowMagnitude (slopes[(size_t) b], f, at[(size_t) b], sr);
+                const float db = juce::jlimit (-36.0f, 0.0f, juce::Decibels::gainToDecibels (m, -100.0f));
+                const auto pt = juce::Point<float> (plot.getX() + plot.getWidth() * (float) i / 120.0f, plot.getY() + plot.getHeight() * (-db / 36.0f));
+                if (! floor && db <= -35.9f) { started = false; continue; }   // a line: not along the floor
+                if (! started) { p.startNewSubPath (pt); started = true; } else p.lineTo (pt);
+            }
+            return p;
+        };
+        const auto filled = [&] (const juce::Path& line)
+        {
+            juce::Path fill (line);
+            fill.lineTo (plot.getRight(), plot.getBottom()); fill.lineTo (plot.getX(), plot.getBottom()); fill.closeSubPath();
+            return fill;
+        };
+        // The other bands, faint; this band, lit.
+        for (int b = 0; b < count; ++b)
+            if (b != band) { g.setColour (bandColour (b).withAlpha (0.1f)); g.fillPath (filled (curve (b, cuts))); }
+        // Where the LFO takes the band: its lowest and highest (dashed).
+        for (const auto& at : extremes (cuts, count))
+        {
+            juce::Path dashed;
+            const float dash[] { 3.0f, 3.0f };
+            juce::PathStrokeType (1.0f).createDashedStroke (dashed, curve (band, at, false), dash, 2);
+            g.setColour (colour.withAlpha (0.6f));
+            g.fillPath (dashed);
+        }
+        g.setColour (colour.withAlpha (0.24f));
+        g.fillPath (filled (curve (band, cuts)));
+        g.setColour (colour);
+        g.strokePath (curve (band, cuts, false), juce::PathStrokeType (1.6f));
+    }
+private:
+    // The crossovers with this band's moving edges at the two ends of their sweeps (which ends go together depends on
+    // how the LFO moves the band).
+    std::vector<std::vector<float>> extremes (const std::vector<float>& cuts, int count) const
+    {
+        const int edge = processor.getLfoInfo (band, lfo).edge;
+        if (edge < 0) return {};
+        const auto sweepOf = [&] (int j) -> std::pair<float, float>
+        {
+            if (j < 0 || j >= count - 1) return {};
+            const auto s = processor.crossoverSweep (j);
+            return s.second > 0.0f ? s : std::pair<float, float> { cuts[(size_t) j], cuts[(size_t) j] };
+        };
+        const int low = band - 1, high = band;
+        const auto sl = sweepOf (low), sh = sweepOf (high);
+        std::vector<std::vector<float>> ends (2, cuts);
+        const auto set = [&] (std::vector<float>& at, int j, float hz) { if (j >= 0 && j < count - 1) at[(size_t) j] = hz; };
+        if (edge == D::openEdges)
+        {
+            set (ends[0], low, sl.first); set (ends[0], high, sh.second);   // open
+            set (ends[1], low, sl.second); set (ends[1], high, sh.first);   // closed
+        }
+        else
+        {
+            if (edge != D::highEdge) { set (ends[0], low, sl.first); set (ends[1], low, sl.second); }
+            if (edge != D::lowEdge) { set (ends[0], high, sh.first); set (ends[1], high, sh.second); }
+        }
+        return ends;
+    }
+    void timerCallback() override
+    {
+        // Redrawn only when something it shows has changed.
+        auto k = processor.heardCrossovers();
+        k.push_back ((float) processor.getBandCount());
+        for (int j = 0; j + 1 < processor.getBandCount(); ++j) k.push_back ((float) processor.getCrossoverSlope (j));
+        for (int j : { band - 1, band }) { const auto s = processor.crossoverSweep (j); k.push_back (s.first); k.push_back (s.second); }
+        if (k != key) { key = std::move (k); repaint(); }
+    }
+    TriadProcessor& processor;
+    int band = 0, lfo = 0;
+    std::vector<float> key;
+};
+bool LfoPage::isEdgeNowShowing() const { return edgeNow != nullptr && edgeNow->isVisible(); }
+
 juce::String LfoShapeHost::valueLabel (int percent) const
 {
     // A band-edge LFO: the grid's height is a frequency (the edge, or the band's middle when it sweeps), or how open the
@@ -414,6 +533,8 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
     spectrumButton.setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.85f));
     spectrumButton.setColour (juce::TextButton::textColourOnId, inkColour);
     addChildComponent (spectrumButton);
+    edgeNow = std::make_unique<EdgeNow> (processor);
+    addChildComponent (*edgeNow);
     removeLfoButton.onClick = [this]
     {
         if (processor.removeLfo (band, lfo)) select (band, juce::jmax (0, lfo - 1));
@@ -569,6 +690,7 @@ void LfoPage::rebuild()
     const auto info = processor.getLfoInfo (band, lfo);
     removeLfoButton.setVisible (! info.bandLfo && info.slot < 0);
     spectrumButton.setVisible (info.edge >= 0);
+    edgeNow->show (band, lfo);
     resized();
     repaint();
 }
@@ -640,8 +762,19 @@ void LfoPage::resized()
     buttons.removeFromRight (6);
     addRouteButton.setBounds (buttons);
     panel.removeFromBottom (8);
-    routeView.setBounds (panel);
     constexpr int cardHeight = 52, cardGap = 5;
+    // A band-edge LFO: BAND NOW under its card, when there is room for it.
+    {
+        const bool edges = showsEdges() && ! TriadProcessor::isExtraChain (band);
+        const int nowHeight = juce::jmin (96, panel.getHeight() - cardHeight - cardGap - 8);
+        if (edges && nowHeight >= 56)
+        {
+            edgeNow->setBounds (panel.removeFromBottom (nowHeight));
+            panel.removeFromBottom (8);
+        }
+        edgeNow->setVisible (edges && nowHeight >= 56);
+    }
+    routeView.setBounds (panel);
     const int width = panel.getWidth() - ((int) routeRows.size() * (cardHeight + cardGap) - cardGap > panel.getHeight() ? 7 : 0);
     int y = 0;
     for (auto& row : routeRows) { row->setBounds (0, y, width, cardHeight); y += cardHeight + cardGap; }

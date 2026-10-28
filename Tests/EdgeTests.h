@@ -275,6 +275,11 @@ inline void edgeTests (const juce::File& screenshots)
         require (editor->getTab() == TriadEditor::Tab::lfo && editor->getLfoPage().getBand() == 0
                  && q.getLfoInfo (0, editor->getLfoPage().getLfo()).edge == D::highEdge, "Link to LFO opens the band's LFO tab on it");
         themeTests::snapshot (screenshots, "Triad-edge-lfo.png", *editor);
+        require (editor->getLfoPage().isEdgeNowShowing(), "A band-edge LFO shows BAND NOW in its routing card");
+        editor->getLfoPage().select (0, 0);
+        require (! editor->getLfoPage().isEdgeNowShowing(), "...and other LFOs do not");
+        editor->linkEdgesToLfo (0, D::highEdge);
+        require (editor->getLfoPage().isEdgeNowShowing(), "...back on the edge LFO, it shows again");
         editor->setTab (TriadEditor::Tab::bands);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
         themeTests::snapshot (screenshots, "Triad-edges-moving.png", *editor);
