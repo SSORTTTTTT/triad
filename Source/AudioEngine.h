@@ -286,6 +286,9 @@ public:
         count = 0;
         phase = Phase::none;
         pending = false;
+        moveNow.fill (0.0f); moveTarget.fill (0.0f); moveStep.fill (0.0f);
+        settling = 0;
+        moving = false;
     }
     // Structural change (called with the processor locked): filter memory restarts.
     // `orders` (optional) gives each crossover's slope order; otherwise the current ones are kept.
@@ -329,13 +332,42 @@ public:
         }
         if (immediate) { count = 0; updateCoefficients(); }
     }
+    // `moves` (optional, 0.18.0: LFOs on the band edges): for each piece of `step` samples, how far each divider is
+    // moved from where its knob is, in octaves (maxCrossovers values a piece). The dividers glide from one piece's
+    // value to the next, sample by sample, and never cross each other.
     void process (const juce::AudioBuffer<float>& input, int offset, int n,
-                  std::array<juce::AudioBuffer<float>, maxBands>& bands)
+                  std::array<juce::AudioBuffer<float>, maxBands>& bands, const float* moves = nullptr, int step = 32)
     {
         const int crossovers = numBands - 1;
         std::array<float, maxBands> a {}, b {};
+        if (moves == nullptr && moving)
+        {
+            // The LFOs let go: glide back to the knobs over one piece.
+            for (int j = 0; j < maxCrossovers; ++j) { moveTarget[(size_t) j] = 0.0f; moveStep[(size_t) j] = -moveNow[(size_t) j] / (float) juce::jmax (1, step); }
+            settling = juce::jmax (1, step);
+        }
         for (int s = 0; s < n; ++s)
         {
+            if (moves != nullptr && s % step == 0)
+            {
+                const float* piece = moves + (size_t) (s / step) * maxCrossovers;
+                for (int j = 0; j < crossovers; ++j)
+                {
+                    moveTarget[(size_t) j] = piece[j];
+                    moveStep[(size_t) j] = (piece[j] - moveNow[(size_t) j]) / (float) juce::jmin (step, n - s);
+                }
+                moving = true;
+                settling = juce::jmin (step, n - s);
+            }
+            if (settling > 0)
+            {
+                for (int j = 0; j < crossovers; ++j) moveNow[(size_t) j] += moveStep[(size_t) j];
+                if (--settling == 0)
+                {
+                    for (int j = 0; j < crossovers; ++j) moveNow[(size_t) j] = moveTarget[(size_t) j];
+                    if (moves == nullptr) { moving = false; moveNow.fill (0.0f); }
+                }
+            }
             for (int j = 0; j < crossovers; ++j) current[(size_t) j] = smooth[(size_t) j].getNextValue();
             if ((count++ & 15) == 0) updateCoefficients();
             const float t = phase == Phase::fade ? (float) position / (float) fadeLength : 0.0f;
@@ -441,7 +473,13 @@ private:
         for (int j = 0; j < crossovers; ++j)
         {
             current[(size_t) j] = smooth[(size_t) j].getCurrentValue();
+            if (moving) current[(size_t) j] *= std::exp2 (moveNow[(size_t) j]);
+        }
+        if (moving) constrainCrossovers (current.data(), crossovers, sampleRate);   // moved dividers keep their order
+        for (int j = 0; j < crossovers; ++j)
+        {
             coefficients[(size_t) j] = CrossoverFilter::coefficientFor (current[(size_t) j], sampleRate);
+            heard[(size_t) j].store (current[(size_t) j], std::memory_order_relaxed);
         }
         sets[(size_t) active].setCoefficients (coefficients.data(), crossovers);
         if (phase != Phase::none) sets[(size_t) (1 - active)].setCoefficients (coefficients.data(), crossovers);
@@ -455,6 +493,15 @@ private:
     std::array<int, maxCrossovers> wanted { 4, 4, 4, 4, 4, 4, 4, 4, 4 };
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, maxCrossovers> smooth;
     std::array<float, maxCrossovers> current {}, coefficients {};
+    // LFOs on the band edges: each divider's move from its knob, in octaves (now, the piece's target, per sample).
+    std::array<float, maxCrossovers> moveNow {}, moveTarget {}, moveStep {};
+    int settling = 0;
+    bool moving = false;
+    std::array<std::atomic<float>, maxCrossovers> heard {};
+public:
+    // Where each divider is as heard (with its LFO), for the screen.
+    float getHeard (int j) const noexcept { return heard[(size_t) juce::jlimit (0, maxCrossovers - 1, j)].load (std::memory_order_relaxed); }
+    bool isMoving() const noexcept { return moving; }
 };
 
 // Lock-free tap of the input signal for the spectrum display. The audio thread writes a mono

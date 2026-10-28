@@ -43,6 +43,15 @@ private:
 
 // ---- Behind the grid: the sound coming in --------------------------------------------------------------------------
 bool LfoShapeHost::hasBackdrop() const { return page.hasBackdrop(); }
+juce::String LfoShapeHost::valueLabel (int percent) const
+{
+    // An LFO on a band's low or high edge: the grid's height is the frequency it takes the edge to, at 100%
+    // (20 Hz at the bottom to 20 kHz at the top, in octaves as the frequency panel draws them).
+    const int edge = processor.getLfoInfo (band, lfo).edge;
+    if (edge != TriadProcessor::Destination::lowEdge && edge != TriadProcessor::Destination::highEdge) return ShapeHost::valueLabel (percent);
+    const float hz = 20.0f * std::pow (1000.0f, (float) percent / 100.0f);
+    return hz >= 1000.0f ? juce::String (hz / 1000.0f, hz >= 9950.0f ? 0 : 1) + "k" : juce::String (juce::roundToInt (hz));
+}
 void LfoShapeHost::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot) { page.paintBackdrop (g, plot); }
 
 struct LfoPage::Backdrop
@@ -378,7 +387,8 @@ void LfoPage::rebuild()
     for (int i = 0; i < processor.getLfoCount (band); ++i)
     {
         const auto info = processor.getLfoInfo (band, i);
-        const auto top = info.name + (info.bandLfo ? u8 (" \xc2\xb7 BAND") : info.slot >= 0 ? u8 (" \xc2\xb7 SLOT ") + juce::String (info.slot + 1) : juce::String());
+        const auto top = info.name + (info.bandLfo ? u8 (" \xc2\xb7 BAND") : info.slot >= 0 ? u8 (" \xc2\xb7 SLOT ") + juce::String (info.slot + 1)
+                                      : info.edge >= 0 ? u8 (" \xc2\xb7 EDGES") : juce::String());
         auto tab = std::make_unique<LfoTab> (top, info.target, info.active, bandColour (band));
         tab->setToggleState (i == lfo, juce::dontSendNotification);
         tab->onClick = [this, i] { select (band, i); };

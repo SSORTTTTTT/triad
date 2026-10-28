@@ -25,7 +25,7 @@ public:
     explicit TriadCrossoverHost (TriadProcessor& p) : processor (p) {}
     juce::String getProductName() const override { return "Triad"; }
     int getBandCount() const override { return processor.getBandCount(); }
-    std::vector<float> effectiveCrossovers() const override { return processor.effectiveCrossovers(); }
+    std::vector<float> effectiveCrossovers() const override { return processor.heardCrossovers(); }   // with their LFOs
     int getCrossoverSlope (int index) const override { return processor.getCrossoverSlope (index); }
     juce::RangedAudioParameter* crossoverParameter (int index) const override { return processor.crossoverParameter (index); }
     juce::RangedAudioParameter* slopeParameter (int index) const override { return processor.slopeParameter (index); }
@@ -43,6 +43,9 @@ public:
     void pasteBandState (int band) override { processor.pasteBandState (band); }
     bool canPasteBandState() const override { return TriadProcessor::hasCopiedBand(); }
     juce::String pasteBandDescription() const override { return TriadProcessor::copiedBandDescription(); }
+    bool canLinkToLfo() const override { return true; }
+    std::pair<float, float> crossoverSweep (int index) const override { return processor.crossoverSweep (index); }
+    int edgeLfo (int band, int edge) const override { return processor.findEdgeLfo (band, edge); }
 private:
     TriadProcessor& processor;
 };
@@ -167,6 +170,7 @@ TriadEditor::TriadEditor (TriadProcessor& p)
     content.addAndMakeVisible (bandsPage);
     bandsPage.addAndMakeVisible (frequencyDisplay);
     frequencyDisplay.onEditBandLfo = [this] (int band) { showLfo (band, -1); };
+    frequencyDisplay.onLinkEdges = [this] (int band, int edge) { linkEdgesToLfo (band, edge); };
     frequencyDisplay.onTogglePre = [this] { togglePre(); };
     frequencyDisplay.onTogglePost = [this] { togglePost(); };
     lfoPage.askName = [this] (const juce::String& title, const juce::String& initial, std::function<void (const juce::String&)> done)
@@ -417,7 +421,7 @@ void TriadEditor::animate (double frameTime)
         if (processor.getBandCount() == builtCount)
         {
             frequencyDisplay.refreshIfChanged();
-            const auto cuts = processor.effectiveCrossovers();
+            const auto cuts = processor.heardCrossovers();   // with their LFOs (0.18.0)
             for (auto& strip : strips) strip->updateEdges (cuts, builtCount, processor.nyquistFrequency());
         }
         for (auto& strip : strips) strip->animate (meters.bands[(size_t) strip->getBand()], dt);
@@ -437,6 +441,14 @@ void TriadEditor::redo()
 {
     processor.redo();
     timerCallback();
+}
+void TriadEditor::linkEdgesToLfo (int band, int edge)
+{
+    // "~ Link to LFO" (0.18.0): the band's edge to an LFO of the band (made the first time), shown in the LFO tab.
+    const int lfo = processor.linkEdgesToLfo (band, edge);
+    if (lfo < 0) return;
+    setTab (Tab::lfo);
+    lfoPage.select (band, lfo);
 }
 void TriadEditor::showLfo (int band, int slot)
 {

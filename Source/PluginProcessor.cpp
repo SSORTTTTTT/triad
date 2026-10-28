@@ -259,6 +259,7 @@ juce::String TriadProcessor::crossoverID (int i) { return i == 0 ? "lowCut" : i 
 juce::String TriadProcessor::bandMixID (int b) { return "mix" + juce::String (b); }
 juce::String TriadProcessor::bandGainID (int b) { return "gain" + juce::String (b); }
 juce::String TriadProcessor::bandMuteID (int b) { return "mute" + juce::String (b); }
+juce::String TriadProcessor::bandSoloID (int b) { return "solo" + juce::String (b); }
 juce::String TriadProcessor::slopeID (int j) { return "slope" + juce::String (j); }
 
 juce::AudioProcessorValueTreeState::ParameterLayout TriadProcessor::makeParameters()
@@ -293,6 +294,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout TriadProcessor::makeParamete
     // Added in 0.8.0: a mute per band (hear only the bands you want).
     for (int b = 0; b < triad::maxBands; ++b)
         p.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { bandMuteID (b), 5 }, "Band " + juce::String (b + 1) + " Mute", false));
+    // Added in 0.18.0: a solo per band (only the soloed bands are heard).
+    for (int b = 0; b < triad::maxBands; ++b)
+        p.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { bandSoloID (b), 6 }, "Band " + juce::String (b + 1) + " Solo", false));
     return p;
 }
 
@@ -358,12 +362,13 @@ void TriadProcessor::Band::relink()
     routes.erase (std::remove_if (routes.begin(), routes.end(), [this] (const std::unique_ptr<Route>& r)
     {
         const bool toSlot = r->destination.kind == Destination::slotMix || r->destination.kind == Destination::effectParameter;
-        if (extra && ! toSlot) return true;   // PRE and POST have no band mix or volume
+        if (extra && ! toSlot) return true;   // PRE and POST have no band mix, volume or edges
         return findLfo (r->lfoId) == nullptr || (toSlot && findSlot (r->destination.slotId) == nullptr);
     }), routes.end());
     for (auto& s : slots) { s->modulators.clear(); s->parameterModulators.clear(); }
     mixModulators.clear();
     volumeModulators.clear();
+    edgeModulators.clear();
     for (auto& r : routes)
     {
         r->lfo = findLfo (r->lfoId);
@@ -379,6 +384,7 @@ void TriadProcessor::Band::relink()
             if (r->parameter != nullptr) s->parameterModulators.push_back (r.get());
         }
         else if (r->destination.kind == Destination::bandMix) mixModulators.push_back (r.get());
+        else if (r->destination.kind == Destination::bandEdges) edgeModulators.push_back (r.get());
         else volumeModulators.push_back (r.get());
     }
 }
@@ -537,6 +543,7 @@ TriadProcessor::TriadProcessor()
         bandMixValues[(size_t) b] = parameters.getRawParameterValue (bandMixID (b));
         bandGainValues[(size_t) b] = parameters.getRawParameterValue (bandGainID (b));
         bandMuteValues[(size_t) b] = parameters.getRawParameterValue (bandMuteID (b));
+        bandSoloValues[(size_t) b] = parameters.getRawParameterValue (bandSoloID (b));
         bands[(size_t) b] = std::make_unique<Band>();
     }
     bands[(size_t) preBand] = std::make_unique<Band> (true, true);
@@ -663,6 +670,7 @@ void TriadProcessor::prepareToPlay (double sr, int block)
     const juce::ScopedLock lock (gate);
     rate.store (sr); capacity = juce::jmax (1, block);
     splitter.prepare (sr, capacity);
+    edgeMoves.assign ((size_t) (capacity / controlRate + 2) * triad::maxCrossovers, 0.0f);
     std::array<float, triad::maxCrossovers> cuts {};
     std::array<int, triad::maxCrossovers> slopes {};
     readCrossovers (cuts.data());
@@ -878,6 +886,25 @@ bool TriadProcessor::isBandMuted (int band) const
 {
     return band >= 0 && band < triad::maxBands && bandMuteValues[(size_t) band]->load() >= 0.5f;
 }
+bool TriadProcessor::isBandSoloed (int band) const
+{
+    return band >= 0 && band < triad::maxBands && bandSoloValues[(size_t) band]->load() >= 0.5f;
+}
+bool TriadProcessor::isAnyBandSoloed() const
+{
+    for (int b = 0; b < getBandCount(); ++b) if (isBandSoloed (b)) return true;
+    return false;
+}
+void TriadProcessor::setBandSoloed (int band, bool on)
+{
+    if (band < 0 || band >= getBandCount()) return;
+    if (auto* p = parameters.getParameter (bandSoloID (band)))
+    {
+        p->beginChangeGesture();
+        p->setValueNotifyingHost (on ? 1.0f : 0.0f);
+        p->endChangeGesture();
+    }
+}
 void TriadProcessor::setBandMuted (int band, bool on)
 {
     if (band < 0 || band >= getBandCount()) return;
@@ -887,6 +914,171 @@ void TriadProcessor::setBandMuted (int band, bool on)
         p->setValueNotifyingHost (on ? 1.0f : 0.0f);
         p->endChangeGesture();
     }
+}
+// ---- LFOs on the band edges (0.18.0) -------------------------------------------------------------------
+namespace
+{
+// Where a divider is, 0..1 from 20 Hz to 20 kHz in octaves (as the frequency panel draws it).
+float edgeU (float hz) { return juce::jlimit (0.0f, 1.0f, std::log (juce::jmax (1.0f, hz) / 20.0f) / std::log (1000.0f)); }
+float edgeHz (float u) { return 20.0f * std::pow (1000.0f, juce::jlimit (0.0f, 1.0f, u)); }
+// What an LFO's value v (0..1) at amount a does to a band's edges uL, uH (0..1; the lowest band's low edge is 0, the
+// highest band's high edge 1): the moves (in the same units) of the low and the high edge.
+std::pair<float, float> edgeMove (int edge, float v, float a, float uL, float uH)
+{
+    using D = TriadProcessor::Destination;
+    const float c = 0.5f * (uL + uH), w = uH - uL;
+    switch (edge)
+    {
+        case D::lowEdge:  return { a * (v - uL), 0.0f };
+        case D::highEdge: return { 0.0f, a * (v - uH) };
+        case D::moveEdges:
+        {
+            // The band's middle follows the line (top: as high as it can go, bottom: as low), its width stays.
+            const float target = 0.5f * w + v * (1.0f - w);
+            return { a * (target - c), a * (target - c) };
+        }
+        default:
+        {
+            // Open / close around the band's middle: top as wide as it can open, bottom closed to its middle.
+            const float half = v * juce::jmax (c, 1.0f - c);
+            return { a * ((c - half) - uL), a * ((c + half) - uH) };
+        }
+    }
+}
+// The line value that leaves the edges where they are (a new edge LFO starts flat there).
+float restingValue (int edge, float uL, float uH)
+{
+    using D = TriadProcessor::Destination;
+    const float c = 0.5f * (uL + uH), w = uH - uL;
+    if (edge == D::lowEdge) return uL;
+    if (edge == D::highEdge) return uH;
+    if (edge == D::moveEdges) return w < 0.999f ? juce::jlimit (0.0f, 1.0f, uL / (1.0f - w)) : 0.5f;
+    return juce::jlimit (0.0f, 1.0f, 0.5f * w / juce::jmax (0.001f, juce::jmax (c, 1.0f - c)));
+}
+}
+juce::String TriadProcessor::edgeName (int edge)
+{
+    return edge == Destination::lowEdge ? "Low edge" : edge == Destination::highEdge ? "High edge" : edge == Destination::moveEdges ? "Move the band" : "Open / close";
+}
+double TriadProcessor::predictPhase (const Band& band, const Lfo& l, int offset, int frame) const noexcept
+{
+    // Where the LFO will be at `frame` of this chunk, worked out before the band's LFOs move on (they do after the
+    // split). With AUDIO, a restart in this chunk shows from the next one on.
+    const double sr = rate.load();
+    const double beatsPerSample = blockBpm / 60.0 / sr;
+    const double beats = triad::mod::lengthInBeats (l.length.load (std::memory_order_relaxed), blockBeatsPerBar);
+    double p = 0.0;
+    if (band.trigger.wasAudio)
+    {
+        if (band.trigger.waiting) return 0.0;
+        const double speed = beats > 0.0 ? beatsPerSample / beats : triad::mod::lengthInHz (l.length.load (std::memory_order_relaxed)) / sr;
+        p = l.runPhase + speed * frame;
+    }
+    else if (beats > 0.0)
+        p = blockPlaying ? (blockPpq + (offset + frame) * beatsPerSample) / beats : l.runPhase + beatsPerSample / beats * frame;
+    else
+        p = l.runPhase + triad::mod::lengthInHz (l.length.load (std::memory_order_relaxed)) / sr * frame;
+    return p - std::floor (p);
+}
+bool TriadProcessor::computeEdgeMoves (int offset, int n)
+{
+    const int crossovers = numBands - 1;
+    if (crossovers <= 0) return false;
+    bool any = false;
+    for (int b = 0; b < numBands && ! any; ++b)
+        for (auto* r : bands[(size_t) b]->edgeModulators) any = any || ! r->muted.load (std::memory_order_relaxed);
+    const int pieces = (n + controlRate - 1) / controlRate;
+    if (! any || (size_t) pieces * triad::maxCrossovers > edgeMoves.size()) return false;
+    std::array<float, triad::maxCrossovers> knobHz {}, knobU {}, moved {};
+    readCrossovers (knobHz.data());
+    triad::constrainCrossovers (knobHz.data(), crossovers, rate.load());
+    for (int j = 0; j < crossovers; ++j) knobU[(size_t) j] = edgeU (knobHz[(size_t) j]);
+    for (int k = 0; k < pieces; ++k)
+    {
+        const int frame = juce::jmin ((k + 1) * controlRate, n);   // the dividers reach this piece's value at its end
+        moved.fill (0.0f);
+        for (int b = 0; b < numBands; ++b)
+        {
+            const auto& band = *bands[(size_t) b];
+            for (auto* r : band.edgeModulators)
+            {
+                if (r->muted.load (std::memory_order_relaxed) || r->lfo == nullptr) continue;
+                float v = r->lfo->table.lookup (predictPhase (band, *r->lfo, offset, frame));
+                if (r->invert.load (std::memory_order_relaxed)) v = 1.0f - v;
+                const float uL = b > 0 ? knobU[(size_t) b - 1] : 0.0f, uH = b < crossovers ? knobU[(size_t) b] : 1.0f;
+                const auto m = edgeMove (r->destination.slotId, v, r->amount.load (std::memory_order_relaxed), uL, uH);
+                if (b > 0) moved[(size_t) b - 1] += m.first;
+                if (b < crossovers) moved[(size_t) b] += m.second;
+            }
+        }
+        float* piece = edgeMoves.data() + (size_t) k * triad::maxCrossovers;
+        for (int j = 0; j < crossovers; ++j)
+            piece[j] = std::log2 (edgeHz (knobU[(size_t) j] + moved[(size_t) j]) / juce::jmax (1.0f, knobHz[(size_t) j]));
+    }
+    return true;
+}
+std::vector<float> TriadProcessor::heardCrossovers() const
+{
+    auto cuts = effectiveCrossovers();
+    if (splitter.isMoving())
+        for (int j = 0; j < (int) cuts.size(); ++j) cuts[(size_t) j] = splitter.getHeard (j);
+    return cuts;
+}
+bool TriadProcessor::areCrossoversMoving() const { return prepared && splitter.isMoving(); }
+std::pair<float, float> TriadProcessor::crossoverSweep (int index) const
+{
+    // Message thread: over the LFOs' whole cycles, where the divider goes (with every edge LFO of the bands on
+    // either side of it).
+    const int count = getBandCount();
+    if (index < 0 || index >= count - 1) return {};
+    const auto cuts = effectiveCrossovers();
+    std::vector<float> knobU;
+    for (auto hz : cuts) knobU.push_back (edgeU (hz));
+    std::vector<std::pair<int, const Route*>> movers;
+    for (int b : { index, index + 1 })
+        for (auto& r : bands[(size_t) b]->routes)
+            if (r->destination.kind == Destination::bandEdges && ! r->muted.load() && r->lfo != nullptr) movers.push_back ({ b, r.get() });
+    if (movers.empty()) return {};
+    float low = 1.0f, high = 0.0f;
+    for (int i = 0; i <= 64; ++i)
+    {
+        // Every LFO at the same point of its cycle (a fair picture when they share a length).
+        float move = 0.0f;
+        for (auto& [b, r] : movers)
+        {
+            float v = triad::mod::evaluate (r->lfo->shape, (float) i / 64.0f);
+            if (r->invert.load()) v = 1.0f - v;
+            const float uL = b > 0 ? knobU[(size_t) b - 1] : 0.0f, uH = b < count - 1 ? knobU[(size_t) b] : 1.0f;
+            const auto m = edgeMove (r->destination.slotId, v, r->amount.load(), uL, uH);
+            move += b == index ? m.second : m.first;
+        }
+        const float u = juce::jlimit (0.0f, 1.0f, knobU[(size_t) index] + move);
+        low = juce::jmin (low, u); high = juce::jmax (high, u);
+    }
+    return { edgeHz (low), edgeHz (high) };
+}
+int TriadProcessor::findEdgeLfo (int band, int edge) const
+{
+    if (band < 0 || band >= getBandCount()) return -1;
+    const auto& b = *bands[(size_t) band];
+    for (auto& r : b.routes)
+        if (r->destination.kind == Destination::bandEdges && r->destination.slotId == edge) return b.lfoIndex (r->lfoId);
+    return -1;
+}
+int TriadProcessor::linkEdgesToLfo (int band, int edge)
+{
+    if (band < 0 || band >= getBandCount() || getBandCount() < 2 || edge < Destination::lowEdge || edge > Destination::openEdges) return -1;
+    if ((edge == Destination::lowEdge && band == 0) || (edge == Destination::highEdge && band == getBandCount() - 1)) return -1;
+    if (const int existing = findEdgeLfo (band, edge); existing >= 0) return existing;
+    const int lfo = addLfo (band);
+    if (lfo < 0) return -1;
+    // It starts flat where the edges are now, so nothing moves until its line is drawn.
+    const auto cuts = effectiveCrossovers();
+    const float uL = band > 0 ? edgeU (cuts[(size_t) band - 1]) : 0.0f, uH = band < (int) cuts.size() ? edgeU (cuts[(size_t) band]) : 1.0f;
+    setLfoShape (band, lfo, triad::mod::flat (restingValue (edge, uL, uH)), false);
+    addRoute (band, lfo, Destination { Destination::bandEdges, edge });
+    setStatus ("Linked band " + juce::String (band + 1) + "'s " + edgeName (edge).toLowerCase() + " to LFO " + juce::String (lfo + 1));
+    return lfo;
 }
 juce::Optional<juce::AudioPlayHead::PositionInfo> TriadProcessor::ChunkPlayHead::getPosition() const
 {
@@ -1172,8 +1364,13 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
             for (int ch = 0; ch < 2; ++ch) audio.copyFrom (ch, offset, pre.dry, ch, 0, n);
         }
         for (int ch = 0; ch < 2; ++ch) fullSound.copyFrom (ch, 0, audio, ch, offset, n);   // what LISTEN: FULL hears
-        splitter.process (audio, offset, n, split);
+        // LFOs on the band edges move the dividers as the sound is split (0.18.0).
+        const bool edgesMove = computeEdgeMoves (offset, n);
+        splitter.process (audio, offset, n, split, edgesMove ? edgeMoves.data() : nullptr, controlRate);
         for (int ch = 0; ch < 2; ++ch) audio.clear (ch, offset, n);
+        // SOLO: while any band is soloed, the others go silent (smoothly, as MUTE).
+        bool anySolo = false;
+        for (int b = 0; b < numBands; ++b) anySolo = anySolo || bandSoloValues[(size_t) b]->load (std::memory_order_relaxed) >= 0.5f;
         for (int b = 0; b < numBands; ++b)
         {
             auto& band = *bands[(size_t) b];
@@ -1188,7 +1385,8 @@ void TriadProcessor::process (juce::AudioBuffer<float>& audio)
             const int align = longest - band.chainLatency;
             const float mixKnob = bandMixValues[(size_t) b]->load (std::memory_order_relaxed) * 0.01f;
             // MUTE: the band's volume goes to silence (smoothly, as the volume knob does), its effects keep playing.
-            const bool bandMuted = bandMuteValues[(size_t) b]->load (std::memory_order_relaxed) >= 0.5f;
+            const bool bandMuted = bandMuteValues[(size_t) b]->load (std::memory_order_relaxed) >= 0.5f
+                                   || (anySolo && bandSoloValues[(size_t) b]->load (std::memory_order_relaxed) < 0.5f);
             const float gainKnob = bandMuted ? 0.0f
                                              : juce::Decibels::decibelsToGain (bandGainValues[(size_t) b]->load (std::memory_order_relaxed), minGainDb - 0.05f);
             float peak = 0.0f;
@@ -1353,10 +1551,12 @@ bool TriadProcessor::addBand (float hz)
         setParameterValue (bandMixID (p), getParameterValue (bandMixID (p - 1)));
         setParameterValue (bandGainID (p), getParameterValue (bandGainID (p - 1)));
         setParameterValue (bandMuteID (p), getParameterValue (bandMuteID (p - 1)));
+        setParameterValue (bandSoloID (p), getParameterValue (bandSoloID (p - 1)));
     }
     setParameterValue (bandMixID (index + 1), 100.0f);
     setParameterValue (bandGainID (index + 1), 0.0f);
     setParameterValue (bandMuteID (index + 1), getParameterValue (bandMuteID (index)));   // half of a muted band stays muted
+    setParameterValue (bandSoloID (index + 1), getParameterValue (bandSoloID (index)));   // and of a soloed one, soloed
     muted.store (false);
     ++structureVersion;
     refreshWindowTitles();
@@ -1408,10 +1608,12 @@ bool TriadProcessor::removeBand (int band)
         setParameterValue (bandMixID (p), getParameterValue (bandMixID (p + 1)));
         setParameterValue (bandGainID (p), getParameterValue (bandGainID (p + 1)));
         setParameterValue (bandMuteID (p), getParameterValue (bandMuteID (p + 1)));
+        setParameterValue (bandSoloID (p), getParameterValue (bandSoloID (p + 1)));
     }
     setParameterValue (bandMixID (count), 100.0f);
     setParameterValue (bandGainID (count), 0.0f);
     setParameterValue (bandMuteID (count), 0.0f);
+    setParameterValue (bandSoloID (count), 0.0f);
     muted.store (false);
     ++structureVersion;
     refreshWindowTitles();
@@ -1427,12 +1629,13 @@ bool TriadProcessor::moveBand (int from, int to)
     std::iota (order.begin(), order.end(), 0);
     order.erase (order.begin() + from);
     order.insert (order.begin() + to, from);   // new position i holds old band order[i]
-    std::array<float, triad::maxBands> mixes {}, gains {}, mutes {};
+    std::array<float, triad::maxBands> mixes {}, gains {}, mutes {}, solos {};
     for (int i = 0; i < count; ++i)
     {
         mixes[(size_t) i] = getParameterValue (bandMixID (i));
         gains[(size_t) i] = getParameterValue (bandGainID (i));
         mutes[(size_t) i] = getParameterValue (bandMuteID (i));
+        solos[(size_t) i] = getParameterValue (bandSoloID (i));
     }
     {
         const juce::ScopedLock lock (gate);
@@ -1450,6 +1653,7 @@ bool TriadProcessor::moveBand (int from, int to)
         setParameterValue (bandMixID (i), mixes[(size_t) order[(size_t) i]]);
         setParameterValue (bandGainID (i), gains[(size_t) order[(size_t) i]]);
         setParameterValue (bandMuteID (i), mutes[(size_t) order[(size_t) i]]);
+        setParameterValue (bandSoloID (i), solos[(size_t) order[(size_t) i]]);
     }
     muted.store (false);
     ++structureVersion;
@@ -1982,6 +2186,7 @@ TriadProcessor::LfoInfo TriadProcessor::getLfoInfo (int band, int index) const
         {
             i.active |= ! r->muted.load();
             if (! r->muted.load()) targets.addIfNotAlreadyThere (destinationName (b, r->destination));
+            if (r->destination.kind == Destination::bandEdges && i.edge < 0) i.edge = r->destination.slotId;
         }
     if (l->bandLfo) i.target = "Band Mix";
     else if (i.slot >= 0)
@@ -2163,6 +2368,18 @@ juce::String TriadProcessor::destinationName (const Band& b, const Destination& 
 {
     if (d.kind == Destination::bandMix) return "Band Mix";
     if (d.kind == Destination::bandVolume) return "Band Volume";
+    if (d.kind == Destination::bandEdges)
+    {
+        // "High edge 2.5 kHz", "Edges: move the band"
+        int index = -1;
+        for (int k = 0; k < getBandCount(); ++k) if (bands[(size_t) k].get() == &b) index = k;
+        const auto cuts = effectiveCrossovers();
+        if (d.slotId == Destination::lowEdge)
+            return index > 0 && index - 1 < (int) cuts.size() ? "Low edge " + triad::ui::formatHz (cuts[(size_t) index - 1]) : juce::String ("Low edge (none)");
+        if (d.slotId == Destination::highEdge)
+            return index >= 0 && index < (int) cuts.size() ? "High edge " + triad::ui::formatHz (cuts[(size_t) index]) : juce::String ("High edge (none)");
+        return d.slotId == Destination::moveEdges ? juce::String ("Move band") : juce::String ("Open / close");
+    }
     const int index = b.slotIndex (d.slotId);
     if (index < 0) return "(removed slot)";
     if (d.kind == Destination::effectParameter)
@@ -2217,7 +2434,7 @@ int TriadProcessor::addRoute (int band, int lfo, Destination destination)
         if (l == nullptr) return -1;
         auto& b = *bands[(size_t) band];
         if (destination.kind == Destination::slotMix && b.findSlot (destination.slotId) == nullptr) return -1;
-        if (b.extra && (destination.kind == Destination::bandMix || destination.kind == Destination::bandVolume)) return -1;
+        if (b.extra && (destination.kind == Destination::bandMix || destination.kind == Destination::bandVolume || destination.kind == Destination::bandEdges)) return -1;
         auto r = std::make_unique<Route>();
         if (destination.kind == Destination::effectParameter)
         {
@@ -2258,7 +2475,7 @@ void TriadProcessor::setRouteDestination (int band, int route, Destination desti
         if (r == nullptr) return;
         auto& b = *bands[(size_t) band];
         if (destination.kind == Destination::slotMix && b.findSlot (destination.slotId) == nullptr) return;
-        if (b.extra && (destination.kind == Destination::bandMix || destination.kind == Destination::bandVolume)) return;
+        if (b.extra && (destination.kind == Destination::bandMix || destination.kind == Destination::bandVolume || destination.kind == Destination::bandEdges)) return;
         if (destination.kind == Destination::effectParameter)
         {
             auto* s = b.findSlot (destination.slotId);
@@ -2313,6 +2530,17 @@ std::vector<std::pair<TriadProcessor::Destination, juce::String>> TriadProcessor
     {
         list.push_back ({ Destination { Destination::bandMix, 0 }, "Band Mix" });
         list.push_back ({ Destination { Destination::bandVolume, 0 }, "Band Volume" });
+        // The band's edges: the dividers below and above it (the lowest band has no low edge, the highest no high one).
+        if (getBandCount() > 1)
+        {
+            int index = -1;
+            for (int k = 0; k < getBandCount(); ++k) if (bands[(size_t) k].get() == &b) index = k;
+            for (int e : { (int) Destination::moveEdges, (int) Destination::openEdges, (int) Destination::lowEdge, (int) Destination::highEdge })
+            {
+                if ((e == Destination::lowEdge && index <= 0) || (e == Destination::highEdge && index >= getBandCount() - 1)) continue;
+                list.push_back ({ Destination { Destination::bandEdges, e }, destinationName (b, Destination { Destination::bandEdges, e }) });
+            }
+        }
     }
     for (auto& s : b.slots) list.push_back ({ Destination { Destination::slotMix, s->id }, destinationName (b, Destination { Destination::slotMix, s->id }) });
     return list;
@@ -2573,7 +2801,7 @@ std::unique_ptr<TriadProcessor::Band> TriadProcessor::readBand (const juce::XmlE
             if (band->routes.size() >= 4096) break;
             auto r = std::make_unique<Route>();
             r->lfoId = x->getIntAttribute ("lfo");
-            r->destination.kind = juce::jlimit (0, 3, x->getIntAttribute ("kind", Destination::bandMix));
+            r->destination.kind = juce::jlimit (0, (int) Destination::bandEdges, x->getIntAttribute ("kind", Destination::bandMix));
             r->destination.slotId = x->getIntAttribute ("slot");
             r->destination.parameterId = x->getStringAttribute ("param");
             r->destination.parameter = x->getIntAttribute ("paramIndex", -1);

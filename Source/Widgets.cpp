@@ -185,8 +185,12 @@ void RouteRow::paintOverChildren (juce::Graphics& g)
 void triad::ui::addDestinationItems (juce::PopupMenu& menu, TriadProcessor& processor, int band, const TriadProcessor::Destination* current,
                                      std::vector<TriadProcessor::Destination>& chosen)
 {
+    bool edgesHeader = false;
     for (const auto& [destination, name] : processor.getDestinations (band))
     {
+        // The band's edges (0.18.0) under their own title.
+        if (destination.kind == TriadProcessor::Destination::bandEdges && ! edgesHeader) { menu.addSectionHeader ("BAND EDGES"); edgesHeader = true; }
+        else if (destination.kind != TriadProcessor::Destination::bandEdges && edgesHeader) { menu.addSectionHeader ("SLOTS"); edgesHeader = false; }
         chosen.push_back (destination);
         menu.addItem ((int) chosen.size(), name, true, current != nullptr && destination == *current);
     }

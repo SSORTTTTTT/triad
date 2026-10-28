@@ -25,6 +25,7 @@ struct LfoShapeHost final : ShapeHost
     float getPhase() const override { return processor.getLfoPhase (band, lfo); }
     float getPhaseNow() const override { return processor.getLfoPhaseNow (band, lfo); }
     juce::Colour getColour() const override { return triad::ui::bandColour (band); }
+    juce::String valueLabel (int percent) const override;   // Hz for an LFO on one band edge (0.18.0)
     void setStatus (const juce::String& text) override { processor.setStatus (text); }
 };
 

@@ -48,6 +48,11 @@ public:
     static juce::String bandMuteID (int band);             // "mute0".."mute9" (0.8.0)
     bool isBandMuted (int band) const;
     void setBandMuted (int band, bool);                    // as a gesture: an undo step, automation follows
+    // SOLO (0.18.0): while any band is soloed, only the soloed bands are heard (a muted band stays muted).
+    static juce::String bandSoloID (int band);             // "solo0".."solo9"
+    bool isBandSoloed (int band) const;
+    void setBandSoloed (int band, bool);                   // as a gesture: an undo step, automation follows
+    bool isAnyBandSoloed() const;
     static juce::String slopeID (int index);               // "slope0".."slope8": crossover slope order 1-16 (x 6 dB/oct)
     static constexpr float minGainDb = -36.0f, maxGainDb = 12.0f;
 
@@ -71,6 +76,17 @@ public:
     float nyquistFrequency() const { return (float) rate.load() * 0.5f; }
     double getSampleRateForDisplay() const { return rate.load(); }
     juce::RangedAudioParameter* crossoverParameter (int index) const;
+    // LFOs on the band edges (0.18.0): where each divider is as heard right now (its knob, moved by its LFOs), whether
+    // any is moving, and the range an LFO sweeps a divider across (its lowest and highest, in Hz; {0, 0}: none).
+    std::vector<float> heardCrossovers() const;
+    bool areCrossoversMoving() const;
+    std::pair<float, float> crossoverSweep (int index) const;
+    // "~ Link to LFO" on a band's edges: an LFO of that band moves its low edge, high edge, both together (the band
+    // moves) or both apart (the band opens and closes). Makes the LFO (and its route) the first time; returns the
+    // LFO's index in the band, or -1.
+    int linkEdgesToLfo (int band, int edge);
+    int findEdgeLfo (int band, int edge) const;            // the LFO already linked to that (-1: none)
+    static juce::String edgeName (int edge);               // "Low edge", "High edge", "Move the band", "Open / close"
     // Crossover slopes: order 1 (6 dB/oct, soft) to 16 (96 dB/oct, near brickwall); 4 (24 dB/oct) by default.
     juce::RangedAudioParameter* slopeParameter (int index) const;
     int getCrossoverSlope (int index) const;                // order 1-16
@@ -160,6 +176,7 @@ public:
         bool bandLfo = false;
         int slot = -1;               // the slot it was made for, or -1
         bool canUndo = false, canRedo = false;
+        int edge = -1;               // it moves a band edge (0.18.0): which (Destination::Edge), else -1
     };
     int getLfoCount (int band) const;
     LfoInfo getLfoInfo (int band, int lfo) const;
@@ -207,7 +224,9 @@ public:
     {
         // effectParameter: a knob inside the effect in slot `slotId` (its index in the effect's parameter
         // list, and the effect's own ID for it, which is what projects keep).
-        enum Kind { slotMix = 0, bandMix = 1, bandVolume = 2, effectParameter = 3 };
+        // bandEdges (0.18.0): the band's dividers; slotId is which: Edge.
+        enum Kind { slotMix = 0, bandMix = 1, bandVolume = 2, effectParameter = 3, bandEdges = 4 };
+        enum Edge { lowEdge = 0, highEdge = 1, moveEdges = 2, openEdges = 3 };
         Destination() = default;
         Destination (int k, int slot, int index = -1, juce::String id = {})
             : kind (k), slotId (slot), parameter (index), parameterId (std::move (id)) {}
@@ -393,7 +412,7 @@ private:
         std::vector<std::unique_ptr<Slot>> slots;
         std::vector<std::unique_ptr<Lfo>> lfos;
         std::vector<std::unique_ptr<Route>> routes;
-        std::vector<Route*> mixModulators, volumeModulators;
+        std::vector<Route*> mixModulators, volumeModulators, edgeModulators;
         int nextSlotId = 1, nextLfoId = 1;
         int chainLatency = 0;
         triad::StereoDelay dryDelay, alignDelay;
@@ -484,7 +503,12 @@ private:
     bool prepared = false;
     juce::String status, presetName;
     std::array<std::atomic<float>*, triad::maxCrossovers> crossoverValues {}, slopeValues {};
-    std::array<std::atomic<float>*, triad::maxBands> bandMixValues {}, bandGainValues {}, bandMuteValues {};
+    std::array<std::atomic<float>*, triad::maxBands> bandMixValues {}, bandGainValues {}, bandMuteValues {}, bandSoloValues {};
+    // LFOs on the band edges: each divider's move for each piece of `controlRate` samples of a chunk (octaves), filled
+    // before the split; sized in prepareToPlay.
+    std::vector<float> edgeMoves;
+    bool computeEdgeMoves (int offset, int n);
+    double predictPhase (const Band&, const Lfo&, int offset, int frame) const noexcept;
     // Song position for the LFOs, read at the start of each block (audio thread).
     double blockPpq = 0.0, blockBpm = 120.0, blockBeatsPerBar = 4.0;
     bool blockPlaying = false;

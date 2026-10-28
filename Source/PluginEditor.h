@@ -48,6 +48,7 @@ public:
     void chooseEffect (int band, int slot, juce::Component& target) override;
     void setCrossoverFrequency (int index, float hz) override;
     void showLfo (int band, int slot) override;
+    void linkEdgesToLfo (int band, int edge);   // "~ Link to LFO" on a band's edges (0.18.0)
     void showBandMenu (int band, juce::Component& target, bool atMouse = false) override;
     // A choice from the band menu (its item ids): copy/paste band state, chains, LFOs, move, remove.
     void bandMenuChoice (int band, int choice, const juce::Array<juce::File>& chainFiles = {});

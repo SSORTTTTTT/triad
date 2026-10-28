@@ -318,6 +318,14 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
         muteButton.onStateChange = [this] { repaint(); };
         addAndMakeVisible (muteButton);
         muteAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.parameters, TriadProcessor::bandMuteID (band), muteButton);
+        // SOLO (0.18.0, Thomas): hear only this band (and any other soloed one).
+        soloButton.setClickingTogglesState (true);
+        soloButton.setTooltip ("Solo this band: you hear only the soloed bands. The others keep running, so it is instant both ways.");
+        soloButton.setColour (juce::TextButton::buttonOnColourId, soloColour);
+        soloButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
+        soloButton.onStateChange = [this] { repaint(); };
+        addAndMakeVisible (soloButton);
+        soloAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.parameters, TriadProcessor::bandSoloID (band), soloButton);
     }
     volume.setDoubleClickReturnValue (true, 0.0);
     volume.onValueChange = [this] { repaint (0, getHeight() - footerHeight, getWidth(), footerHeight); };
@@ -418,6 +426,8 @@ void BandStrip::update (const std::vector<float>& crossovers, int bandCount, flo
         rows[(size_t) s]->update (info, count);
     }
     if (chain != chainLatency) { chainLatency = chain; repaint(); }
+    const bool silent = ! isExtra() && processor.isAnyBandSoloed() && ! processor.isBandSoloed (band);
+    if (silent != shownSilent) { shownSilent = silent; repaint(); }
 }
 // The band's edges (they move with the dividers: every frame, so automation moves them smoothly).
 void BandStrip::updateEdges (const std::vector<float>& crossovers, int bandCount, float nyquist)
@@ -474,7 +484,12 @@ void BandStrip::resized()
     const int footerTop = getHeight() - footerHeight;
     mix.setBounds (w - 94, footerTop + 8, 84, 76);
     volume.setBounds (10, footerTop + 26, w - 114, 18);
-    muteButton.setBounds (12, footerTop + 62, 50, 22);
+    // MUTE and SOLO side by side (M and S in a narrow strip), the slot count after them.
+    const int buttonWidth = w < 250 ? 26 : 50;
+    muteButton.setButtonText (w < 250 ? "M" : "MUTE");
+    soloButton.setButtonText (w < 250 ? "S" : "SOLO");
+    muteButton.setBounds (12, footerTop + 62, buttonWidth, 22);
+    soloButton.setBounds (muteButton.getRight() + 4, footerTop + 62, buttonWidth, 22);
 }
 void BandStrip::lookAndFeelChanged()
 {
@@ -550,10 +565,14 @@ void BandStrip::paint (juce::Graphics& g)
     }
     g.setColour (dimTextColour); g.setFont (juce::FontOptions (10.0f));
     g.drawText (formatDb (peakHold), peakTextArea(), juce::Justification::centredRight);
-    // Under the meter: MUTE (a button), then the slot count and the band's latency beside it.
+    // Under the meter: MUTE and SOLO (buttons), then the slot count and the band's latency beside them (where there
+    // is room before the peak level).
     const int n = (int) rows.size();
-    const int info = left + 56;
-    g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), info, footerTop + 61, 80, 13, juce::Justification::centredLeft);
+    const int info = soloButton.getRight() + 8;
+    const auto count = juce::String (n) + (n == 1 ? " slot" : " slots");
+    const float peakLeft = (float) peakTextArea().getRight() - juce::GlyphArrangement::getStringWidth (juce::FontOptions (10.0f), formatDb (peakHold)) - 6.0f;
+    if ((float) info + juce::GlyphArrangement::getStringWidth (juce::FontOptions (10.0f), count) < peakLeft)
+        g.drawText (count, info, footerTop + 62, 80, 16, juce::Justification::centredLeft);
     if (chainLatency > 0)
     {
         // The band's latency (its effects added up); the slowest band sets Triad's total.
@@ -562,12 +581,14 @@ void BandStrip::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
         g.drawText (formatMs (ms) + " latency", info, footerTop + 74, 90, 14, juce::Justification::centredLeft);
     }
-    if (muteButton.getToggleState())
+    // A muted, soloed or (another band soloed) silent band: its title says so.
+    const auto state = muteButton.getToggleState() ? juce::String ("MUTED") : soloButton.getToggleState() ? juce::String ("SOLO")
+                     : shownSilent ? juce::String ("SILENT") : juce::String();
+    if (state.isNotEmpty())
     {
-        // A muted band: its title says so.
-        g.setColour (juce::Colour (0xffe8705c));
+        g.setColour (muteButton.getToggleState() ? juce::Colour (0xffe8705c) : soloButton.getToggleState() ? soloColour : dimTextColour);
         g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-        g.drawText ("MUTED", getWidth() - 110, 8, 46, 24, juce::Justification::centredRight);
+        g.drawText (state, getWidth() - 110, 8, 46, 24, juce::Justification::centredRight);
     }
 }
 void BandStrip::paintOverChildren (juce::Graphics& g)

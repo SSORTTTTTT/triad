@@ -322,7 +322,7 @@ void TriadLook::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool ove
 // ---- Menus ----------------------------------------------------------------------------------------------
 namespace
 {
-const juce::juce_wchar swatchMark = 1, tagMark = 2;
+const juce::juce_wchar swatchMark = 1, tagMark = 2, lfoMark = 3;
 bool isTitle (const juce::String& header) { return header.containsAnyOf ("abcdefghijklmnopqrstuvwxyz"); }
 juce::Font itemFont() { return juce::FontOptions (12.5f, juce::Font::bold); }
 juce::Font headerFont() { return juce::FontOptions (10.5f, juce::Font::bold).withKerningFactor (0.06f); }
@@ -357,6 +357,7 @@ juce::String menuSwatches (const juce::Array<juce::Colour>& colours)
     for (auto c : colours) s << c.toDisplayString (false) << ",";
     return s;
 }
+juce::String menuLfo (const juce::String& text) { return juce::String::charToString (lfoMark) + text; }
 juce::String menuTag (const juce::String& tag) { return juce::String::charToString (tagMark) + tag; }
 void addItemWithRight (juce::PopupMenu& menu, int id, const juce::String& name, const juce::String& right, bool enabled, bool ticked)
 {
@@ -486,6 +487,13 @@ void TriadLook::drawPopupMenuItemWithOptions (juce::Graphics& g, const juce::Rec
         text = text.substring (2);
         x += 19.0f;
     }
+    if (text[0] == lfoMark)
+    {
+        // The LFO's wave, as on a slot's ~ button (0.18.0: "~ Link to LFO").
+        IconButton::drawIcon (g, IconButton::Icon::lfo, { x, cy - 5.0f, 16.0f, 10.0f }, ticked ? ink : m.header.withMultipliedAlpha (enabled ? 1.0f : 0.45f));
+        text = text.substring (1);
+        x += 23.0f;
+    }
     float right = (float) area.getRight() - 14.0f;
     if (item.subMenu != nullptr)
     {
@@ -576,6 +584,7 @@ void TriadLook::getIdealPopupMenuItemSizeWithOptions (const juce::String& text, 
         name = text.substring (0, j).trimEnd();
     }
     if (name.startsWith (fullHeart()) || name.startsWith (emptyHeart())) { name = name.substring (2); extra += 19.0f; }
+    if (name[0] == lfoMark) { name = name.substring (1); extra += 23.0f; }
     idealWidth = juce::jmax (120, juce::roundToInt (16.0f + 17.0f + widthOf (itemFont(), name) + extra + 40.0f));
 }
 void TriadLook::getIdealPopupMenuSectionHeaderSizeWithOptions (const juce::String& text, int, int& idealWidth, int& idealHeight,

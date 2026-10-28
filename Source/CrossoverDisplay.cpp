@@ -344,9 +344,24 @@ void CrossoverDisplay::mouseDown (const juce::MouseEvent& e)
     // Right-click a band's area: remove it (or add a band right there).
     if (e.mods.isPopupMenu() && plotBounds().contains (e.position)) showBandMenu (bandAt (e.position.x), frequencyForX (e.position.x));
 }
+void CrossoverDisplay::addLinkItems (juce::PopupMenu& menu, CrossoverHost& h, int band, int idBase)
+{
+    // ~ Move the band / Open / close / Low edge / High edge, each with where it is now (or its LFO, once linked).
+    const auto cuts = h.effectiveCrossovers();
+    const int count = h.getBandCount();
+    menu.addSectionHeader ("LINK TO LFO");
+    for (int edge : { 2, 3, 0, 1 })
+    {
+        if ((edge == 0 && band == 0) || (edge == 1 && band >= count - 1)) continue;
+        const juce::String names[] { "Low edge", "High edge", "Move the band", "Open / close" };
+        juce::String right = edge == 0 ? formatHz (cuts[(size_t) band - 1]) : edge == 1 ? formatHz (cuts[(size_t) band]) : juce::String ("both edges");
+        if (const int lfo = h.edgeLfo (band, edge); lfo >= 0) right = "LFO " + juce::String (lfo + 1);
+        addItemWithRight (menu, idBase + edge, menuLfo (names[edge]), right);
+    }
+}
 void CrossoverDisplay::showBandMenu (int band, float hz)
 {
-    enum { removeId = 1, addId, lfoId, copyId, pasteId };
+    enum { removeId = 1, addId, lfoId, copyId, pasteId, linkBase = 200 };
     const int count = host.getBandCount();
     juce::PopupMenu menu;
     menu.addSectionHeader ("BAND " + juce::String (band + 1));
@@ -356,6 +371,12 @@ void CrossoverDisplay::showBandMenu (int band, float hz)
         menu.addItem (pasteId, host.canPasteBandState() ? "Paste band state (" + host.pasteBandDescription() + ")"
                                                          : juce::String ("Paste band state"),
                       host.canPasteBandState());
+        menu.addSeparator();
+    }
+    if (host.canLinkToLfo() && count > 1)
+    {
+        // 0.18.0 (Thomas): "link to LFO" on the band's edges, with the LFO's wave as on a slot's ~ button.
+        addLinkItems (menu, host, band, linkBase);
         menu.addSeparator();
     }
     menu.addItem (removeId, "Remove band " + juce::String (band + 1), count > 1);
@@ -371,6 +392,7 @@ void CrossoverDisplay::showBandMenu (int band, float hz)
     {
         if (safe == nullptr) return;
         if (choice > allDividersBase) { safe->host.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
+        if (choice >= linkBase && choice < linkBase + 4) { if (safe->onLinkEdges) safe->onLinkEdges (band, choice - linkBase); return; }
         if (choice == copyId) { safe->host.copyBandState (band); return; }
         if (choice == pasteId) safe->host.pasteBandState (band);
         else if (choice == removeId) safe->host.removeBand (band);
@@ -381,13 +403,19 @@ void CrossoverDisplay::showBandMenu (int band, float hz)
 }
 void CrossoverDisplay::showCrossoverMenu (int index)
 {
-    enum { removeBelow = 1, removeAbove, resetId, slopeBase = 100 };
+    enum { removeBelow = 1, removeAbove, resetId, linkId, slopeBase = 100 };
     juce::PopupMenu menu;
     menu.addSectionHeader ("CROSSOVER " + juce::String (index + 1) + "  " + (index < (int) cuts.size() ? formatHz (cuts[(size_t) index]) : juce::String()));
     juce::PopupMenu slopes;
     const int current = host.getCrossoverSlope (index);
     addSlopeItems (slopes, current, slopeBase, index < (int) cuts.size() ? cuts[(size_t) index] : 0.0f, host.getSampleRateForDisplay());
     addSubMenu (menu, "Slope", std::move (slopes), triad::slopeText (current));
+    if (host.canLinkToLfo())
+    {
+        // This divider is band index's high edge (and the next band's low edge): its LFO is one of band index's.
+        const int lfo = host.edgeLfo (index, 1);
+        addItemWithRight (menu, linkId, menuLfo ("Link to LFO"), lfo >= 0 ? "LFO " + juce::String (lfo + 1) : "band " + juce::String (index + 1) + "'s high edge");
+    }
     addAllDividerItems (menu, allDividersBase);
     menu.addSeparator();
     menu.addItem (removeBelow, "Remove band " + juce::String (index + 1) + " (below)");
@@ -399,6 +427,7 @@ void CrossoverDisplay::showCrossoverMenu (int index)
         if (safe == nullptr) return;
         if (choice > allDividersBase) { safe->host.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
         if (choice > slopeBase) { safe->setSlope (index, choice - slopeBase); return; }
+        if (choice == linkId) { if (safe->onLinkEdges) safe->onLinkEdges (index, 1); return; }
         if (choice == removeBelow) safe->host.removeBand (index);
         else if (choice == removeAbove) safe->host.removeBand (index + 1);
         else if (choice == resetId)
@@ -519,6 +548,7 @@ void CrossoverDisplay::refreshIfChanged()
     std::vector<float> key { (float) host.getBandCount(), host.nyquistFrequency() };
     for (auto c : host.effectiveCrossovers()) key.push_back (c);
     for (int j = 0; j + 1 < host.getBandCount(); ++j) key.push_back ((float) host.getCrossoverSlope (j));
+    for (int j = 0; j + 1 < host.getBandCount(); ++j) { const auto r = host.crossoverSweep (j); key.push_back (r.first); key.push_back (r.second); }
     if (key == refreshKey) return;
     refreshKey = key;
     refresh();
@@ -573,6 +603,8 @@ void CrossoverDisplay::resized()
         meterTip.setBounds (x0 + 46, (int) plot.getY() - 12, 56, (int) plot.getHeight() + 40);
     }
     cuts = host.effectiveCrossovers();
+    sweeps.clear();
+    for (int j = 0; j < (int) cuts.size(); ++j) sweeps.push_back (host.crossoverSweep (j));
     layoutPills();
     const auto plot = plotBounds();
     for (size_t i = 0; i < handles.size() && i < cuts.size(); ++i)
@@ -685,6 +717,28 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
                         juce::Rectangle<float> (xs[(size_t) i] + 8.0f, plot.getY() + 6.0f, width - 12.0f, 20.0f), juce::Justification::centredLeft);
         }
     }
+    // Where LFOs take each divider (0.18.0): a faint light across its sweep with thin lines at its ends, and the
+    // LFO's wave on a small tag beside the divider's slope dot.
+    for (int j = 0; j < (int) sweeps.size() && j + 1 < (int) xs.size(); ++j)
+    {
+        const auto [low, high] = sweeps[(size_t) j];
+        if (high <= 0.0f) continue;
+        const float x1 = xForFrequency (low), x2 = juce::jmax (x1 + 2.0f, xForFrequency (high));
+        // In the colour of the band whose LFO moves it (the band above, when only its low edge moves).
+        const bool fromBelow = host.edgeLfo (j, 1) >= 0 || host.edgeLfo (j, 2) >= 0 || host.edgeLfo (j, 3) >= 0;
+        const auto colour = bandColour (fromBelow ? j : j + 1);
+        const float top = plot.getY() + 29.0f;
+        g.setColour (colour.withAlpha (0.07f));
+        g.fillRect (juce::Rectangle<float> (x1, top, x2 - x1, plot.getBottom() - top));
+        g.setColour (colour.withAlpha (0.45f));
+        const float dash[] { 2.0f, 4.0f };
+        for (float x : { x1, x2 }) g.drawDashedLine (juce::Line<float> (x, top, x, plot.getBottom()), dash, 2, 1.0f);
+        const float y = slopeY (host.getCrossoverSlope (j));
+        const auto tag = juce::Rectangle<float> (xs[(size_t) j + 1] - 38.0f, y - 7.5f, 24.0f, 15.0f);
+        g.setColour (currentPalette.grid.withAlpha (0.92f)); g.fillRoundedRectangle (tag, 4.5f);
+        g.setColour (colour.withAlpha (0.6f)); g.drawRoundedRectangle (tag.reduced (0.5f), 4.5f, 1.0f);
+        IconButton::drawIcon (g, IconButton::Icon::lfo, tag.reduced (5.0f, 4.0f), colour);
+    }
     g.setColour (currentPalette.gridLines.withAlpha (0.07f));
     for (float f : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
         if (f < host.nyquistFrequency()) g.drawVerticalLine (juce::roundToInt (xForFrequency (f)), plot.getY() + 29.0f, plot.getBottom());
@@ -706,6 +760,7 @@ void CrossoverDisplay::paint (juce::Graphics& g)
                              host.nyquistFrequency(), (float) host.getSampleRateForDisplay(), (float) themeGeneration };
     key.insert (key.end(), cuts.begin(), cuts.end());
     for (int j = 0; j + 1 < host.getBandCount(); ++j) key.push_back ((float) host.getCrossoverSlope (j));
+    for (const auto& r : sweeps) { key.push_back (r.first); key.push_back (r.second); }
     if (key != staticKey || ! staticLayer.isValid())
     {
         staticKey = key;
@@ -787,6 +842,7 @@ void CrossoverDisplay::Handle::paint (juce::Graphics& g)
     g.setColour (currentPalette.grid); g.fillEllipse (centre - 8, bottom - 8, 16, 16);
     g.setColour (highlighted ? colour : currentPalette.text);
     g.fillEllipse (centre - 5.5f, bottom - 5.5f, 11, 11);
+
     if (hasKeyboardFocus (false)) g.drawEllipse (centre - 9, bottom - 9, 18, 18, 1.0f);
     // The slope dot: a ring, up for soft, down for hard.
     const float slope = owner.slopeY (owner.host.getCrossoverSlope (index)) - (float) getY();

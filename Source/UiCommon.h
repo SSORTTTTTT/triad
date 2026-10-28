@@ -59,6 +59,8 @@ inline juce::String u8 (const char* text) { return juce::String::fromUTF8 (text)
 // The favourites heart (0.15.0, Thomas: "a small outline of a heart, and then when you click it, it fills up to be
 // red"): an outline, brighter under the mouse, filled red when it is a favourite.
 const juce::Colour heartColour (0xffe5484d);
+// SOLO (0.18.0): yellow when on, as in most DAWs (MUTE is the warm red 0xffe8705c).
+const juce::Colour soloColour (0xffe8c95c);
 inline juce::Path heartPath (juce::Rectangle<float> r)
 {
     const float s = juce::jmin (r.getWidth(), r.getHeight());

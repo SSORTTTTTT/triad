@@ -31,6 +31,11 @@ struct CrossoverHost
     virtual void pasteBandState (int) {}
     virtual bool canPasteBandState() const { return false; }
     virtual juce::String pasteBandDescription() const { return {}; }
+    // Triad only (0.18.0): LFOs on the band edges. The range an LFO sweeps a divider across ({0, 0}: none), and the
+    // LFO already linked to a band's edge (-1: none).
+    virtual bool canLinkToLfo() const { return false; }
+    virtual std::pair<float, float> crossoverSweep (int) const { return {}; }
+    virtual int edgeLfo (int /*band*/, int /*edge*/) const { return -1; }
 };
 
 // The frequency panel: a live spectrum of the incoming audio, the bands, and one draggable divider
@@ -61,6 +66,9 @@ public:
     void showCrossoverMenu (int index);
     int bandAt (float x) const;
     std::function<void (int band)> onEditBandLfo;
+    // "~ Link to LFO": the band's edge (0 low, 1 high, 2 move the band, 3 open / close) to an LFO of that band.
+    std::function<void (int band, int edge)> onLinkEdges;
+    static void addLinkItems (juce::PopupMenu&, CrossoverHost&, int band, int idBase);   // the four, with the wave
     float xForFrequency (float) const;
     float frequencyForX (float) const;
     juce::Rectangle<float> plotBounds() const;
@@ -154,6 +162,7 @@ private:
     // What does not move (background, band curves, grid, labels) is drawn once into an image.
     juce::Image staticLayer;
     std::vector<float> staticKey, refreshKey;
+    std::vector<std::pair<float, float>> sweeps;   // per divider: where its LFOs take it (empty: none)
     int staticRenders = 0;
     double lastFrame = 0.0;
     juce::SharedResourcePointer<triad::ui::FramePacer> pacer;
