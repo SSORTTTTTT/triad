@@ -4,7 +4,28 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.17.0 ("Triad v16", delivered 2026-10-27): Triad Time's new layout, the LFO tab in it, VOLUME before TIME
+## Current testing version — 0.18.0 ("Triad v17"): SOLO, and LFOs on the band edges (Triad as a filter)
+
+0.18.0 (2026-10-28), Thomas: "for each band ... add a [solo] button right where ... it says mute and then there's one
+slot ... is there a way ... we could even automate the band's filter, like cutoff point ... tie it to the LFO ... the high
+end and the low end together ... like a filter opening up or closing ... make the plugin also similar to a filter plugin".
+Mock-ups rendered from the code: `docs/mockups/band-edges/`.
+- **SOLO** beside MUTE on every band (the slot count moved over; M and S on narrow strips): while any band is soloed only
+  the soloed bands are heard (a muted band stays muted); the title says SOLO, the others SILENT. Saved, automatable,
+  carried along when bands move, split or go.
+- **"~ Link to LFO"** (the LFO's wave, as on a slot's ~): right-click a band in the frequency panel, LINK TO LFO: **Move
+  the band** (both edges together: the band sweeps like a band-pass), **Open / close** (both edges apart or together
+  round its middle), **Low edge**, **High edge** (high-pass and low-pass sweeps). Right-click a divider: Link to LFO
+  (that band's high edge). Each makes an LFO in the band's LFO tab ("LFO 4 · EDGES"), flat where the edges are, so
+  nothing moves until it is drawn; a single edge's grid reads in Hz (20 Hz to 20 kHz). It is also a destination in
+  ROUTE TO and the MATRIX (BAND EDGES).
+- The sound: the dividers glide from one value to the next every 32 samples (no zipper), never cross, stay in 20 Hz ..
+  20 kHz; the bands still add back to the sound (within 0.02 dB while swept; within 2 dB while jumping octaves 360
+  times a second). Shared dividers: moving band 2 squeezes bands 1 and 3, as dragging the dividers does.
+- The panel: moved dividers, readouts and the strips' ranges follow the LFO; a faint light shows how far each divider
+  is swept, and a small wave tag in the moving band's colour sits beside its slope dot.
+
+## 0.17.0 ("Triad v16", delivered 2026-10-27): Triad Time's new layout, the LFO tab in it, VOLUME before TIME
 
 0.17.0 (2026-10-26 night), Thomas: "Just work on refining and getting the plugin to be in a place where all the menus
 and visual cues that I went through are all changed and finished". Built from the approved pictures

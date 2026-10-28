@@ -27,6 +27,7 @@ void require (bool b, const char* message) { if (! b) throw std::runtime_error (
 #include "FavouriteTests.h"
 #include "BackdropTests.h"
 #include "MenuTests.h"
+#include "EdgeTests.h"
 
 namespace
 {
@@ -396,6 +397,8 @@ int main (int argc, char** argv)
         backdropTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
         testStage = "menus and value boxes";
         menuTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
+        testStage = "SOLO and LFOs on the band edges";
+        edgeTests::run (screenshotFile != juce::File() ? screenshotFile.getParentDirectory() : juce::File());
         testStage = "running the tests";
 
         // ---- Built-in Linkwitz-Riley filter equals JUCE's -----------------------------------

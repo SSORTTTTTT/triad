@@ -1018,10 +1018,44 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                     else if (back) p.undo(); else p.redo();
                 }
             }
-            else if (choice < 130)
+            else if (choice < 124)
             {
                 begin ("band volume");
                 if (auto* gain = p.parameters.getParameter (TriadProcessor::bandGainID (band))) gain->setValueNotifyingHost (r.nextFloat());
+            }
+            else if (choice < 127)
+            {
+                // 0.18.0: SOLO (and MUTE) on any band, as from its buttons or the DAW's automation.
+                begin ("solo / mute a band");
+                const int b = r.nextInt (juce::jmax (1, p.getBandCount()));
+                if (r.nextInt (3) == 0) p.setBandMuted (b, ! p.isBandMuted (b));
+                else p.setBandSoloed (b, ! p.isBandSoloed (b));
+            }
+            else if (choice < 130)
+            {
+                // 0.18.0: "~ Link to LFO" on a band's edges, then a shape drawn on it (anything, fast ones too), or
+                // its route switched off, its amount or inverting changed.
+                begin ("LFO on band edges");
+                namespace mod = triad::mod;
+                const int b = r.nextInt (juce::jmax (1, p.getBandCount()));
+                const int lfo = p.linkEdgesToLfo (b, r.nextInt (4));
+                if (lfo >= 0)
+                {
+                    mod::Shape random;
+                    const int points = 2 + r.nextInt (12);
+                    for (int i = 0; i < points; ++i)
+                        random.push_back ({ i == 0 ? 0.0f : i == points - 1 ? 1.0f : r.nextFloat(), r.nextFloat(), (r.nextFloat() - 0.5f) * 12.0f });
+                    p.setLfoShape (b, lfo, r.nextBool() ? random : mod::preset (r.nextInt (mod::numPresets())), true);
+                    p.setLfoLength (b, lfo, r.nextInt ((int) mod::lengths().size()));
+                    for (int route : p.getRoutesFrom (b, lfo))
+                        switch (r.nextInt (4))
+                        {
+                            case 0: p.setRouteAmount (b, route, r.nextFloat()); break;
+                            case 1: p.setRouteInvert (b, route, r.nextBool()); break;
+                            case 2: p.setRouteMuted (b, route, r.nextInt (4) == 0); break;
+                            default: break;
+                        }
+                }
             }
             else
             {
