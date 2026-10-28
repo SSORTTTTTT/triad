@@ -13,17 +13,33 @@ Mock-ups rendered from the code: `docs/mockups/band-edges/`.
 - **SOLO** beside MUTE on every band (the slot count moved over; M and S on narrow strips): while any band is soloed only
   the soloed bands are heard (a muted band stays muted); the title says SOLO, the others SILENT. Saved, automatable,
   carried along when bands move, split or go.
-- **"~ Link to LFO"** (the LFO's wave, as on a slot's ~): right-click a band in the frequency panel, LINK TO LFO: **Move
-  the band** (both edges together: the band sweeps like a band-pass), **Open / close** (both edges apart or together
-  round its middle), **Low edge**, **High edge** (high-pass and low-pass sweeps). Right-click a divider: Link to LFO
-  (that band's high edge). Each makes an LFO in the band's LFO tab ("LFO 4 · EDGES"), flat where the edges are, so
-  nothing moves until it is drawn; a single edge's grid reads in Hz (20 Hz to 20 kHz). It is also a destination in
-  ROUTE TO and the MATRIX (BAND EDGES).
+- **"~ Link to LFO"** (the LFO's wave, as on a slot's ~): right-click a band in the frequency panel: AN LFO ON BAND N'S
+  RANGE, each with a small filter picture and where it is now: **Sweep the band** (both edges together, like a
+  band-pass), **Widen / narrow** (both edges apart or in round its middle), **Low cut**, **High cut** (the band's low or
+  high edge: high-pass and low-pass sweeps). Right-click a divider: Link to LFO (that band's high cut). Each makes an
+  LFO in the band's LFO tab ("LFO 4 · BAND RANGE"), flat where the edges are, so nothing moves until it is drawn. It is
+  also a destination in ROUTE TO and the MATRIX.
 - The sound: the dividers glide from one value to the next every 32 samples (no zipper), never cross, stay in 20 Hz ..
   20 kHz; the bands still add back to the sound (within 0.02 dB while swept; within 2 dB while jumping octaves 360
   times a second). Shared dividers: moving band 2 squeezes bands 1 and 3, as dragging the dividers does.
-- The panel: moved dividers, readouts and the strips' ranges follow the LFO; a faint light shows how far each divider
-  is swept, and a small wave tag in the moving band's colour sits beside its slope dot.
+- The LFO tab of a band-range LFO (design rounds 2-3, Thomas: "push the Auto Filter visual", "scrap the 90 degree
+  turn"): the grid shows what passes (the band's colour) and what is cut (dark), as Ableton's Auto Filter; the
+  incoming spectrum across it (SPECTRUM on / off), lit where the band is; the frequency at every point and the change
+  on every line ("2.19 kHz", "+11.97 kHz"), as Triad Time; the scale on the left in Hz (20, 50, 100 ... 20k labelled,
+  ticks between) with a bar over the range the line covers, its labels lit; and **BAND NOW** in the ROUTING card: the
+  band's curve where it is right now (no spectrum), dashed where the LFO takes it at its lowest and highest.
+- The panel: 1.5 times taller; moved dividers, readouts and the strips' ranges follow the LFO; under the spectrum a
+  lane with each moved divider's range ("250 Hz ↔ 2.5 kHz"); a small wave tag beside the moving divider's slope dot.
+  A divider shows an LFO only when it moves it.
+- MUTE / SOLO in the panel (Thomas chose style C of three mock-ups): while a band is muted or another soloed, the
+  spectrum is drawn in the heard bands' colours and grey elsewhere, and a silent band's colour drops out.
+- Band strips: the footer half as tall (VOL, the meter, MUTE / SOLO, the slot count and BAND MIX in two rows), so the
+  slots keep their size in the taller window.
+
+Next (designed, waiting for Thomas): an LFO on a divider's **slope**, hard (96 dB/oct) to soft (6 dB/oct), in the same
+band menu, with the grid in dB/oct and SLOPE NOW in the routing card (`docs/mockups/slope/` on branch `slope-design`).
+Thomas: whatever sounds smoothest; the slope steps 6 dB at a time with a short crossfade, so an LFO would move it in a
+gentler range by default (about 12-48 dB/oct), widened by hand; the slope set by hand keeps every step.
 
 ## 0.17.0 ("Triad v16", delivered 2026-10-27): Triad Time's new layout, the LFO tab in it, VOLUME before TIME
 
