@@ -363,6 +363,36 @@ void drawFilterIcon (juce::Graphics& g, juce::Rectangle<float> r, char kind, juc
 {
     // s: a band moving sideways; w: a band opening outwards; l: a low cut (high-pass); h: a high cut (low-pass).
     const float x = r.getX(), y = r.getY(), w = r.getWidth(), h = r.getHeight() - 4.0f, base = y + h, top = y + 1.5f;
+    if (kind == 'k' || kind == 'j')
+    {
+        // Design: a cut's slope, hard or soft (k: a low cut's, j: a high cut's): a soft curve, faint, and a hard one,
+        // with an arrow between them.
+        const auto at = [&] (float f) { return kind == 'k' ? x + w * f : x + w * (1.0f - f); };
+        juce::Path soft, hard;
+        soft.startNewSubPath (at (0.0f), base - 0.5f);
+        soft.cubicTo (at (0.3f), base - 1.0f, at (0.42f), top, at (0.86f), top);
+        soft.lineTo (at (1.0f), top);
+        hard.startNewSubPath (at (0.44f), base);
+        hard.cubicTo (at (0.55f), base, at (0.53f), top, at (0.64f), top);
+        hard.lineTo (at (1.0f), top);
+        juce::Path fill (hard);
+        fill.lineTo (at (1.0f), base); fill.lineTo (at (0.44f), base); fill.closeSubPath();
+        g.setColour (colour.withMultipliedAlpha (0.25f));
+        g.fillPath (fill);
+        g.setColour (colour.withMultipliedAlpha (0.5f));
+        g.strokePath (soft, juce::PathStrokeType (1.1f));
+        g.setColour (colour);
+        g.strokePath (hard, juce::PathStrokeType (1.5f));
+        const float ay = y + r.getHeight() - 1.0f, from = at (0.08f), to = at (0.4f);
+        g.drawLine (from, ay, to, ay, 1.2f);
+        for (float end : { from, to })
+        {
+            const float d = (end == to) == (to > from) ? -3.0f : 3.0f;
+            juce::Path head; head.addTriangle (end, ay, end + d, ay - 2.2f, end + d, ay + 2.2f);
+            g.fillPath (head);
+        }
+        return;
+    }
     juce::Path curve;
     if (kind == 'l') { curve.startNewSubPath (x, base); curve.cubicTo (x + w * 0.35f, base, x + w * 0.35f, top, x + w * 0.6f, top); curve.lineTo (x + w, top); }
     else if (kind == 'h') { curve.startNewSubPath (x, top); curve.lineTo (x + w * 0.4f, top); curve.cubicTo (x + w * 0.65f, top, x + w * 0.65f, base, x + w, base); }
