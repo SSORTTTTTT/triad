@@ -1037,7 +1037,13 @@ std::pair<float, float> TriadProcessor::crossoverSweep (int index) const
     std::vector<std::pair<int, const Route*>> movers;
     for (int b : { index, index + 1 })
         for (auto& r : bands[(size_t) b]->routes)
-            if (r->destination.kind == Destination::bandEdges && ! r->muted.load() && r->lfo != nullptr) movers.push_back ({ b, r.get() });
+            if (r->destination.kind == Destination::bandEdges && ! r->muted.load() && r->lfo != nullptr)
+            {
+                // Only what moves this divider: the band below's high edge, the band above's low edge, or both edges.
+                const int edge = r->destination.slotId;
+                if (edge == (b == index ? Destination::lowEdge : Destination::highEdge)) continue;
+                movers.push_back ({ b, r.get() });
+            }
     if (movers.empty()) return {};
     float low = 1.0f, high = 0.0f;
     for (int i = 0; i <= 64; ++i)

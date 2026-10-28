@@ -246,6 +246,16 @@ inline void edgeTests (const juce::File& screenshots)
     require (sweepHigh.first > 15000.0f, "...on both of the band's edges");
     q.setLfoShape (1, open, mod::Shape { { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 0.0f } }, false);
     require (q.crossoverSweep (0).first < 25.0f && q.crossoverSweep (0).second > 600.0f, "...and how far it sweeps it");
+    {
+        // A band's high cut LFO moves its upper divider only: the one below shows no LFO.
+        TriadProcessor r;
+        r.prepareToPlay (rate, 512);
+        r.linkEdgesToLfo (1, D::highEdge);
+        require (r.crossoverSweep (1).second > 0.0f, "A high cut LFO shows on its divider");
+        require (r.crossoverSweep (0).second <= 0.0f, "...and not on the band's other divider");
+        r.linkEdgesToLfo (2, D::lowEdge);
+        require (r.crossoverSweep (0).second <= 0.0f, "A low cut LFO of the band above does not show on the divider below it");
+    }
     auto host = makeCrossoverHost (q);
     juce::PopupMenu menu;
     CrossoverDisplay::addLinkItems (menu, *host, 1, 200);
