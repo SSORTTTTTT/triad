@@ -63,7 +63,8 @@ juce::Component* CrossoverDisplay::getHandle (int index) const
 }
 juce::Rectangle<float> CrossoverDisplay::plotBounds() const
 {
-    return { 20.0f, 38.0f, juce::jmax (1.0f, (float) getWidth() - 40.0f - meterWidth), juce::jmax (1.0f, (float) getHeight() - 70.0f) };
+    // Design: a lane under the spectrum for how far LFOs move the dividers (22 px), then the frequencies.
+    return { 20.0f, 38.0f, juce::jmax (1.0f, (float) getWidth() - 40.0f - meterWidth), juce::jmax (1.0f, (float) getHeight() - 70.0f - 22.0f) };
 }
 float CrossoverDisplay::xForFrequency (float frequency) const
 {
@@ -349,14 +350,19 @@ void CrossoverDisplay::addLinkItems (juce::PopupMenu& menu, CrossoverHost& h, in
     // ~ Move the band / Open / close / Low edge / High edge, each with where it is now (or its LFO, once linked).
     const auto cuts = h.effectiveCrossovers();
     const int count = h.getBandCount();
-    menu.addSectionHeader ("LINK TO LFO");
+    // Design: what each does, in words and as a small filter picture (Thomas: "make it a lot more legible").
+    menu.addSectionHeader (menuLfo ("AN LFO ON BAND " + juce::String (band + 1) + "'S RANGE"));
+    const auto lo = band > 0 ? formatHz (cuts[(size_t) band - 1]) : juce::String ("20 Hz");
+    const auto hi = band < count - 1 ? formatHz (cuts[(size_t) band]) : juce::String ("top");
     for (int edge : { 2, 3, 0, 1 })
     {
         if ((edge == 0 && band == 0) || (edge == 1 && band >= count - 1)) continue;
-        const juce::String names[] { "Low edge", "High edge", "Move the band", "Open / close" };
-        juce::String right = edge == 0 ? formatHz (cuts[(size_t) band - 1]) : edge == 1 ? formatHz (cuts[(size_t) band]) : juce::String ("both edges");
+        const juce::String names[] { "Low cut", "High cut", "Sweep the band", "Widen / narrow" };
+        const char kinds[] { 'l', 'h', 's', 'w' };
+        juce::String right = edge == 0 ? "moves " + lo : edge == 1 ? "moves " + hi : edge == 2 ? lo + juce::String::fromUTF8 (" \xe2\x80\x93 ") + hi + " together"
+                                                                                            : "edges apart or in";
         if (const int lfo = h.edgeLfo (band, edge); lfo >= 0) right = "LFO " + juce::String (lfo + 1);
-        addItemWithRight (menu, idBase + edge, menuLfo (names[edge]), right);
+        addItemWithRight (menu, idBase + edge, menuFilter (kinds[edge], names[edge]), right);
     }
 }
 void CrossoverDisplay::showBandMenu (int band, float hz)
@@ -364,7 +370,13 @@ void CrossoverDisplay::showBandMenu (int band, float hz)
     enum { removeId = 1, addId, lfoId, copyId, pasteId, linkBase = 200 };
     const int count = host.getBandCount();
     juce::PopupMenu menu;
-    menu.addSectionHeader ("BAND " + juce::String (band + 1));
+    {
+        // Design: the band and its range as the menu's title.
+        const auto cuts = host.effectiveCrossovers();
+        const auto lo = band > 0 && band - 1 < (int) cuts.size() ? formatHz (cuts[(size_t) band - 1]) : juce::String ("0 Hz");
+        const auto hi = band < (int) cuts.size() ? formatHz (cuts[(size_t) band]) : formatHz (host.nyquistFrequency());
+        menu.addSectionHeader ("Band " + juce::String (band + 1) + juce::String::fromUTF8 ("  \xc2\xb7  ") + lo + juce::String::fromUTF8 (" \xe2\x80\x93 ") + hi);
+    }
     if (host.hasBandState())
     {
         menu.addItem (copyId, "Copy band state");
@@ -728,8 +740,6 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
         const bool fromBelow = host.edgeLfo (j, 1) >= 0 || host.edgeLfo (j, 2) >= 0 || host.edgeLfo (j, 3) >= 0;
         const auto colour = bandColour (fromBelow ? j : j + 1);
         const float top = plot.getY() + 29.0f;
-        g.setColour (colour.withAlpha (0.07f));
-        g.fillRect (juce::Rectangle<float> (x1, top, x2 - x1, plot.getBottom() - top));
         g.setColour (colour.withAlpha (0.45f));
         const float dash[] { 2.0f, 4.0f };
         for (float x : { x1, x2 }) g.drawDashedLine (juce::Line<float> (x, top, x, plot.getBottom()), dash, 2, 1.0f);
@@ -739,6 +749,35 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
         g.setColour (colour.withAlpha (0.6f)); g.drawRoundedRectangle (tag.reduced (0.5f), 4.5f, 1.0f);
         IconButton::drawIcon (g, IconButton::Icon::lfo, tag.reduced (5.0f, 4.0f), colour);
     }
+    // The lane under the spectrum (design, Thomas): each moved divider's range as a line with small end caps, in the
+    // colour of the band whose LFO moves it, with its two frequencies; overlapping ranges take a second row.
+    {
+        std::array<float, 2> rowRight { -1.0e9f, -1.0e9f };
+        for (int j = 0; j < (int) sweeps.size(); ++j)
+        {
+            const auto [low, high] = sweeps[(size_t) j];
+            if (high <= 0.0f) continue;
+            const bool fromBelow = host.edgeLfo (j, 1) >= 0 || host.edgeLfo (j, 2) >= 0 || host.edgeLfo (j, 3) >= 0;
+            const auto colour = bandColour (fromBelow ? j : j + 1);
+            const float x1 = xForFrequency (low), x2 = juce::jmax (x1 + 3.0f, xForFrequency (high));
+            const auto label = formatHz (low) + juce::String::fromUTF8 (" \xe2\x86\x94 ") + formatHz (high);
+            g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
+            const float labelWidth = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), label) + 10.0f;
+            const int row = x1 - 4.0f > rowRight[0] ? 0 : 1;
+            const float y = plot.getBottom() + 8.0f + (float) row * 11.0f;
+            rowRight[(size_t) row] = juce::jmax (x2, (x1 + x2) * 0.5f + labelWidth * 0.5f);
+            g.setColour (colour.withAlpha (0.9f));
+            g.fillRoundedRectangle (juce::Rectangle<float> (x1, y - 1.25f, x2 - x1, 2.5f), 1.25f);
+            g.fillRoundedRectangle (juce::Rectangle<float> (x1 - 1.0f, y - 4.5f, 2.0f, 9.0f), 1.0f);
+            g.fillRoundedRectangle (juce::Rectangle<float> (x2 - 1.0f, y - 4.5f, 2.0f, 9.0f), 1.0f);
+            if (x2 - x1 > labelWidth + 16.0f)
+            {
+                const auto pill = juce::Rectangle<float> (labelWidth, 11.0f).withCentre ({ (x1 + x2) * 0.5f, y });
+                g.setColour (currentPalette.grid); g.fillRoundedRectangle (pill, 3.0f);
+                g.setColour (colour); g.drawText (label, pill, juce::Justification::centred);
+            }
+        }
+    }
     g.setColour (currentPalette.gridLines.withAlpha (0.07f));
     for (float f : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
         if (f < host.nyquistFrequency()) g.drawVerticalLine (juce::roundToInt (xForFrequency (f)), plot.getY() + 29.0f, plot.getBottom());
@@ -747,9 +786,9 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
     g.setFont (juce::FontOptions (10.0f)); g.setColour (currentPalette.faintText);
     for (float f : { 100.0f, 1000.0f, 10000.0f })
         if (f < host.nyquistFrequency() * 0.8f)
-            g.drawText (formatHz (f), juce::Rectangle<float> (xForFrequency (f) - 35, plot.getBottom() + 12, 70, 16), juce::Justification::centred);
-    g.drawText ("20 Hz", juce::Rectangle<float> (plot.getX(), plot.getBottom() + 12, 65, 16), juce::Justification::centredLeft);
-    g.drawText (formatHz (host.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 12, 90, 16), juce::Justification::centredRight);
+            g.drawText (formatHz (f), juce::Rectangle<float> (xForFrequency (f) - 35, plot.getBottom() + 34, 70, 16), juce::Justification::centred);
+    g.drawText ("20 Hz", juce::Rectangle<float> (plot.getX(), plot.getBottom() + 34, 65, 16), juce::Justification::centredLeft);
+    g.drawText (formatHz (host.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 34, 90, 16), juce::Justification::centredRight);
 }
 void CrossoverDisplay::paint (juce::Graphics& g)
 {

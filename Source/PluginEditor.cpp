@@ -6,7 +6,8 @@ using namespace triad::ui;
 namespace
 {
 constexpr int margin = 24, headerHeight = 52, stripGap = 10, minStripWidth = 196, maxStripWidth = 420;
-constexpr int displayHeight = 210;
+// Design: the frequency panel taller by what the band footers gave up (TRIAD_DISPLAY_HEIGHT overrides, for mock-ups).
+const int displayHeight = juce::SystemStats::getEnvironmentVariable ("TRIAD_DISPLAY_HEIGHT", "254").getIntValue();
 enum MenuIds { scanningId = 1000001, noneId, browseId, refreshId, rescanId, emptySlotId, searchId };
 juce::Array<juce::File> filesIn (const juce::File& folder, const juce::String& pattern)
 {

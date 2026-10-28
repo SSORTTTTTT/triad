@@ -41,17 +41,97 @@ private:
 
 }
 
-// ---- Behind the grid: the sound coming in --------------------------------------------------------------------------
-bool LfoShapeHost::hasBackdrop() const { return page.hasBackdrop(); }
+// ---- Band-edge LFOs: what the grid's height means ------------------------------------------------------------------
+namespace
+{
+using D = TriadProcessor::Destination;
+float uOf (float hz) { return juce::jlimit (0.0f, 1.0f, std::log (juce::jmax (1.0f, hz) / 20.0f) / std::log (1000.0f)); }
+float hzOf (float u) { return 20.0f * std::pow (1000.0f, juce::jlimit (0.0f, 1.0f, u)); }
+juce::String shortHz (float hz)
+{
+    if (hz >= 9950.0f) return juce::String (juce::roundToInt (hz / 1000.0f)) + "k";
+    if (hz >= 1000.0f) return juce::String (hz / 1000.0f, 1) + "k";
+    return juce::String (juce::roundToInt (hz));
+}
+// The band's edges (0..1 in octaves from 20 Hz) and what a line height v (0..1) takes them to, at 100%.
+struct EdgeMap
+{
+    int edge = -1;
+    float uL = 0.0f, uH = 1.0f;
+    float c() const { return 0.5f * (uL + uH); }
+    float w() const { return uH - uL; }
+    std::pair<float, float> at (float v) const   // the low and high edge (u)
+    {
+        if (edge == D::lowEdge) return { v, uH };
+        if (edge == D::highEdge) return { uL, v };
+        if (edge == D::moveEdges) { const float m = 0.5f * w() + v * (1.0f - w()); return { m - 0.5f * w(), m + 0.5f * w() }; }
+        const float half = v * juce::jmax (c(), 1.0f - c());
+        return { juce::jmax (0.0f, c() - half), juce::jmin (1.0f, c() + half) };
+    }
+    float mainHz (float v) const   // what the line stands for: the edge, or the band's middle when it sweeps
+    {
+        const auto [lo, hi] = at (v);
+        return edge == D::lowEdge ? hzOf (lo) : edge == D::highEdge ? hzOf (hi) : hzOf (0.5f * (lo + hi));
+    }
+};
+EdgeMap edgeMap (TriadProcessor& p, int band, int lfo)
+{
+    EdgeMap m;
+    m.edge = p.getLfoInfo (band, lfo).edge;
+    if (m.edge < 0 || TriadProcessor::isExtraChain (band)) { m.edge = -1; return m; }
+    const auto cuts = p.effectiveCrossovers();
+    if (band > 0 && band - 1 < (int) cuts.size()) m.uL = uOf (cuts[(size_t) band - 1]);
+    if (band < (int) cuts.size()) m.uH = uOf (cuts[(size_t) band]);
+    return m;
+}
+juce::String hzText (float hz) { return triad::ui::formatHz (hz); }
+juce::String changeText (float from, float to)
+{
+    const float d = to - from;
+    if (std::abs (d) < 0.5f) return {};
+    return (d > 0.0f ? "+" : juce::String::fromUTF8 ("\xe2\x88\x92")) + triad::ui::formatHz (std::abs (d));
+}
+}
 juce::String LfoShapeHost::valueLabel (int percent) const
 {
-    // An LFO on a band's low or high edge: the grid's height is the frequency it takes the edge to, at 100%
-    // (20 Hz at the bottom to 20 kHz at the top, in octaves as the frequency panel draws them).
-    const int edge = processor.getLfoInfo (band, lfo).edge;
-    if (edge != TriadProcessor::Destination::lowEdge && edge != TriadProcessor::Destination::highEdge) return ShapeHost::valueLabel (percent);
-    const float hz = 20.0f * std::pow (1000.0f, (float) percent / 100.0f);
-    return hz >= 1000.0f ? juce::String (hz / 1000.0f, hz >= 9950.0f ? 0 : 1) + "k" : juce::String (juce::roundToInt (hz));
+    // A band-edge LFO: the grid's height is a frequency (the edge, or the band's middle when it sweeps), or how open the
+    // band is (widen / narrow).
+    const auto m = edgeMap (processor, band, lfo);
+    if (m.edge < 0) return ShapeHost::valueLabel (percent);
+    if (m.edge == D::openEdges) return percent == 100 ? "open" : percent == 0 ? "closed" : ShapeHost::valueLabel (percent);
+    return shortHz (m.mainHz ((float) percent / 100.0f));
 }
+juce::String LfoShapeHost::pointLabel (const triad::mod::Point& p) const
+{
+    const auto m = edgeMap (processor, band, lfo);
+    if (m.edge < 0) return {};
+    if (m.edge == D::openEdges || m.edge == D::moveEdges)
+    {
+        // Both edges move: the band's range at this point.
+        const auto [lo, hi] = m.at (p.y);
+        return shortHz (hzOf (lo)) + juce::String::fromUTF8 ("\xe2\x80\x93") + shortHz (hzOf (hi)) + " Hz";
+    }
+    return hzText (m.mainHz (p.y));
+}
+juce::String LfoShapeHost::segmentLabel (const triad::mod::Point& from, const triad::mod::Point& to) const
+{
+    const auto m = edgeMap (processor, band, lfo);
+    if (m.edge < 0 || m.edge == D::openEdges) return {};
+    if (m.edge == D::moveEdges)
+    {
+        // Both edges move by the same number of octaves (in Hz each by its own amount).
+        const float oct = (m.at (to.y).first - m.at (from.y).first) * std::log2 (1000.0f);
+        if (std::abs (oct) < 0.05f) return {};
+        return (oct > 0.0f ? juce::String::fromUTF8 ("\xe2\x86\x91 ") : juce::String::fromUTF8 ("\xe2\x86\x93 ")) + juce::String (std::abs (oct), 1) + " oct";
+    }
+    return changeText (m.mainHz (from.y), m.mainHz (to.y));
+}
+int LfoShapeHost::segmentLabelMode() const { return edgeMap (processor, band, lfo).edge >= 0 ? 2 : 0; }
+bool LfoShapeHost::fillsUnderLine() const { return edgeMap (processor, band, lfo).edge < 0; }
+// ---- Behind the grid: the sound coming in --------------------------------------------------------------------------
+bool LfoShapeHost::hasBackdrop() const { return page.hasBackdrop(); }
+bool LfoPage::showsEdges() const { return edgeMap (processor, band, lfo).edge >= 0; }
+bool LfoPage::hasBackdrop() const { return showsEdges() || getBackdrop() != TriadSettings::Backdrop::off; }
 void LfoShapeHost::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot) { page.paintBackdrop (g, plot); }
 
 struct LfoPage::Backdrop
@@ -82,6 +162,65 @@ void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
 {
     if (backdrop == nullptr) backdrop = std::make_unique<Backdrop>();
     const auto colour = bandColour (band);
+    if (const auto m = edgeMap (processor, band, lfo); m.edge >= 0)
+    {
+        // Design: what passes (lit in the band's colour) and what is cut (darker) across the cycle, as the line moves
+        // the edges; then the spectrum, across or turned up the side.
+        processor.setTracedLfo (-1, -1);
+        const auto shape = processor.getLfoInfo (band, lfo).shape;
+        const bool hzScale = m.edge != D::openEdges;
+        const float bottomU = m.edge == D::moveEdges ? 0.5f * m.w() : 0.0f, topU = m.edge == D::moveEdges ? 1.0f - 0.5f * m.w() : 1.0f;
+        const auto yForU = [&] (float u) { return plot.getBottom() - plot.getHeight() * (u - bottomU) / juce::jmax (0.001f, topU - bottomU); };
+        juce::Path pass;
+        std::vector<juce::Point<float>> lows, highs;
+        for (float x = plot.getX(); x <= plot.getRight() + 0.5f; x += 3.0f)
+        {
+            const float v = triad::mod::evaluate (shape, (x - plot.getX()) / plot.getWidth());
+            const auto [lo, hi] = m.at (v);
+            if (hzScale) { lows.push_back ({ x, juce::jlimit (plot.getY(), plot.getBottom(), yForU (lo)) }); highs.push_back ({ x, juce::jlimit (plot.getY(), plot.getBottom(), yForU (hi)) }); }
+            else
+            {
+                // Widen / narrow: the grid's height is how open it is; what passes drawn round the grid's middle, as
+                // wide as the line is high (closed: nothing; open: all of it).
+                const float mid = plot.getCentreY(), half = 0.5f * plot.getHeight() * juce::jlimit (0.0f, 1.0f, v);
+                lows.push_back ({ x, mid + half });
+                highs.push_back ({ x, mid - half });
+            }
+        }
+        pass.startNewSubPath (highs.front());
+        for (auto& p : highs) pass.lineTo (p);
+        for (auto it = lows.rbegin(); it != lows.rend(); ++it) pass.lineTo (*it);
+        pass.closeSubPath();
+        g.setColour (juce::Colours::black.withAlpha (0.28f));   // cut
+        g.fillRect (plot);
+        g.setColour (colour.withAlpha (0.13f));                  // passes
+        g.fillPath (pass);
+        g.setColour (colour.withAlpha (0.55f));
+        juce::Path lowLine, highLine;
+        for (size_t i = 0; i < lows.size(); ++i)
+        {
+            if (i == 0) { lowLine.startNewSubPath (lows[i]); highLine.startNewSubPath (highs[i]); }
+            else { lowLine.lineTo (lows[i]); highLine.lineTo (highs[i]); }
+        }
+        const float dash[] { 3.0f, 3.0f };
+        juce::PathStrokeType stroke (1.0f);
+        juce::Path dashedLow, dashedHigh;
+        stroke.createDashedStroke (dashedLow, lowLine, dash, 2);
+        stroke.createDashedStroke (dashedHigh, highLine, dash, 2);
+        if (m.edge != D::lowEdge) g.fillPath (dashedHigh);
+        if (m.edge != D::highEdge) g.fillPath (dashedLow);
+        if (edgeSpectrum)
+        {
+            const auto heard = processor.heardCrossovers();
+            const float lowHz = band > 0 && band - 1 < (int) heard.size() ? heard[(size_t) band - 1] : 20.0f;
+            const float highHz = band < (int) heard.size() ? heard[(size_t) band] : 20000.0f;
+            if (edgeSpectrumSideways && hzScale)
+                backdrop->spectrum.paintSideways (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), lowHz, highHz, colour, bottomU, topU);
+            else
+                backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), lowHz, highHz, colour);
+        }
+        return;
+    }
     if (getBackdrop() == TriadSettings::Backdrop::waveform)
     {
         processor.setTracedLfo (band, lfo);
@@ -250,6 +389,21 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
     routeView.setScrollBarsShown (true, false);
     routeView.setScrollBarThickness (5);
     addAndMakeVisible (routeView);
+    spectrumButton.setClickingTogglesState (true);
+    spectrumButton.setToggleState (edgeSpectrum, juce::dontSendNotification);
+    spectrumButton.setTooltip ("The sound's spectrum behind the grid (on / off)");
+    spectrumButton.onClick = [this] { edgeSpectrum = spectrumButton.getToggleState(); shapes.getEditor().repaint(); };
+    rotateButton.setButtonText (juce::String::fromUTF8 ("\xe2\x86\xbb 90\xc2\xb0"));
+    rotateButton.setClickingTogglesState (true);
+    rotateButton.setToggleState (edgeSpectrumSideways, juce::dontSendNotification);
+    rotateButton.setTooltip ("Turn the spectrum 90 degrees: frequency up the side, as the grid's Hz scale (or across, as on the BANDS tab)");
+    rotateButton.onClick = [this] { edgeSpectrumSideways = rotateButton.getToggleState(); shapes.getEditor().repaint(); };
+    for (auto* b : { &spectrumButton, &rotateButton })
+    {
+        b->setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.85f));
+        b->setColour (juce::TextButton::textColourOnId, inkColour);
+        addChildComponent (*b);
+    }
     removeLfoButton.onClick = [this]
     {
         if (processor.removeLfo (band, lfo)) select (band, juce::jmax (0, lfo - 1));
@@ -388,7 +542,7 @@ void LfoPage::rebuild()
     {
         const auto info = processor.getLfoInfo (band, i);
         const auto top = info.name + (info.bandLfo ? u8 (" \xc2\xb7 BAND") : info.slot >= 0 ? u8 (" \xc2\xb7 SLOT ") + juce::String (info.slot + 1)
-                                      : info.edge >= 0 ? u8 (" \xc2\xb7 EDGES") : juce::String());
+                                      : info.edge >= 0 ? u8 (" \xc2\xb7 BAND RANGE") : juce::String());
         auto tab = std::make_unique<LfoTab> (top, info.target, info.active, bandColour (band));
         tab->setToggleState (i == lfo, juce::dontSendNotification);
         tab->onClick = [this, i] { select (band, i); };
@@ -404,6 +558,8 @@ void LfoPage::rebuild()
     }
     const auto info = processor.getLfoInfo (band, lfo);
     removeLfoButton.setVisible (! info.bandLfo && info.slot < 0);
+    spectrumButton.setVisible (info.edge >= 0);
+    rotateButton.setVisible (info.edge >= 0 && info.edge != TriadProcessor::Destination::openEdges);
     resized();
     repaint();
 }
@@ -482,6 +638,12 @@ void LfoPage::resized()
     for (auto& row : routeRows) { row->setBounds (0, y, width, cardHeight); y += cardHeight + cardGap; }
     routeHolder.setSize (width, juce::jmax (y, 1));
     removeLfoButton.setBounds (juce::Rectangle<int> (routingArea.getRight() - 96, routingArea.getY() + 10, 86, 22));
+    // Over the grid's top right corner (band-edge LFOs): SPECTRUM and turn it 90 degrees.
+    {
+        const auto grid = shapes.getBounds().withWidth (shapes.getWidth() - routingWidth - 8);
+        rotateButton.setBounds (grid.getRight() - 64, grid.getY() + 3, 52, 18);
+        spectrumButton.setBounds (rotateButton.getX() - 80, grid.getY() + 3, 76, 18);
+    }
 }
 void LfoPage::paint (juce::Graphics& g)
 {

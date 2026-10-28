@@ -33,6 +33,7 @@ struct ShapeHost
     // Triad Time's TIME: shaded below the corner-to-corner diagonal (where it reaches back before the cycle began), as
     // ShaperBox's Time view, instead of under the line.
     virtual bool shadeBelowDiagonal() const { return false; }
+    virtual bool fillsUnderLine() const { return true; }   // design: false for band-edge LFOs (their backdrop shows the band)
     // Triad Time's TIME: its own preset folders (pitch and chops, TimePresets.h) in the palette, first in the folder menu.
     virtual bool offersTimePresets() const { return false; }
     // The proportions ShaperBox draws its grid with (width / height of the plot, 1 bar across and 1 bar down).
@@ -41,6 +42,8 @@ struct ShapeHost
     // labels show: 0 never, 1 on the lines either side of a point being dragged, 2 on every line (that has room).
     virtual juce::String segmentLabel (const triad::mod::Point& from, const triad::mod::Point& to) const { juce::ignoreUnused (from, to); return {}; }
     virtual int segmentLabelMode() const { return 0; }
+    // A label over each point (design, band-edge LFOs: the frequency it takes the edge to, "1.23 kHz").
+    virtual juce::String pointLabel (const triad::mod::Point&) const { return {}; }
     virtual void setStatus (const juce::String&) {}
     // Behind the grid, drawn every frame (0.15.0): the sound coming in, as a waveform across the cycle or as a spectrum.
     // hasBackdrop: whether there is one now; paintBackdrop draws it in the grid's area (under the grid lines and the line).
@@ -64,6 +67,10 @@ class SpectrumBackdrop
 public:
     SpectrumBackdrop();
     void paint (juce::Graphics&, juce::Rectangle<float> plot, triad::SpectrumTap&, double sampleRate, float lowHz, float highHz, juce::Colour colour);
+    // Design: turned 90 degrees, frequency up the side (bottomU .. topU of 20 Hz .. 20 kHz in octaves, as the grid's Hz
+    // scale), the level reaching in from the left across `reach` of the width.
+    void paintSideways (juce::Graphics&, juce::Rectangle<float> plot, triad::SpectrumTap&, double sampleRate, float lowHz, float highHz,
+                        juce::Colour colour, float bottomU, float topU, float reach = 0.42f);
 private:
     static constexpr int fftSize = 4096;
     std::vector<float> samples, window, levels;

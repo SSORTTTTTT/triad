@@ -470,7 +470,8 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         }
     fill.lineTo (r.getRight(), r.getBottom());
     fill.closeSubPath();
-    if (host != nullptr && host->shadeBelowDiagonal())
+    if (host != nullptr && ! host->fillsUnderLine()) {}   // design: band-edge LFOs show what passes instead
+    else if (host != nullptr && host->shadeBelowDiagonal())
     {
         // ShaperBox's Time view: broad faint stripes in the triangle under the corner-to-corner diagonal (further back than
         // the cycle has played), its edge drawn faintly; nothing under the line itself.
@@ -504,6 +505,28 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         for (int i = 0; i + 1 < (int) shape.size(); ++i)
             if (drag != Drag::points || (i != dragIndex - 1 && i != dragIndex))
                 drawSegmentLabel (g, i, true);
+    // Over each point, what it stands for (design: band-edge LFOs, the frequency): above it, or under it at the top.
+    if (host != nullptr)
+    {
+        g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+        float lastRight = -1.0e9f;
+        for (size_t i = 0; i < shape.size(); ++i)
+        {
+            const auto text = host->pointLabel (shape[i]);
+            if (text.isEmpty() || (i > 0 && juce::exactlyEqual (shape[i].x, shape[i - 1].x) && juce::exactlyEqual (shape[i].y, shape[i - 1].y))) continue;
+            const auto p = toScreen (shape[i]);
+            const float w = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 8.0f;
+            const bool above = p.y - 22.0f >= r.getY();
+            auto box = juce::Rectangle<float> (w, 14.0f).withCentre (p.translated (0.0f, above ? -15.0f : 15.0f));
+            box = box.withX (juce::jlimit (r.getX(), r.getRight() - w, box.getX()));
+            if (box.getX() < lastRight + 2.0f) continue;   // no room next to the one before
+            lastRight = box.getRight();
+            g.setColour (gridBackground.withAlpha (0.85f));
+            g.fillRoundedRectangle (box, 3.5f);
+            g.setColour (textColour.withAlpha (0.92f));
+            g.drawText (text, box, juce::Justification::centred);
+        }
+    }
     // Curve handles and points.
     for (size_t i = 0; i + 1 < shape.size(); ++i)
     {
@@ -933,6 +956,53 @@ void SpectrumBackdrop::paint (juce::Graphics& g, juce::Rectangle<float> plot, tr
     g.setColour (colour.withAlpha (0.30f));
     g.fillPath (fill);
     g.setColour (colour.withAlpha (0.65f));
+    g.strokePath (line, juce::PathStrokeType (1.2f));
+}
+void SpectrumBackdrop::paintSideways (juce::Graphics& g, juce::Rectangle<float> plot, triad::SpectrumTap& tap, double sampleRate, float low, float high,
+                                      juce::Colour colour, float bottomU, float topU, float reach)
+{
+    tap.active.store (true);
+    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    const float decay = (float) (36.0 * juce::jlimit (0.0, 0.25, now - lastTime));
+    lastTime = now;
+    const auto w = tap.getWriteIndex();
+    if (w != lastWrite && tap.read (samples.data(), fftSize))
+    {
+        lastWrite = w;
+        for (size_t i = 0; i < (size_t) fftSize; ++i) bins[i] = { samples[i] * window[i], 0.0f };
+        triad::fft (bins);
+        for (size_t k = 1; k < levels.size(); ++k)
+        {
+            const auto db = 20.0f * std::log10 (std::abs (bins[k]) * 2.0f / windowSum + 1.0e-9f);
+            levels[k] = juce::jmax (db, levels[k] - decay);
+        }
+    }
+    else for (auto& l : levels) l -= decay;
+    const float binHz = (float) juce::jmax (8000.0, sampleRate) / (float) fftSize;
+    const auto uFor = [&] (float y) { return bottomU + (topU - bottomU) * (plot.getBottom() - y) / plot.getHeight(); };
+    const auto yFor = [&] (float hz) { return plot.getBottom() - plot.getHeight() * ((std::log (hz / 20.0f) / std::log (1000.0f)) - bottomU) / (topU - bottomU); };
+    const auto xFor = [&] (float db) { return plot.getX() + plot.getWidth() * reach * juce::jmap (juce::jlimit (-84.0f, 6.0f, db), -84.0f, 6.0f, 0.0f, 1.0f); };
+    juce::Path fill, line;
+    fill.startNewSubPath (plot.getX(), plot.getBottom());
+    for (float y = plot.getBottom(); y >= plot.getY() - 0.5f; y -= 2.0f)
+    {
+        const float hz0 = 20.0f * std::pow (1000.0f, uFor (y + 1.0f)), hz1 = 20.0f * std::pow (1000.0f, uFor (y - 1.0f));
+        float db = -200.0f;
+        for (auto k = (size_t) juce::jmax (1.0f, hz0 / binHz); k <= (size_t) juce::jmax (1.0f, hz1 / binHz) && k < levels.size(); ++k)
+            db = juce::jmax (db, levels[k] + 3.0f * std::log2 (juce::jmax (1.0f, (float) k * binHz) / 1000.0f));
+        const float x = xFor (db);
+        fill.lineTo (x, y);
+        if (line.isEmpty()) line.startNewSubPath (x, y); else line.lineTo (x, y);
+    }
+    fill.lineTo (plot.getX(), plot.getY());
+    fill.closeSubPath();
+    g.setColour (textColour.withAlpha (0.12f));
+    g.fillPath (fill);
+    juce::Graphics::ScopedSaveState state (g);
+    g.reduceClipRegion (juce::Rectangle<float> (plot.getX(), yFor (high), plot.getWidth(), yFor (low) - yFor (high)).toNearestInt());
+    g.setColour (colour.withAlpha (0.34f));
+    g.fillPath (fill);
+    g.setColour (colour.withAlpha (0.7f));
     g.strokePath (line, juce::PathStrokeType (1.2f));
 }
 }

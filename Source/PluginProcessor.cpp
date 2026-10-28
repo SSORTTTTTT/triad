@@ -958,7 +958,7 @@ float restingValue (int edge, float uL, float uH)
 }
 juce::String TriadProcessor::edgeName (int edge)
 {
-    return edge == Destination::lowEdge ? "Low edge" : edge == Destination::highEdge ? "High edge" : edge == Destination::moveEdges ? "Move the band" : "Open / close";
+    return edge == Destination::lowEdge ? "Low cut" : edge == Destination::highEdge ? "High cut" : edge == Destination::moveEdges ? "Sweep the band" : "Widen / narrow";
 }
 double TriadProcessor::predictPhase (const Band& band, const Lfo& l, int offset, int frame) const noexcept
 {
@@ -2375,10 +2375,15 @@ juce::String TriadProcessor::destinationName (const Band& b, const Destination& 
         for (int k = 0; k < getBandCount(); ++k) if (bands[(size_t) k].get() == &b) index = k;
         const auto cuts = effectiveCrossovers();
         if (d.slotId == Destination::lowEdge)
-            return index > 0 && index - 1 < (int) cuts.size() ? "Low edge " + triad::ui::formatHz (cuts[(size_t) index - 1]) : juce::String ("Low edge (none)");
+            return index > 0 && index - 1 < (int) cuts.size() ? "Low cut " + triad::ui::formatHz (cuts[(size_t) index - 1]) : juce::String ("Low cut (none)");
         if (d.slotId == Destination::highEdge)
-            return index >= 0 && index < (int) cuts.size() ? "High edge " + triad::ui::formatHz (cuts[(size_t) index]) : juce::String ("High edge (none)");
-        return d.slotId == Destination::moveEdges ? juce::String ("Move band") : juce::String ("Open / close");
+            return index >= 0 && index < (int) cuts.size() ? "High cut " + triad::ui::formatHz (cuts[(size_t) index]) : juce::String ("High cut (none)");
+        if (d.slotId == Destination::moveEdges && index >= 0)
+        {
+            const float lo = index > 0 ? cuts[(size_t) index - 1] : 20.0f, hi = index < (int) cuts.size() ? cuts[(size_t) index] : 20000.0f;
+            return "Sweep " + triad::ui::formatHz (lo) + juce::String::fromUTF8 ("\xe2\x80\x93") + triad::ui::formatHz (hi);
+        }
+        return d.slotId == Destination::moveEdges ? juce::String ("Sweep the band") : juce::String ("Widen / narrow");
     }
     const int index = b.slotIndex (d.slotId);
     if (index < 0) return "(removed slot)";

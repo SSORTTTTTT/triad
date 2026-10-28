@@ -322,7 +322,7 @@ void TriadLook::drawButtonText (juce::Graphics& g, juce::TextButton& b, bool ove
 // ---- Menus ----------------------------------------------------------------------------------------------
 namespace
 {
-const juce::juce_wchar swatchMark = 1, tagMark = 2, lfoMark = 3;
+const juce::juce_wchar swatchMark = 1, tagMark = 2, lfoMark = 3, filterMark = 4;
 bool isTitle (const juce::String& header) { return header.containsAnyOf ("abcdefghijklmnopqrstuvwxyz"); }
 juce::Font itemFont() { return juce::FontOptions (12.5f, juce::Font::bold); }
 juce::Font headerFont() { return juce::FontOptions (10.5f, juce::Font::bold).withKerningFactor (0.06f); }
@@ -358,6 +358,42 @@ juce::String menuSwatches (const juce::Array<juce::Colour>& colours)
     return s;
 }
 juce::String menuLfo (const juce::String& text) { return juce::String::charToString (lfoMark) + text; }
+juce::String menuFilter (char kind, const juce::String& text) { return juce::String::charToString (filterMark) + juce::String::charToString ((juce::juce_wchar) kind) + text; }
+void drawFilterIcon (juce::Graphics& g, juce::Rectangle<float> r, char kind, juce::Colour colour)
+{
+    // s: a band moving sideways; w: a band opening outwards; l: a low cut (high-pass); h: a high cut (low-pass).
+    const float x = r.getX(), y = r.getY(), w = r.getWidth(), h = r.getHeight() - 4.0f, base = y + h, top = y + 1.5f;
+    juce::Path curve;
+    if (kind == 'l') { curve.startNewSubPath (x, base); curve.cubicTo (x + w * 0.35f, base, x + w * 0.35f, top, x + w * 0.6f, top); curve.lineTo (x + w, top); }
+    else if (kind == 'h') { curve.startNewSubPath (x, top); curve.lineTo (x + w * 0.4f, top); curve.cubicTo (x + w * 0.65f, top, x + w * 0.65f, base, x + w, base); }
+    else
+    {
+        const float a = kind == 'w' ? 0.12f : 0.25f, b = kind == 'w' ? 0.88f : 0.75f;
+        curve.startNewSubPath (x, base);
+        curve.cubicTo (x + w * (a + 0.08f), base, x + w * a, top, x + w * (a + 0.14f), top);
+        curve.lineTo (x + w * (b - 0.14f), top);
+        curve.cubicTo (x + w * b, top, x + w * (b - 0.08f), base, x + w, base);
+    }
+    g.setColour (colour.withMultipliedAlpha (0.25f));
+    juce::Path fill (curve);
+    fill.lineTo (x + w, base); fill.lineTo (x, base); fill.closeSubPath();
+    g.fillPath (fill);
+    g.setColour (colour);
+    g.strokePath (curve, juce::PathStrokeType (1.5f));
+    // The arrows: which way it moves.
+    const float ay = y + r.getHeight() - 1.0f;
+    auto arrow = [&] (float from, float to)
+    {
+        g.drawLine (from, ay, to, ay, 1.2f);
+        const float d = to > from ? -3.0f : 3.0f;
+        juce::Path head; head.addTriangle (to, ay, to + d, ay - 2.2f, to + d, ay + 2.2f);
+        g.fillPath (head);
+    };
+    if (kind == 's') { arrow (x + w * 0.5f, x + w * 0.85f); arrow (x + w * 0.5f, x + w * 0.15f); }
+    else if (kind == 'w') { arrow (x + w * 0.42f, x + w * 0.05f); arrow (x + w * 0.58f, x + w * 0.95f); }
+    else if (kind == 'l') { arrow (x + w * 0.28f, x + w * 0.05f); arrow (x + w * 0.28f, x + w * 0.55f); }
+    else { arrow (x + w * 0.72f, x + w * 0.45f); arrow (x + w * 0.72f, x + w * 0.95f); }
+}
 juce::String menuTag (const juce::String& tag) { return juce::String::charToString (tagMark) + tag; }
 void addItemWithRight (juce::PopupMenu& menu, int id, const juce::String& name, const juce::String& right, bool enabled, bool ticked)
 {
@@ -487,6 +523,13 @@ void TriadLook::drawPopupMenuItemWithOptions (juce::Graphics& g, const juce::Rec
         text = text.substring (2);
         x += 19.0f;
     }
+    if (text[0] == filterMark)
+    {
+        // What the LFO does to the band, as a small filter picture (design, as Ableton's Auto Filter shows its shapes).
+        drawFilterIcon (g, { x, cy - 7.0f, 26.0f, 14.0f }, (char) text[1], ticked ? ink : m.header.withMultipliedAlpha (enabled ? 1.0f : 0.45f));
+        text = text.substring (2);
+        x += 33.0f;
+    }
     if (text[0] == lfoMark)
     {
         // The LFO's wave, as on a slot's ~ button (0.18.0: "~ Link to LFO").
@@ -563,6 +606,13 @@ void TriadLook::drawPopupMenuSectionHeaderWithOptions (juce::Graphics& g, const 
     }
     g.setColour (m.header);
     g.setFont (headerFont());
+    if (text[0] == lfoMark)
+    {
+        // A section about an LFO: its wave first.
+        IconButton::drawIcon (g, IconButton::Icon::lfo, { (float) area.getX() + 14.0f, (float) area.getCentreY() - 3.0f, 15.0f, 9.0f }, m.header);
+        g.drawFittedText (text.substring (1), area.getX() + 35, area.getY() + 5, area.getWidth() - 43, area.getHeight() - 7, juce::Justification::centredLeft, 1);
+        return;
+    }
     g.drawFittedText (text, area.getX() + 14, area.getY() + 5, area.getWidth() - 22, area.getHeight() - 7, juce::Justification::centredLeft, 1);
 }
 void TriadLook::getIdealPopupMenuItemSizeWithOptions (const juce::String& text, bool isSeparator, int, int& idealWidth, int& idealHeight,
@@ -585,6 +635,7 @@ void TriadLook::getIdealPopupMenuItemSizeWithOptions (const juce::String& text, 
     }
     if (name.startsWith (fullHeart()) || name.startsWith (emptyHeart())) { name = name.substring (2); extra += 19.0f; }
     if (name[0] == lfoMark) { name = name.substring (1); extra += 23.0f; }
+    if (name[0] == filterMark) { name = name.substring (2); extra += 33.0f; }
     idealWidth = juce::jmax (120, juce::roundToInt (16.0f + 17.0f + widthOf (itemFont(), name) + extra + 40.0f));
 }
 void TriadLook::getIdealPopupMenuSectionHeaderSizeWithOptions (const juce::String& text, int, int& idealWidth, int& idealHeight,

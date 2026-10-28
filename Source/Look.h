@@ -42,6 +42,8 @@ inline bool menusInsideWindow = false;
 juce::String menuSwatches (const juce::Array<juce::Colour>&);   // small squares: a theme's colours
 juce::String menuTag (const juce::String& tag);                  // a small framed tag: VST3, AU, TRIAD
 juce::String menuLfo (const juce::String& text);                 // an item with the LFO's wave in front ("~ Link to LFO")
+juce::String menuFilter (char kind, const juce::String& text);   // an item with a small filter picture: s, w, l, h
+void drawFilterIcon (juce::Graphics&, juce::Rectangle<float>, char kind, juce::Colour);
 // An item or a folder with a value or a count on its right ("Theme   Plum >", "DELAY   8 >").
 void addItemWithRight (juce::PopupMenu&, int id, const juce::String& name, const juce::String& right, bool enabled = true, bool ticked = false);
 void addSubMenu (juce::PopupMenu&, const juce::String& name, juce::PopupMenu, const juce::String& right = {}, bool enabled = true,

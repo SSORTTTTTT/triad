@@ -6,7 +6,7 @@ using namespace triad::ui;
 
 namespace
 {
-constexpr int rowHeight = 30, rowGap = 2, addHeight = 24, footerHeight = 92;
+constexpr int rowHeight = 30, rowGap = 2, addHeight = 24, footerHeight = 48;   // design: half the footer (was 92)
 }
 
 // ---- Slot row -------------------------------------------------------------------------------
@@ -462,14 +462,14 @@ void BandStrip::animate (float newLevel, double dt)
 }
 juce::Rectangle<int> BandStrip::meterArea() const
 {
-    // Under the volume slider, as long as its track.
+    // Right under the volume slider's track, thin.
     const int footerTop = getHeight() - footerHeight;
-    return { volume.getX() + 7, footerTop + 50, juce::jmax (10, volume.getWidth() - 14), 6 };
+    return { volume.getX() + 6, footerTop + 24, juce::jmax (10, volume.getWidth() - 12), 3 };
 }
 juce::Rectangle<int> BandStrip::peakTextArea() const
 {
-    const auto m = meterArea();
-    return { m.getRight() - 60, m.getBottom() + 6, 60, 16 };
+    const int footerTop = getHeight() - footerHeight;
+    return { volume.getRight() - 40, footerTop + 29, 40 + 44, 16 };
 }
 void BandStrip::resized()
 {
@@ -482,14 +482,17 @@ void BandStrip::resized()
     layoutRows();
     layoutRows();   // again, now that the viewport knows whether it needs a scroll bar
     const int footerTop = getHeight() - footerHeight;
-    mix.setBounds (w - 94, footerTop + 8, 84, 76);
-    volume.setBounds (10, footerTop + 26, w - 114, 18);
-    // MUTE and SOLO side by side (M and S in a narrow strip), the slot count after them.
-    const int buttonWidth = w < 250 ? 26 : 50;
+    // Two rows (design, half the height): VOL, its slider and dB, with the meter under the track; MUTE, SOLO, the
+    // slot count and the peak. BAND MIX in a small box on the right.
+    const bool narrow = w < 260;
+    const int mixWidth = narrow ? 64 : 78, volumeLeft = narrow ? 8 : 36;
+    mix.setBounds (w - mixWidth - 10, footerTop + 6, mixWidth, 38);
+    volume.setBounds (volumeLeft, footerTop + 6, juce::jmax (40, w - mixWidth - 10 - 6 - volumeLeft - 44), 18);
+    const int buttonWidth = w < 250 ? 22 : 40;
     muteButton.setButtonText (w < 250 ? "M" : "MUTE");
     soloButton.setButtonText (w < 250 ? "S" : "SOLO");
-    muteButton.setBounds (12, footerTop + 62, buttonWidth, 22);
-    soloButton.setBounds (muteButton.getRight() + 4, footerTop + 62, buttonWidth, 22);
+    muteButton.setBounds (12, footerTop + 29, buttonWidth, 16);
+    soloButton.setBounds (muteButton.getRight() + 3, footerTop + 29, buttonWidth, 16);
 }
 void BandStrip::lookAndFeelChanged()
 {
@@ -528,24 +531,25 @@ void BandStrip::paint (juce::Graphics& g)
         g.setColour (dimTextColour); g.setFont (juce::FontOptions (11.0f));
         g.drawFittedText (isPre() ? "Runs on the whole sound first: pitch correction, a de-esser, a gate..."
                                   : "Runs on the whole sound last: a limiter, glue compression, a final EQ...",
-                          left, footerTop + 8, getWidth() - 2 * left, 32, juce::Justification::topLeft, 2);
+                          left, footerTop + 6, getWidth() - 2 * left, 18, juce::Justification::centredLeft, 1, 0.8f);
         const int n = (int) rows.size();
-        g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), left, footerTop + 62, 80, 16, juce::Justification::centredLeft);
+        g.drawText (juce::String (n) + (n == 1 ? " slot" : " slots"), left, footerTop + 28, 80, 16, juce::Justification::centredLeft);
         if (chainLatency > 0)
         {
             const double ms = 1000.0 * chainLatency / juce::jmax (1.0, processor.getSampleRateForDisplay());
             g.setColour (ms >= 10.0 ? juce::Colour (0xffe8705c) : juce::Colour (0xffe8b35c));
             g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-            g.drawText (formatMs (ms) + " latency (adds to every band)", left, footerTop + 74, getWidth() - 2 * left, 14, juce::Justification::centredLeft);
+            g.drawText (formatMs (ms) + " latency (adds to every band)", left + 60, footerTop + 28, getWidth() - 2 * left - 60, 16, juce::Justification::centredLeft);
         }
         return;
     }
     // Volume: label and value, slider (a component), then the level meter.
-    g.setColour (dimTextColour); g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText ("VOLUME", left, footerTop + 8, 80, 16, juce::Justification::centredLeft);
+    juce::ignoreUnused (right);
+    g.setColour (dimTextColour); g.setFont (juce::FontOptions (9.5f, juce::Font::bold).withKerningFactor (0.04f));
+    if (getWidth() >= 260) g.drawText ("VOL", left, footerTop + 6, 26, 18, juce::Justification::centredLeft);
     const auto db = (float) volume.getValue();
-    g.setColour (textColour); g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
-    g.drawText ((db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB", right - 80, footerTop + 8, 80, 16, juce::Justification::centredRight);
+    g.setColour (textColour); g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+    g.drawText ((db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB", volume.getRight() + 2, footerTop + 6, 42, 18, juce::Justification::centredRight);
     const auto meter = meterArea().toFloat();
     g.setColour (gridBackground); g.fillRoundedRectangle (meter, 2.0f);
     auto position = [&meter] (float gain)
@@ -572,14 +576,15 @@ void BandStrip::paint (juce::Graphics& g)
     const auto count = juce::String (n) + (n == 1 ? " slot" : " slots");
     const float peakLeft = (float) peakTextArea().getRight() - juce::GlyphArrangement::getStringWidth (juce::FontOptions (10.0f), formatDb (peakHold)) - 6.0f;
     if ((float) info + juce::GlyphArrangement::getStringWidth (juce::FontOptions (10.0f), count) < peakLeft)
-        g.drawText (count, info, footerTop + 62, 80, 16, juce::Justification::centredLeft);
+        g.drawText (count, info, footerTop + 29, 80, 16, juce::Justification::centredLeft);
     if (chainLatency > 0)
     {
         // The band's latency (its effects added up); the slowest band sets Triad's total.
         const double ms = 1000.0 * chainLatency / juce::jmax (1.0, processor.getSampleRateForDisplay());
         g.setColour (ms >= 10.0 ? juce::Colour (0xffe8705c) : juce::Colour (0xffe8b35c));
         g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-        g.drawText (formatMs (ms) + " latency", info, footerTop + 74, 90, 14, juce::Justification::centredLeft);
+        const float after = (float) info + juce::GlyphArrangement::getStringWidth (juce::FontOptions (10.0f), count) + 8.0f;
+        g.drawText (formatMs (ms), juce::roundToInt (after), footerTop + 29, 60, 16, juce::Justification::centredLeft);   // after the count
     }
     // A muted, soloed or (another band soloed) silent band: its title says so.
     const auto state = muteButton.getToggleState() ? juce::String ("MUTED") : soloButton.getToggleState() ? juce::String ("SOLO")

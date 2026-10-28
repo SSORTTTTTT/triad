@@ -26,6 +26,11 @@ struct LfoShapeHost final : ShapeHost
     float getPhaseNow() const override { return processor.getLfoPhaseNow (band, lfo); }
     juce::Colour getColour() const override { return triad::ui::bandColour (band); }
     juce::String valueLabel (int percent) const override;   // Hz for an LFO on one band edge (0.18.0)
+    // Design (band-edge LFOs): the frequency at each point and how far each line moves it.
+    juce::String pointLabel (const triad::mod::Point&) const override;
+    juce::String segmentLabel (const triad::mod::Point& from, const triad::mod::Point& to) const override;
+    int segmentLabelMode() const override;
+    bool fillsUnderLine() const override;
     void setStatus (const juce::String& text) override { processor.setStatus (text); }
 };
 
@@ -81,8 +86,13 @@ public:
     // Behind the grid (0.15.0, the gear menu's LFO BACKGROUND): nothing, the sound coming in as a waveform across the
     // LFO's cycle (a new trace at each restart with TRIGGER: AUDIO), or the live spectrum with the band's range lit.
     TriadSettings::Backdrop getBackdrop() const;
-    bool hasBackdrop() const { return getBackdrop() != TriadSettings::Backdrop::off; }
+    bool hasBackdrop() const;
     void paintBackdrop (juce::Graphics&, juce::Rectangle<float> plot);
+    // Design: a band-edge LFO's grid shows what passes and what is cut (as Ableton's Auto Filter), and the spectrum
+    // can be on, across as usual or turned 90 degrees (frequency up the side, as the grid's Hz scale).
+    bool showsEdges() const;
+    bool edgeSpectrum = true, edgeSpectrumSideways = true;
+    juce::TextButton spectrumButton { "SPECTRUM" }, rotateButton;
     void visibilityChanged() override;
 
 private:
