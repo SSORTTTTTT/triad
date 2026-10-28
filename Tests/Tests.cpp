@@ -724,7 +724,7 @@ int main (int argc, char** argv)
 
         // ---- Per-slot mix (FL-style slot knobs) ----------------------------------------------
         for (int b = 0; b < 3; ++b) p.setSlotMix (b, 0, 50);
-        require (p.getParameters().size() == 2 * triad::maxCrossovers + 3 * triad::maxBands, "Slot mixes are not DAW parameters (band volumes, mutes and slopes are)");
+        require (p.getParameters().size() == 2 * triad::maxCrossovers + 4 * triad::maxBands, "Slot mixes are not DAW parameters (band volumes, mutes, solos and slopes are)");
         runAudioCase (p, 48000, { .625f, .625f, .625f }, 73, "50 percent slot mix");
         bandMix (p, 50);
         runAudioCase (p, 48000, { .8125f, .8125f, .8125f }, 73, "Slot mix and band mix together");
