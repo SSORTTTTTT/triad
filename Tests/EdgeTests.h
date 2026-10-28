@@ -268,6 +268,18 @@ inline void edgeTests (const juce::File& screenshots)
         editor->setTab (TriadEditor::Tab::bands);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
         themeTests::snapshot (screenshots, "Triad-edges-moving.png", *editor);
+        // The panel shows what is heard: a muted band, and every band but the soloed ones, lose their colour.
+        for (int b = 0; b < q.getBandCount(); ++b) { q.setBandSoloed (b, false); q.setBandMuted (b, false); }
+        require (host->isBandHeard (0) && host->isBandHeard (1) && host->isBandHeard (2), "Every band is heard to start with");
+        q.setBandMuted (0, true);
+        require (! host->isBandHeard (0) && host->isBandHeard (1), "A muted band is shown as not heard");
+        q.setBandSoloed (2, true);
+        require (! host->isBandHeard (0) && ! host->isBandHeard (1) && host->isBandHeard (2), "SOLO: only the soloed band is shown as heard");
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        themeTests::snapshot (screenshots, "Triad-solo-band3.png", *editor);
+        q.setBandSoloed (2, false);
+        q.setBandMuted (0, false);
+        require (host->isBandHeard (0) && host->isBandHeard (1) && host->isBandHeard (2), "...and all are heard again after");
     }
     std::cout << "Band edges: move (9 kHz through " << passDb << " dB, blocked " << stopDb << " dB), open / close (closed " << closedDb
               << " dB, open " << openDb << " dB), fast LFOs (peak " << peak << "), saved, menus: passed" << std::endl;

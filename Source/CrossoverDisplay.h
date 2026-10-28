@@ -34,6 +34,8 @@ struct CrossoverHost
     // Triad only (0.18.0): LFOs on the band edges. The range an LFO sweeps a divider across ({0, 0}: none), and the
     // LFO already linked to a band's edge (-1: none).
     virtual bool canLinkToLfo() const { return false; }
+    // Whether a band is heard (MUTE and SOLO): a band that is not loses its colour in the panel (0.18.0, Thomas).
+    virtual bool isBandHeard (int) const { return true; }
     virtual std::pair<float, float> crossoverSweep (int) const { return {}; }
     virtual int edgeLfo (int /*band*/, int /*edge*/) const { return -1; }
 };

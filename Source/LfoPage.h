@@ -31,6 +31,7 @@ struct LfoShapeHost final : ShapeHost
     juce::String segmentLabel (const triad::mod::Point& from, const triad::mod::Point& to) const override;
     int segmentLabelMode() const override;
     bool fillsUnderLine() const override;
+    std::vector<std::pair<float, juce::String>> valueMarks() const override;
     void setStatus (const juce::String& text) override { processor.setStatus (text); }
 };
 
@@ -89,10 +90,10 @@ public:
     bool hasBackdrop() const;
     void paintBackdrop (juce::Graphics&, juce::Rectangle<float> plot);
     // Design: a band-edge LFO's grid shows what passes and what is cut (as Ableton's Auto Filter), and the spectrum
-    // can be on, across as usual or turned 90 degrees (frequency up the side, as the grid's Hz scale).
+    // behind it can be switched on and off (SPECTRUM), lit where the band is.
     bool showsEdges() const;
-    bool edgeSpectrum = true, edgeSpectrumSideways = true;
-    juce::TextButton spectrumButton { "SPECTRUM" }, rotateButton;
+    bool edgeSpectrum = true;
+    juce::TextButton spectrumButton { "SPECTRUM" };
     void visibilityChanged() override;
 
 private:

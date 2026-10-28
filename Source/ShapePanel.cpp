@@ -446,9 +446,44 @@ void ShapeEditor::paintLayer (juce::Graphics& g)
         for (int q = 1; q < 4; ++q)
             g.drawText (juce::String (q) + "/4", juce::Rectangle<float> (r.getX() + r.getWidth() * (float) q / 4.0f - 20.0f, 2.0f, 40.0f, 16.0f),
                         juce::Justification::centred);
-        for (int v : { 100, 75, 50, 25, 0 })
-            g.drawText (host != nullptr ? host->valueLabel (v) : juce::String (v) + "%", juce::Rectangle<float> (0.0f, r.getBottom() - r.getHeight() * (float) v / 100.0f - 8.0f, r.getX() - 11.0f, 16.0f),
-                        juce::Justification::centredRight);
+        const auto marks = host != nullptr ? host->valueMarks() : std::vector<std::pair<float, juce::String>>();
+        if (! marks.empty())
+        {
+            // A frequency scale (band-edge LFOs): labelled marks with a faint line across, small ticks between them, and
+            // beside it a bar over the range the line covers, the labels inside it lit.
+            float low = 1.0f, high = 0.0f;
+            for (int i = 0; i <= 128; ++i)
+            {
+                const float y = mod::evaluate (shape, (float) i / 128.0f);
+                low = juce::jmin (low, y); high = juce::jmax (high, y);
+            }
+            for (const auto& point : shape) { low = juce::jmin (low, point.y); high = juce::jmax (high, point.y); }
+            const float barTop = r.getBottom() - r.getHeight() * high, barBottom = r.getBottom() - r.getHeight() * low;
+            g.setColour (colour.withAlpha (0.85f));
+            g.fillRoundedRectangle (juce::Rectangle<float> (r.getX() - 7.0f, barTop - 1.0f, 3.0f, juce::jmax (2.0f, barBottom - barTop + 2.0f)), 1.5f);
+            for (const auto& [v, text] : marks)
+            {
+                const float y = r.getBottom() - r.getHeight() * v;
+                if (text.isEmpty())
+                {
+                    g.setColour (currentPalette.gridLines.withAlpha (0.35f));
+                    g.drawHorizontalLine (juce::roundToInt (y), r.getX() - 3.0f, r.getX() + 3.0f);
+                    continue;
+                }
+                g.setColour (currentPalette.gridLines.withAlpha (0.08f));
+                g.drawHorizontalLine (juce::roundToInt (y), r.getX() - 3.0f, r.getRight());
+                const bool inside = y >= barTop - 0.5f && y <= barBottom + 0.5f;
+                g.setColour (inside ? textColour.withAlpha (0.95f) : dimTextColour);
+                g.setFont (juce::FontOptions (10.0f, inside ? juce::Font::bold : juce::Font::plain));
+                g.drawText (text, juce::Rectangle<float> (0.0f, y - 8.0f, r.getX() - 11.0f, 16.0f), juce::Justification::centredRight);
+            }
+            g.setFont (juce::FontOptions (10.0f));
+            g.setColour (dimTextColour);
+        }
+        else
+            for (int v : { 100, 75, 50, 25, 0 })
+                g.drawText (host != nullptr ? host->valueLabel (v) : juce::String (v) + "%", juce::Rectangle<float> (0.0f, r.getBottom() - r.getHeight() * (float) v / 100.0f - 8.0f, r.getX() - 11.0f, 16.0f),
+                            juce::Justification::centredRight);
     }
     // The shape: hatched fill under a solid line (Triad Time's TIME: the triangle below the diagonal, as ShaperBox).
     juce::Path line, fill;
@@ -956,53 +991,6 @@ void SpectrumBackdrop::paint (juce::Graphics& g, juce::Rectangle<float> plot, tr
     g.setColour (colour.withAlpha (0.30f));
     g.fillPath (fill);
     g.setColour (colour.withAlpha (0.65f));
-    g.strokePath (line, juce::PathStrokeType (1.2f));
-}
-void SpectrumBackdrop::paintSideways (juce::Graphics& g, juce::Rectangle<float> plot, triad::SpectrumTap& tap, double sampleRate, float low, float high,
-                                      juce::Colour colour, float bottomU, float topU, float reach)
-{
-    tap.active.store (true);
-    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
-    const float decay = (float) (36.0 * juce::jlimit (0.0, 0.25, now - lastTime));
-    lastTime = now;
-    const auto w = tap.getWriteIndex();
-    if (w != lastWrite && tap.read (samples.data(), fftSize))
-    {
-        lastWrite = w;
-        for (size_t i = 0; i < (size_t) fftSize; ++i) bins[i] = { samples[i] * window[i], 0.0f };
-        triad::fft (bins);
-        for (size_t k = 1; k < levels.size(); ++k)
-        {
-            const auto db = 20.0f * std::log10 (std::abs (bins[k]) * 2.0f / windowSum + 1.0e-9f);
-            levels[k] = juce::jmax (db, levels[k] - decay);
-        }
-    }
-    else for (auto& l : levels) l -= decay;
-    const float binHz = (float) juce::jmax (8000.0, sampleRate) / (float) fftSize;
-    const auto uFor = [&] (float y) { return bottomU + (topU - bottomU) * (plot.getBottom() - y) / plot.getHeight(); };
-    const auto yFor = [&] (float hz) { return plot.getBottom() - plot.getHeight() * ((std::log (hz / 20.0f) / std::log (1000.0f)) - bottomU) / (topU - bottomU); };
-    const auto xFor = [&] (float db) { return plot.getX() + plot.getWidth() * reach * juce::jmap (juce::jlimit (-84.0f, 6.0f, db), -84.0f, 6.0f, 0.0f, 1.0f); };
-    juce::Path fill, line;
-    fill.startNewSubPath (plot.getX(), plot.getBottom());
-    for (float y = plot.getBottom(); y >= plot.getY() - 0.5f; y -= 2.0f)
-    {
-        const float hz0 = 20.0f * std::pow (1000.0f, uFor (y + 1.0f)), hz1 = 20.0f * std::pow (1000.0f, uFor (y - 1.0f));
-        float db = -200.0f;
-        for (auto k = (size_t) juce::jmax (1.0f, hz0 / binHz); k <= (size_t) juce::jmax (1.0f, hz1 / binHz) && k < levels.size(); ++k)
-            db = juce::jmax (db, levels[k] + 3.0f * std::log2 (juce::jmax (1.0f, (float) k * binHz) / 1000.0f));
-        const float x = xFor (db);
-        fill.lineTo (x, y);
-        if (line.isEmpty()) line.startNewSubPath (x, y); else line.lineTo (x, y);
-    }
-    fill.lineTo (plot.getX(), plot.getY());
-    fill.closeSubPath();
-    g.setColour (textColour.withAlpha (0.12f));
-    g.fillPath (fill);
-    juce::Graphics::ScopedSaveState state (g);
-    g.reduceClipRegion (juce::Rectangle<float> (plot.getX(), yFor (high), plot.getWidth(), yFor (low) - yFor (high)).toNearestInt());
-    g.setColour (colour.withAlpha (0.34f));
-    g.fillPath (fill);
-    g.setColour (colour.withAlpha (0.7f));
     g.strokePath (line, juce::PathStrokeType (1.2f));
 }
 }

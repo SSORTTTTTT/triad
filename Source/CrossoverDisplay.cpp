@@ -318,6 +318,13 @@ void CrossoverDisplay::paintBandCurves (juce::Graphics& g)
     {
         const bool joined = activeSlope >= 0 && (b == activeSlope || b == activeSlope + 1);
         const bool dimmed = activeSlope >= 0 && ! joined;
+        if (! host.isBandHeard (b))
+        {
+            // Not heard (muted, or another band soloed): its colour drops out, a faint grey outline stays.
+            g.setColour (currentPalette.gridLines.withAlpha (0.10f));
+            g.strokePath (curveLines[(size_t) b], juce::PathStrokeType (1.0f, juce::PathStrokeType::curved));
+            continue;
+        }
         g.setColour (bandColour (b).withAlpha (joined ? 0.3f : dimmed ? 0.07f : 0.17f));
         g.fillPath (curveFills[(size_t) b]);
     }
@@ -561,6 +568,7 @@ void CrossoverDisplay::refreshIfChanged()
     for (auto c : host.effectiveCrossovers()) key.push_back (c);
     for (int j = 0; j + 1 < host.getBandCount(); ++j) key.push_back ((float) host.getCrossoverSlope (j));
     for (int j = 0; j + 1 < host.getBandCount(); ++j) { const auto r = host.crossoverSweep (j); key.push_back (r.first); key.push_back (r.second); }
+    for (int b = 0; b < host.getBandCount(); ++b) key.push_back (host.isBandHeard (b) ? 1.0f : 0.0f);
     if (key == refreshKey) return;
     refreshKey = key;
     refresh();
@@ -718,8 +726,9 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
     paintBandCurves (g);
     for (int i = 0; i < count && i + 1 < (int) xs.size(); ++i)
     {
-        const auto colour = bandColour (i);
-        g.setColour (colour.withAlpha (0.8f));
+        const bool heard = host.isBandHeard (i);
+        const auto colour = heard ? bandColour (i) : currentPalette.faintText.withAlpha (0.6f);
+        g.setColour (colour.withAlpha (heard ? 0.8f : 0.5f));
         g.fillRect (xs[(size_t) i], plot.getBottom() - 2.0f, xs[(size_t) i + 1] - xs[(size_t) i], 3.0f);
         const auto width = xs[(size_t) i + 1] - xs[(size_t) i];
         if (width > 26.0f)
@@ -800,6 +809,7 @@ void CrossoverDisplay::paint (juce::Graphics& g)
     key.insert (key.end(), cuts.begin(), cuts.end());
     for (int j = 0; j + 1 < host.getBandCount(); ++j) key.push_back ((float) host.getCrossoverSlope (j));
     for (const auto& r : sweeps) { key.push_back (r.first); key.push_back (r.second); }
+    for (int b = 0; b < host.getBandCount(); ++b) key.push_back (host.isBandHeard (b) ? 1.0f : 0.0f);
     if (key != staticKey || ! staticLayer.isValid())
     {
         staticKey = key;
@@ -813,11 +823,34 @@ void CrossoverDisplay::paint (juce::Graphics& g)
     drawPixelExact (g, staticLayer, scale);
     if (spectrumVisible)
     {
-        g.setGradientFill (juce::ColourGradient (currentPalette.spectrum.withAlpha (0.19f), 0.0f, plot.getY() + 26.0f,
-                                                 currentPalette.spectrum.withAlpha (0.024f), 0.0f, plot.getBottom(), false));
-        g.fillPath (spectrumFill);
-        g.setColour (currentPalette.spectrum.withAlpha (0.72f));
-        g.strokePath (spectrumLine, juce::PathStrokeType (1.3f));
+        // While a band is muted or another soloed, each band's stretch of the spectrum is drawn in its own colour when
+        // it is heard and in grey when it is not; otherwise the spectrum is drawn as one.
+        const int count = host.getBandCount();
+        bool anySilent = false;
+        for (int b = 0; b < count; ++b) anySilent = anySilent || ! host.isBandHeard (b);
+        const auto drawSpectrum = [&] (juce::Colour colour, float strength)
+        {
+            g.setGradientFill (juce::ColourGradient (colour.withAlpha (0.19f * strength), 0.0f, plot.getY() + 26.0f,
+                                                     colour.withAlpha (0.024f * strength), 0.0f, plot.getBottom(), false));
+            g.fillPath (spectrumFill);
+            g.setColour (colour.withAlpha (juce::jmin (1.0f, 0.72f * strength)));
+            g.strokePath (spectrumLine, juce::PathStrokeType (1.3f));
+        };
+        if (! anySilent)
+            drawSpectrum (currentPalette.spectrum, 1.0f);
+        else
+        {
+            std::vector<float> edges { plot.getX() };
+            for (auto c : cuts) edges.push_back (xForFrequency (c));
+            edges.push_back (plot.getRight() + 1.0f);
+            for (int b = 0; b < count && b + 1 < (int) edges.size(); ++b)
+            {
+                const bool heard = host.isBandHeard (b);
+                juce::Graphics::ScopedSaveState state (g);
+                g.reduceClipRegion (juce::Rectangle<float> (edges[(size_t) b], plot.getY(), edges[(size_t) b + 1] - edges[(size_t) b], plot.getHeight() + 2.0f).toNearestInt());
+                drawSpectrum (heard ? bandColour (b).brighter (0.2f) : currentPalette.faintText, heard ? 1.8f : 0.45f);
+            }
+        }
     }
     const auto pills = pillRects();
     for (size_t i = 0; i < cuts.size() && i < pills.size(); ++i)

@@ -6,8 +6,8 @@ using namespace triad::ui;
 namespace
 {
 constexpr int margin = 24, headerHeight = 52, stripGap = 10, minStripWidth = 196, maxStripWidth = 420;
-// Design: the frequency panel taller by what the band footers gave up (TRIAD_DISPLAY_HEIGHT overrides, for mock-ups).
-const int displayHeight = juce::SystemStats::getEnvironmentVariable ("TRIAD_DISPLAY_HEIGHT", "254").getIntValue();
+// 0.18.0 (Thomas): the frequency panel 1.5 times as tall (was 210); the band footers take half the room they did.
+constexpr int displayHeight = 315;
 enum MenuIds { scanningId = 1000001, noneId, browseId, refreshId, rescanId, emptySlotId, searchId };
 juce::Array<juce::File> filesIn (const juce::File& folder, const juce::String& pattern)
 {
@@ -45,6 +45,10 @@ public:
     bool canPasteBandState() const override { return TriadProcessor::hasCopiedBand(); }
     juce::String pasteBandDescription() const override { return TriadProcessor::copiedBandDescription(); }
     bool canLinkToLfo() const override { return true; }
+    bool isBandHeard (int band) const override
+    {
+        return ! processor.isBandMuted (band) && (! processor.isAnyBandSoloed() || processor.isBandSoloed (band));
+    }
     std::pair<float, float> crossoverSweep (int index) const override { return processor.crossoverSweep (index); }
     int edgeLfo (int band, int edge) const override { return processor.findEdgeLfo (band, edge); }
 private:

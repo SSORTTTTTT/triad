@@ -26,6 +26,9 @@ struct ShapeHost
     virtual float getPhaseNow() const { return getPhase(); }   // the same, carried on to this very moment (smooth motion)
     virtual juce::Colour getColour() const = 0;
     virtual juce::String valueLabel (int percent) const { return juce::String (percent) + "%"; }   // the scale on the left
+    // Instead of 0..100% on the left: labels at heights 0..1 (0.18.0, band-edge LFOs: 20, 50, 100 ... 20k Hz), each
+    // with a faint line across.
+    virtual std::vector<std::pair<float, juce::String>> valueMarks() const { return {}; }
     // Triad Time's grid, laid out as ShaperBox's: 4 x 4 big squares; across, every quarter divided in 4 (bright lines) and
     // those in 4 again (faint: 64 columns at GRID 1/64 for a 1-bar pattern); down, every quarter in 4 (16 rows), and
     // points snap to all of them. Triad's LFOs keep their own grid (false).
@@ -67,10 +70,6 @@ class SpectrumBackdrop
 public:
     SpectrumBackdrop();
     void paint (juce::Graphics&, juce::Rectangle<float> plot, triad::SpectrumTap&, double sampleRate, float lowHz, float highHz, juce::Colour colour);
-    // Design: turned 90 degrees, frequency up the side (bottomU .. topU of 20 Hz .. 20 kHz in octaves, as the grid's Hz
-    // scale), the level reaching in from the left across `reach` of the width.
-    void paintSideways (juce::Graphics&, juce::Rectangle<float> plot, triad::SpectrumTap&, double sampleRate, float lowHz, float highHz,
-                        juce::Colour colour, float bottomU, float topU, float reach = 0.42f);
 private:
     static constexpr int fftSize = 4096;
     std::vector<float> samples, window, levels;
