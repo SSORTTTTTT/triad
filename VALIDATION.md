@@ -1,5 +1,23 @@
 # Validation — Triad
 
+## Triad v17 (0.18.0), Triad Time and Triad Split on macOS — 2026-10-28
+
+Commit `e23d57f`, run 40767244479 (macos-15 runner, virtual Apple M1). New in 0.18.0: SOLO on every band, LFOs on the
+band edges (sweep the band, widen / narrow, low cut, high cut) with the Auto Filter style LFO tab, the Hz scale with
+the covered range, BAND NOW in the routing card, mute / solo shown in the panel's colours (style C), compact band
+footers and a 1.5 times taller frequency panel with a range lane.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v17-0.18.0`, `Triad-Time-0.18.0`, `Triad-Split-0.18.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (over simulated older Triad installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| SOLO | Band 2 soloed = bands 1 and 3 muted (difference 0); saved; follows moved bands; the panel shows only heard bands lit |
+| Band edges | A 9 kHz tone through a band moved up to it: -0.022 dB, blocked -48.6 dB when moved away; closed -33.7 dB, open -0.0002 dB; fast LFOs on every edge stay bounded (peak 0.39); saved; menus; a divider shows an LFO only when it moves it; BAND NOW shows for band-edge LFOs only |
+| Stress | 3,000 random edits while audio plays (64 of them band-edge LFO edits): PASS; real plug-ins (57), five random sequences: PASS, no crashes, no NaN/Inf output, all checks held |
+
+GitHub had no Apple Silicon runner free from 7:47 to 13:53 (Pacific): 15 runs were cancelled before they started
+("not acquired by Runner of type hosted"); the workflow can now be started on macos-26 as well. The first run of this
+release (`a86e9eb`) was cancelled for the divider fix.
+
 ## Triad v16 (0.17.0), Triad Time and Triad Split on macOS — 2026-10-27
 
 Commit `8f8f555`, run 40467466418 (macos-15 runner, virtual Apple M1). New in 0.17.0: Triad Time's new layout (PATTERN

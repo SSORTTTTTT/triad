@@ -4,7 +4,7 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.18.0 ("Triad v17"): SOLO, and LFOs on the band edges (Triad as a filter)
+## Current testing version — 0.18.0 ("Triad v17", delivered 2026-10-28): SOLO, and LFOs on the band edges (Triad as a filter)
 
 0.18.0 (2026-10-28), Thomas: "for each band ... add a [solo] button right where ... it says mute and then there's one
 slot ... is there a way ... we could even automate the band's filter, like cutoff point ... tie it to the LFO ... the high
