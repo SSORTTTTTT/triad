@@ -55,6 +55,45 @@ int main (int argc, char** argv)
     editor->setVisible (true);
     if (juce::SystemStats::getEnvironmentVariable ("TRIAD_GHOST_OFF", "0") == "1") CrossoverDisplay::ghostMovement = false;
     pump (300);
+    // The LFO tab (TRIAD_SCENE=lfo-cut: band 2's high cut opening from 500 Hz to 12 kHz and back, frames for a GIF;
+    // lfo-widen: band 2 widening and narrowing, one picture).
+    const auto scene = juce::SystemStats::getEnvironmentVariable ("TRIAD_SCENE", "bands");
+    if (scene.startsWith ("lfo"))
+    {
+        const bool widen = scene == "lfo-widen";
+        const int lfo = p.linkEdgesToLfo (1, widen ? D::openEdges : D::highEdge);
+        if (widen) p.setLfoShape (1, lfo, mod::Shape { { 0.0f, 0.15f, 0.0f }, { 0.5f, 0.85f, 3.0f }, { 1.0f, 0.15f, 0.0f } }, false);
+        else p.setLfoShape (1, lfo, mod::Shape { { 0.0f, 0.466f, 0.0f }, { 0.5f, 0.926f, 2.5f }, { 1.0f, 0.466f, -2.5f } }, false);
+        editor->setTab (TriadEditor::Tab::lfo);
+        auto& page = editor->getLfoPage();
+        page.select (1, lfo);
+        pump (300);
+        editor->createComponentSnapshot (editor->getLocalBounds());
+        const auto area = juce::Rectangle<int> (16, 92, 968, 296);
+        double clock = 1000.0;
+        const auto shot = [&] (const juce::File& file, float scale)
+        {
+            page.getEditor().frame (clock += 0.05);
+            pump (20);
+            juce::FileOutputStream stream (file);
+            juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (area, true, scale), stream);
+        };
+        if (widen || frames <= 0)
+        {
+            play (p, 70);
+            shot (folder.getChildFile (scene + ".png"), 2.0f);
+            std::cout << "wrote " << scene << std::endl;
+            return 0;
+        }
+        play (p, 20);
+        for (int f = 0; f < frames; ++f)
+        {
+            play (p, juce::jmax (1, 188 / frames));
+            shot (folder.getChildFile ("frame-" + juce::String (f).paddedLeft ('0', 3) + ".png"), 1.0f);
+        }
+        std::cout << "wrote " << frames << " frames" << std::endl;
+        return 0;
+    }
     // Band 3 (the top band): its low cut opens down and closes again, a filter sweep on the high end.
     const int cut = p.linkEdgesToLfo (2, D::lowEdge);
     p.setLfoShape (2, cut, mod::Shape { { 0.0f, 0.86f, 0.0f }, { 0.5f, 0.42f, 2.5f }, { 1.0f, 0.86f, -2.5f } }, false);

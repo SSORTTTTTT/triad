@@ -279,13 +279,13 @@ int CrossoverDisplay::lfoBandOf (int j) const
     const bool fromBelow = host.edgeLfo (j, 1) >= 0 || host.edgeLfo (j, 2) >= 0 || host.edgeLfo (j, 3) >= 0;
     return fromBelow ? j : j + 1;
 }
-juce::Path CrossoverDisplay::bandResponse (int b, const std::vector<float>& at, bool fill, bool floor) const
+juce::Path CrossoverDisplay::bandResponse (int b, const std::vector<float>& at, bool fill, bool floor, float height) const
 {
-    // As paintBandCurves draws a band, at the crossovers `at`.
+    // As paintBandCurves draws a band, at the crossovers `at` (height < 1: a smaller one, from the floor up).
     const auto plot = plotBounds();
     const int count = host.getBandCount();
     const double sr = host.getSampleRateForDisplay();
-    const float top = plot.getY() + 30.0f, bottom = plot.getBottom() - 3.0f;
+    const float bottom = plot.getBottom() - 3.0f, top = bottom - (bottom - (plot.getY() + 30.0f)) * height;
     constexpr float rangeDb = 30.0f;
     juce::Path p;
     bool started = false;
@@ -315,15 +315,18 @@ void CrossoverDisplay::paintGhost (juce::Graphics& g, const std::vector<float>& 
     if (moving.empty()) return;
     const float dash[] { 4.0f, 4.0f };
     juce::ignoreUnused (dash);
+    // Thomas: the band as set stays as it is; the ghost is the quiet one, smaller, more see-through, its slopes dotted.
+    static const float size = juce::SystemStats::getEnvironmentVariable ("TRIAD_GHOST_SIZE", "0.62").getFloatValue();
     for (int b : moving)
     {
-        // A see-through copy of the band where it is right now (as BAND NOW in the LFO tab: solid now, dashed where
-        // it is set).
         const auto colour = bandColour (b);
-        g.setColour (colour.withAlpha (0.2f));
-        g.fillPath (bandResponse (b, heard, true, true));
-        g.setColour (colour.withAlpha (0.9f));
-        g.strokePath (bandResponse (b, heard, false, false), juce::PathStrokeType (1.5f));
+        g.setColour (colour.withAlpha (0.1f));
+        g.fillPath (bandResponse (b, heard, true, true, size));
+        juce::Path dots;
+        const float dotted[] { 0.01f, 4.5f };
+        juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded).createDashedStroke (dots, bandResponse (b, heard, false, false, size), dotted, 2);
+        g.setColour (colour.withAlpha (0.85f));
+        g.fillPath (dots);
     }
     // On the lane under the spectrum: a dot where each moved divider is right now.
     {
@@ -399,21 +402,6 @@ void CrossoverDisplay::paintBandCurves (juce::Graphics& g)
             // Not heard (muted, or another band soloed): its colour drops out, a faint grey outline stays.
             g.setColour (currentPalette.gridLines.withAlpha (0.10f));
             g.strokePath (curveLines[(size_t) b], juce::PathStrokeType (1.0f, juce::PathStrokeType::curved));
-            continue;
-        }
-        bool ghosted = false;
-        if (ghostStyle() > 0 && ghostMovement)
-            for (int j = 0; j < (int) cuts.size(); ++j) ghosted = ghosted || lfoBandOf (j) == b;
-        if (ghosted)
-        {
-            // Design: where the band is set (its LFO moves it; the ghost shows where it is now).
-            g.setColour (bandColour (b).withAlpha (0.06f));
-            g.fillPath (curveFills[(size_t) b]);
-            juce::Path dashed;
-            const float dash[] { 4.0f, 4.0f };
-            juce::PathStrokeType (1.1f).createDashedStroke (dashed, curveLines[(size_t) b], dash, 2);
-            g.setColour (bandColour (b).withAlpha (0.45f));
-            g.fillPath (dashed);
             continue;
         }
         g.setColour (bandColour (b).withAlpha (joined ? 0.3f : dimmed ? 0.07f : 0.17f));

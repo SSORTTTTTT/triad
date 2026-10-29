@@ -154,7 +154,7 @@ private:
     float constrainValue (int, float) const;
     void paintStaticLayer (juce::Graphics&);
     void paintGhost (juce::Graphics&, const std::vector<float>& heard);   // the dividers as heard, behind the controls
-    juce::Path bandResponse (int band, const std::vector<float>& at, bool fill, bool floor) const;
+    juce::Path bandResponse (int band, const std::vector<float>& at, bool fill, bool floor, float height = 1.0f) const;
     int lfoBandOf (int divider) const;   // the band whose LFO moves a divider (-1: none)
     juce::Rectangle<float> readoutBoundsFor (int index, const std::vector<juce::Rectangle<float>>& taken) const;
     std::vector<juce::Rectangle<float>> pillRects() const;
