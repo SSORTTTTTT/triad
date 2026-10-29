@@ -1,4 +1,6 @@
 #include "LfoPage.h"
+#include "CrossoverDisplay.h"
+#include <set>
 
 using namespace triad::ui;
 namespace mod = triad::mod;
@@ -14,7 +16,24 @@ public:
     {
         setRadioGroupId (4711);
         setClickingTogglesState (false);
-        setTooltip (line1 + ": " + line2 + (active ? " (on)" : " (off until you draw on it)"));
+        setTooltip (line1 + ": " + line2 + (active ? " (on)" : " (off)") + ". Click the light: on / off. Right-click: more.");
+    }
+    // 0.20.0 (Thomas): the light switches the LFO on and off; right-click for its menu.
+    std::function<void()> onLight, onMenu;
+    juce::Rectangle<float> lightArea() const { return { (float) getWidth() - 26.0f, 0.0f, 26.0f, 22.0f }; }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        handled = e.mods.isPopupMenu() || lightArea().contains (e.position);
+        if (! handled) { Button::mouseDown (e); return; }
+        // Later (either may rebuild the tabs, this one too).
+        auto call = e.mods.isPopupMenu() ? onMenu : onLight;
+        if (call) juce::MessageManager::callAsync (call);
+    }
+    void mouseDrag (const juce::MouseEvent& e) override { if (! handled) Button::mouseDrag (e); }
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (handled) { handled = false; return; }
+        Button::mouseUp (e);
     }
     void paintButton (juce::Graphics& g, bool over, bool) override
     {
@@ -37,6 +56,7 @@ private:
     juce::String line1, line2;
     bool active;
     juce::Colour colour;
+    bool handled = false;
 };
 
 }
@@ -305,6 +325,9 @@ void LfoPage::visibilityChanged()
 }
 void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
 {
+    // The band's slopes (0.20.0): the lit range fades as they do.
+    const int lowOrder = ! TriadProcessor::isExtraChain (band) && band > 0 ? processor.getCrossoverSlope (band - 1) : 0;
+    const int highOrder = ! TriadProcessor::isExtraChain (band) && band < processor.getBandCount() - 1 ? processor.getCrossoverSlope (band) : 0;
     if (backdrop == nullptr) backdrop = std::make_unique<Backdrop>();
     const auto colour = bandColour (band);
     if (const auto m = edgeMap (processor, band, lfo); m.edge >= 0)
@@ -368,10 +391,10 @@ void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
                 g.reduceClipRegion (plot.toNearestInt());
                 const float w = plot.getWidth() / juce::jmax (0.01f, m.w());
                 backdrop->spectrum.paint (g, { plot.getX() - w * m.uL, plot.getY(), w, plot.getHeight() }, processor.getSpectrumTap(),
-                                          processor.getSampleRateForDisplay(), lowHz, highHz, colour);
+                                          processor.getSampleRateForDisplay(), lowHz, highHz, colour, lowOrder, highOrder);
             }
             else
-                backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), lowHz, highHz, colour);
+                backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), lowHz, highHz, colour, lowOrder, highOrder);
         }
         if (m.locked)
         {
@@ -404,7 +427,7 @@ void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
         if (band > 0 && band - 1 < (int) cuts.size()) low = cuts[(size_t) band - 1];
         if (band < (int) cuts.size()) high = cuts[(size_t) band];
     }
-    backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), low, high, colour);
+    backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), low, high, colour, lowOrder, highOrder);
 }
 
 // TRIGGER: SONG / AUDIO for the band's LFOs. With AUDIO: a level meter, the threshold on it, and a light that flashes
@@ -562,6 +585,9 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
     spectrumButton.setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.85f));
     spectrumButton.setColour (juce::TextButton::textColourOnId, inkColour);
     addChildComponent (spectrumButton);
+    slopeButton.setTooltip ("How soft the edges this LFO moves are: 6 dB/oct blends the bands, 96 dB/oct is a hard wall (the slope of those dividers, as on the BANDS tab)");
+    slopeButton.onClick = [this] { showSlopeMenu(); };
+    addChildComponent (slopeButton);
     edgeNow = std::make_unique<EdgeNow> (processor);
     addChildComponent (*edgeNow);
     removeLfoButton.onClick = [this]
@@ -667,6 +693,91 @@ void LfoPage::refresh()
     if (signature() != builtSignature) rebuild();
     for (auto& row : routeRows) row->update();
     updateToolbar();
+    updateSlopeButton();
+}
+std::vector<int> LfoPage::movedDividers() const
+{
+    // The dividers this LFO's band edges are: the low cut is the one below the band, the high cut the one above.
+    std::vector<int> out;
+    if (TriadProcessor::isExtraChain (band) || lfo >= processor.getLfoCount (band)) return out;
+    const int edge = processor.getLfoInfo (band, lfo).edge;
+    if (edge < 0) return out;
+    if (edge != D::highEdge && band > 0) out.push_back (band - 1);
+    if (edge != D::lowEdge && band < processor.getBandCount() - 1) out.push_back (band);
+    return out;
+}
+void LfoPage::updateSlopeButton()
+{
+    const auto dividers = movedDividers();
+    if (slopeButton.isVisible() != ! dividers.empty()) slopeButton.setVisible (! dividers.empty());
+    if (dividers.empty()) return;
+    std::set<int> orders;
+    for (int j : dividers) orders.insert (processor.getCrossoverSlope (j));
+    const auto text = orders.size() == 1 ? "SLOPE " + juce::String (triad::CrossoverFilter::dbPerOctave (*orders.begin())) + " dB" : juce::String ("SLOPE MIXED");
+    if (slopeButton.getButtonText() != text) slopeButton.setButtonText (text);
+}
+void LfoPage::showSlopeMenu()
+{
+    const auto dividers = movedDividers();
+    if (dividers.empty()) return;
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("HOW SOFT THE EDGES IT MOVES ARE");
+    const auto cuts = processor.effectiveCrossovers();
+    const int first = dividers.front();
+    CrossoverDisplay::addSlopeItems (menu, processor.getCrossoverSlope (first), 0, first < (int) cuts.size() ? cuts[(size_t) first] : 0.0f,
+                                     processor.getSampleRateForDisplay());
+    juce::Component::SafePointer<LfoPage> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&slopeButton), [safe, dividers] (int choice)
+    {
+        if (safe == nullptr || choice <= 0) return;
+        for (int j : dividers) safe->processor.setCrossoverSlope (j, choice);
+        safe->updateSlopeButton();
+        safe->getEditor().repaint();
+    });
+}
+void LfoPage::showLfoMenu (int i)
+{
+    enum { onId = 1, copyId, pasteId, resetId, removeId, bandCopyId, bandPasteId, bandResetId };
+    if (i < 0 || i >= processor.getLfoCount (band)) return;
+    const auto info = processor.getLfoInfo (band, i);
+    juce::PopupMenu menu;
+    menu.addSectionHeader (info.name + juce::String::fromUTF8 ("  \xc2\xb7  ") + info.target);
+    const bool routed = ! processor.getRoutesFrom (band, i).empty();
+    menu.addItem (onId, routed ? juce::String ("On") : juce::String ("On (goes nowhere yet: + ROUTE TO...)"), routed, processor.isLfoOn (band, i));
+    menu.addSeparator();
+    menu.addItem (copyId, "Copy wave");
+    menu.addItem (pasteId, "Paste wave", ShapeEditor::clipboard.size() >= 2 || juce::SystemClipboard::getTextFromClipboard().contains ("TriadLfoShape"));
+    menu.addItem (resetId, "Reset wave");
+    menu.addItem (removeId, "Remove LFO", ! info.bandLfo && info.slot < 0);
+    if (! TriadProcessor::isExtraChain (band))
+    {
+        menu.addSeparator();
+        menu.addSectionHeader ("BAND " + juce::String (band + 1));
+        menu.addItem (bandCopyId, "Copy band state");
+        menu.addItem (bandPasteId, TriadProcessor::hasCopiedBand() ? "Paste band state (" + TriadProcessor::copiedBandDescription() + ")"
+                                                                   : juce::String ("Paste band state"), TriadProcessor::hasCopiedBand());
+        menu.addItem (bandResetId, "Reset band state");
+    }
+    juce::Component::SafePointer<LfoPage> safe (this);
+    const int b = band;
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition(), [safe, b, i] (int choice)
+    {
+        if (safe == nullptr || choice == 0 || safe->band != b) return;
+        auto& p = safe->processor;
+        switch (choice)
+        {
+            case onId: p.setLfoOn (b, i, ! p.isLfoOn (b, i)); break;
+            case copyId: safe->getEditor().copyShape(); break;
+            case pasteId: safe->getEditor().pasteShape(); break;
+            case resetId: p.resetLfoShape (b, i); safe->getEditor().reload(); break;
+            case removeId: if (p.removeLfo (b, i)) safe->select (b, juce::jmax (0, i - 1)); break;
+            case bandCopyId: p.copyBandState (b); break;
+            case bandPasteId: p.pasteBandState (b); break;
+            case bandResetId: p.resetBandState (b); break;
+            default: break;
+        }
+        safe->refresh();
+    });
 }
 void LfoPage::colourBandButtons()
 {
@@ -706,6 +817,20 @@ void LfoPage::rebuild()
         auto tab = std::make_unique<LfoTab> (top, info.target, info.active, bandColour (band));
         tab->setToggleState (i == lfo, juce::dontSendNotification);
         tab->onClick = [this, i] { select (band, i); };
+        juce::Component::SafePointer<LfoPage> safe (this);
+        const int b = band;
+        tab->onLight = [safe, b, i]
+        {
+            if (safe == nullptr || safe->band != b) return;
+            safe->processor.setLfoOn (b, i, ! safe->processor.isLfoOn (b, i));
+            safe->refresh();
+        };
+        tab->onMenu = [safe, b, i]
+        {
+            if (safe == nullptr || safe->band != b || i >= safe->processor.getLfoCount (b)) return;
+            safe->select (b, i);
+            safe->showLfoMenu (i);
+        };
         tabHolder.addAndMakeVisible (*tab);
         tabs.push_back (std::move (tab));
     }
@@ -719,6 +844,7 @@ void LfoPage::rebuild()
     const auto info = processor.getLfoInfo (band, lfo);
     removeLfoButton.setVisible (! info.bandLfo && info.slot < 0);
     spectrumButton.setVisible (info.edge >= 0);
+    updateSlopeButton();
     edgeNow->show (band, lfo);
     resized();
     repaint();
@@ -813,6 +939,7 @@ void LfoPage::resized()
     {
         const auto grid = shapes.getBounds().withWidth (shapes.getWidth() - routingWidth - 8);
         spectrumButton.setBounds (grid.getRight() - 88, grid.getY() + 3, 76, 18);
+        slopeButton.setBounds (spectrumButton.getX() - 104, grid.getY() + 3, 96, 18);
     }
 }
 void LfoPage::paint (juce::Graphics& g)

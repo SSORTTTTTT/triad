@@ -1030,6 +1030,11 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                 const int b = r.nextInt (juce::jmax (1, p.getBandCount()));
                 if (r.nextInt (3) == 0) p.setBandMuted (b, ! p.isBandMuted (b));
                 else p.setBandSoloed (b, ! p.isBandSoloed (b));
+                // 0.20.0 (their own random numbers, so the edits after them stay the same): SOLO on one band alone (or
+                // none), and now and then a band reset as new while it plays (its effects removed).
+                juce::Random v ((juce::int64) op * 104729 + 11);
+                if (v.nextInt (3) == 0) p.soloOnly (v.nextInt (p.getBandCount() + 1) - 1);
+                if (v.nextInt (10) == 0) p.resetBandState (v.nextInt (juce::jmax (1, p.getBandCount())));
             }
             else if (choice < 130)
             {
@@ -1048,6 +1053,14 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                         random.push_back ({ i == 0 ? 0.0f : i == points - 1 ? 1.0f : r.nextFloat(), r.nextFloat(), (r.nextFloat() - 0.5f) * 12.0f });
                     p.setLfoShape (b, lfo, r.nextBool() ? random : mod::preset (r.nextInt (mod::numPresets())), true);
                     p.setLfoLength (b, lfo, r.nextInt ((int) mod::lengths().size()));
+                    juce::Random v ((juce::int64) op * 7907 + 5);   // 0.20.0, its own random numbers
+                    switch (v.nextInt (5))
+                    {
+                        case 0: p.setLfoOn (b, lfo, v.nextBool()); break;
+                        case 1: p.resetLfoShape (b, lfo); break;
+                        case 2: if (b > 0) p.setCrossoverSlope (b - 1, 1 + v.nextInt (triad::CrossoverFilter::maxOrder)); break;   // SLOPE
+                        default: break;
+                    }
                     for (int route : p.getRoutesFrom (b, lfo))
                         switch (r.nextInt (4))
                         {

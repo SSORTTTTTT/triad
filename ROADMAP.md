@@ -4,7 +4,27 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.19.0 ("Triad v18", delivered 2026-10-28): ghost movement and LOCK for the band-edge LFOs
+## Current testing version — 0.20.0 ("Triad v19"): quality-of-life, SOLO alone, softer automated edges
+
+0.20.0 (2026-10-29), Thomas, testing v18 in FL Studio: "a button that says reset band state ... that little pink dot,
+I want to be able to turn it on and off from there ... right click ... copy band state, reset band state ... when I
+press solo on another band, it just plays the second band as well ... I'd prefer if it could just purely solo it ...
+hide ghost ... reset wave ... all the slope borders seem to be so hard cut, and I want it to be able to be more soft
+cut ... the spectrum a little bit more detailed" (no zoom).
+- **Reset band state** beside Copy / Paste band state (the band menu, and the LFO tab's menu): the band as a new one (no
+  effects, its LFOs and band-edge LFOs gone, mix 100%, 0 dB); its crossovers, MUTE and SOLO stay. One undo step.
+- **An LFO on / off from its tab**: click the light on the tab. **Right-click a tab**: On, Copy / Paste / Reset wave,
+  Remove LFO, and the band's Copy / Paste / Reset band state. **Reset wave** in the grid's right-click menu too (a
+  band-edge LFO: flat where the edges are set, locked or inverted alike; others: flat).
+- **SOLO solos the band alone**: SOLO on another band moves the solo to it; Cmd / Ctrl-click adds a band to the ones
+  soloed. **Ghost movement** on / off in the band menu as well as the gear menu.
+- **Softer automated edges**: SLOPE beside SPECTRUM on a band-edge LFO's grid sets how soft the edges it moves are (the
+  slope of those dividers, 6 dB/oct blending the bands to 96 dB/oct a hard wall). The lit spectrum fades as the band's
+  slopes do (the BANDS tab with Ghost movement and with SOLO, the LFO tab), instead of stopping at a hard line.
+- **A more detailed spectrum**: 8192 points (5.9 Hz apart at 48 kHz, twice as fine in the lows).
+- Not yet (Thomas: "maybe once we get this down"): the slope LFO (`slope-design` branch).
+
+## 0.19.0 ("Triad v18", delivered 2026-10-28): ghost movement and LOCK for the band-edge LFOs
 
 0.19.0 (2026-10-28), Thomas, testing v17: "having the whole band moving and automating on the main screen ... you
 can't click anything because it's moving all the time ... have a little ghost ... in the back showing how the

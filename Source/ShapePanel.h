@@ -48,6 +48,9 @@ struct ShapeHost
     // A label over each point (design, band-edge LFOs: the frequency it takes the edge to, "1.23 kHz").
     virtual juce::String pointLabel (const triad::mod::Point&) const { return {}; }
     virtual void setStatus (const juce::String&) {}
+    // The wave menu's "Reset wave" (0.20.0): back to how the LFO started (Triad's LFOs; none in Triad Time).
+    virtual bool canResetShape() const { return false; }
+    virtual void resetShape() {}
     // Behind the grid, drawn every frame (0.15.0): the sound coming in, as a waveform across the cycle or as a spectrum.
     // hasBackdrop: whether there is one now; paintBackdrop draws it in the grid's area (under the grid lines and the line).
     virtual bool hasBackdrop() const { return false; }
@@ -69,9 +72,12 @@ class SpectrumBackdrop
 {
 public:
     SpectrumBackdrop();
-    void paint (juce::Graphics&, juce::Rectangle<float> plot, triad::SpectrumTap&, double sampleRate, float lowHz, float highHz, juce::Colour colour);
+    // lowOrder / highOrder (0.20.0): the band's slopes (crossover orders), so the lit range fades as they do; 0: a hard
+    // edge (an open end).
+    void paint (juce::Graphics&, juce::Rectangle<float> plot, triad::SpectrumTap&, double sampleRate, float lowHz, float highHz, juce::Colour colour,
+                int lowOrder = 0, int highOrder = 0);
 private:
-    static constexpr int fftSize = 4096;
+    static constexpr int fftSize = 8192;   // 0.20.0: twice the detail (5.9 Hz steps at 48 kHz)
     std::vector<float> samples, window, levels;
     std::vector<std::complex<float>> bins;
     float windowSum = 0.0f;

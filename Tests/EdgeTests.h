@@ -1,6 +1,7 @@
 #pragma once
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
+#include "../Source/TriadTime.h"
 #include "TriggerTests.h"
 #include <cmath>
 #include <iostream>
@@ -416,11 +417,123 @@ inline void lockTests (const juce::File& screenshots)
               << " Hz), locking keeps the edge, follows the divider, saved, menus: passed" << std::endl;
 }
 
+// 0.20.0 (Thomas, testing v18): Reset band state, an LFO switched on / off as a whole, Reset wave, SOLO on a band alone,
+// the SLOPE of the edges an LFO moves, and a more detailed spectrum.
+inline void v19Tests (const juce::File& screenshots)
+{
+    constexpr double rate = 48000.0;
+    std::vector<float> silence ((size_t) rate / 2);
+    TriadProcessor p;
+    p.prepareToPlay (rate, 512);
+    const auto set = p.effectiveCrossovers();
+    // Reset band state: band 2 as a new band (its effect, its LFOs and band-edge LFOs gone, mix 100%, 0 dB).
+    const int freshSlots = p.getSlotCount (1);
+    require (p.loadEffect (1, 0, TriadTime::makeDescription(), false).isEmpty(), "An effect in band 2");
+    p.addSlot (1);
+    const auto setPlain = [&] (const juce::String& id, float v) { auto* par = p.parameters.getParameter (id); par->setValueNotifyingHost (par->convertTo0to1 (v)); };
+    const auto plain = [&] (const juce::String& id) { return p.parameters.getRawParameterValue (id)->load(); };
+    setPlain (TriadProcessor::bandMixID (1), 40.0f);
+    setPlain (TriadProcessor::bandGainID (1), -6.0f);
+    const int sweep = p.linkEdgesToLfo (1, D::moveEdges);
+    p.setLfoShape (1, sweep, mod::flat (0.9f), false);
+    p.setBandMuted (1, true);
+    require (p.resetBandState (1).isEmpty(), "Reset band state");
+    run (p, silence);
+    require (p.getSlotCount (1) == freshSlots && ! p.getSlotInfo (1, 0).loaded, "...the band's effects are gone");
+    require (p.findEdgeLfo (1, D::moveEdges) < 0, "...and its band-edge LFO");
+    require (std::abs (plain (TriadProcessor::bandMixID (1)) - 100.0f) < 0.01f && std::abs (plain (TriadProcessor::bandGainID (1))) < 0.01f,
+             "...its mix and volume as new");
+    const auto heard = p.heardCrossovers();
+    require (std::abs (heard[0] / set[0] - 1.0f) < 0.01f && std::abs (heard[1] / set[1] - 1.0f) < 0.01f && p.isBandMuted (1), "...its crossovers and MUTE stay");
+    p.setBandMuted (1, false);
+    // An LFO on / off as a whole, from the dot on its tab.
+    const int cut = p.linkEdgesToLfo (2, D::lowEdge);
+    p.setLfoShape (2, cut, mod::flat (uFor (8000.0f)), false);
+    run (p, silence);
+    require (p.isLfoOn (2, cut) && p.heardCrossovers()[1] > set[1] * 2.0f, "A drawn band-edge LFO is on and moves its edge");
+    p.setLfoOn (2, cut, false);
+    run (p, silence);
+    require (! p.isLfoOn (2, cut) && std::abs (p.heardCrossovers()[1] / set[1] - 1.0f) < 0.02f, "Off: the edge goes back to where it is set");
+    p.setLfoOn (2, cut, true);
+    run (p, silence);
+    require (p.isLfoOn (2, cut) && p.heardCrossovers()[1] > set[1] * 2.0f, "On again: it moves again");
+    // Reset wave: flat where the edges are set, nothing moves (unlocked, locked, inverted).
+    const auto atRest = [&]
+    {
+        run (p, silence);
+        return std::abs (p.heardCrossovers()[1] / set[1] - 1.0f) < 0.02f;
+    };
+    p.resetLfoShape (2, cut);
+    require (atRest(), "Reset wave: the edge back where it is set");
+    const int route = p.getRoutesFrom (2, cut).front();
+    p.setLfoShape (2, cut, mod::flat (0.9f), false);
+    p.setRouteLocked (2, route, true);
+    p.resetLfoShape (2, cut);
+    require (atRest(), "...also when locked");
+    p.setRouteInvert (2, route, true);
+    p.setLfoShape (2, cut, mod::flat (0.2f), false);
+    p.resetLfoShape (2, cut);
+    require (atRest(), "...and inverted");
+    p.setRouteInvert (2, route, false);
+    p.setRouteLocked (2, route, false);
+    // SOLO: a click solos the band alone (SOLO on band 1, then on band 2: only band 2); Cmd-click adds.
+    p.soloOnly (0);
+    p.soloOnly (1);
+    require (! p.isBandSoloed (0) && p.isBandSoloed (1) && ! p.isBandSoloed (2), "SOLO on another band: only that band is soloed");
+    p.setBandSoloed (2, true);
+    require (p.isBandSoloed (1) && p.isBandSoloed (2), "Cmd-click: added to the bands soloed");
+    p.soloOnly (-1);
+    require (! p.isAnyBandSoloed(), "...and none after");
+    // The window: SOLO buttons, the LFO tab's SLOPE and Reset wave.
+    {
+        std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (p.createEditor()));
+        editor->setVisible (true);
+        const auto clickSolo = [&] (int band)
+        {
+            auto* strip = editor->getStrip (band);
+            require (strip != nullptr, "A band strip");
+            juce::TextButton* solo = nullptr;
+            for (auto* c : strip->getChildren())
+                if (auto* b = dynamic_cast<juce::TextButton*> (c); b != nullptr && (b->getButtonText() == "SOLO" || b->getButtonText() == "S")) solo = b;
+            require (solo != nullptr, "A SOLO button");
+            solo->triggerClick();
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        };
+        clickSolo (0);
+        clickSolo (2);
+        require (! p.isBandSoloed (0) && p.isBandSoloed (2), "Clicking SOLO on band 3 after band 1: band 3 alone");
+        clickSolo (2);
+        require (! p.isAnyBandSoloed(), "...and clicking it again: none");
+        editor->setTab (TriadEditor::Tab::lfo);
+        auto& page = editor->getLfoPage();
+        page.select (2, cut);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        require (page.movedDividers() == std::vector<int> { 1 } && page.slopeButton.isVisible(), "SLOPE: band 3's low cut is the 2.5 kHz divider");
+        require (page.slopeButton.getButtonText().contains ("24"), "...at 24 dB/oct");
+        p.setCrossoverSlope (1, 2);
+        page.refresh();
+        require (page.slopeButton.getButtonText().contains ("12"), "...it follows the divider's slope (12 dB/oct)");
+        p.setLfoShape (2, cut, mod::flat (0.9f), false);
+        page.getEditor().reload();
+        require (page.getEditor().getHost() != nullptr && page.getEditor().getHost()->canResetShape(), "Reset wave in the wave menu");
+        page.getEditor().getHost()->resetShape();
+        page.getEditor().reload();
+        require (atRest(), "Reset wave from the LFO tab");
+        page.select (1, 0);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        require (page.movedDividers().empty() && ! page.slopeButton.isVisible(), "No SLOPE for an LFO that does not move the edges");
+        themeTests::snapshot (screenshots, "Triad-v19-lfo.png", *editor);
+    }
+    require (triad::SpectrumTap::size == 16384, "Room for a spectrum twice as detailed (8192 points)");
+    std::cout << "0.20.0: Reset band state, LFO on / off, Reset wave (locked, inverted), SOLO alone (and Cmd-click), SLOPE, spectrum: passed" << std::endl;
+}
+
 inline void run (const juce::File& screenshots)
 {
     splitterTests();
     soloTests();
     edgeTests (screenshots);
     lockTests (screenshots);
+    v19Tests (screenshots);
 }
 }

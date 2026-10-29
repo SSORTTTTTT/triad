@@ -895,6 +895,11 @@ bool TriadProcessor::isAnyBandSoloed() const
     for (int b = 0; b < getBandCount(); ++b) if (isBandSoloed (b)) return true;
     return false;
 }
+void TriadProcessor::soloOnly (int band)
+{
+    for (int b = 0; b < getBandCount(); ++b)
+        if (isBandSoloed (b) != (b == band)) setBandSoloed (b, b == band);
+}
 void TriadProcessor::setBandSoloed (int band, bool on)
 {
     if (band < 0 || band >= getBandCount()) return;
@@ -2295,6 +2300,36 @@ int TriadProcessor::addLfo (int band)
     stateChanged();
     return index;
 }
+bool TriadProcessor::isLfoOn (int band, int lfo) const
+{
+    for (int r : getRoutesFrom (band, lfo)) if (! getRouteInfo (band, r).muted) return true;
+    return false;
+}
+void TriadProcessor::setLfoOn (int band, int lfo, bool on)
+{
+    const auto routes = getRoutesFrom (band, lfo);
+    for (int r : routes) setRouteMuted (band, r, ! on);
+    if (! routes.empty()) setStatus ("LFO " + juce::String (lfo + 1) + (on ? " on" : " off"));
+}
+void TriadProcessor::resetLfoShape (int band, int lfo)
+{
+    const auto info = getLfoInfo (band, lfo);
+    float rest = 1.0f;   // as a new LFO
+    if (info.edge >= 0 && ! isExtraChain (band))
+    {
+        // Flat where the edges are set (nothing moves until it is drawn again), as linking makes it.
+        const auto cuts = effectiveCrossovers();
+        const int count = getBandCount();
+        const float uL = band > 0 && band - 1 < (int) cuts.size() ? edgeU (cuts[(size_t) band - 1]) : 0.0f;
+        const float uH = band < count - 1 && band < (int) cuts.size() ? edgeU (cuts[(size_t) band]) : 1.0f;
+        rest = isEdgeLfoLocked (band, lfo) ? (info.edge == Destination::lowEdge ? 0.0f : 1.0f) : restingValue (info.edge, uL, uH);
+        for (int r : getRoutesFrom (band, lfo))
+            if (getRouteInfo (band, r).destination.kind == Destination::bandEdges && getRouteInfo (band, r).invert) rest = 1.0f - rest;
+        setLfoShape (band, lfo, triad::mod::flat (rest), true);
+    }
+    else setLfoShape (band, lfo, triad::mod::flat(), true);
+    setStatus ("Reset LFO " + juce::String (lfo + 1) + "'s wave");
+}
 bool TriadProcessor::removeLfo (int band, int index)
 {
     {
@@ -3195,6 +3230,21 @@ juce::String TriadProcessor::pasteBandState (int band)
     if (clipboard.xml == nullptr) return "No band state copied yet.";
     const auto error = loadChainXml (band, *clipboard.xml);
     setStatus (error.isEmpty() ? "Pasted " + clipboard.description + " into band " + juce::String (band + 1) : error);
+    return error;
+}
+juce::String TriadProcessor::resetBandState (int band)
+{
+    JUCE_ASSERT_MESSAGE_THREAD
+    if (band < 0 || band >= getBandCount()) return "That band does not exist.";
+    // A new band, as adding one makes it, loaded as a chain (so it is one undo step, as pasting is).
+    const Band fresh;
+    juce::XmlElement root ("TriadChain");
+    root.setAttribute ("version", 1);
+    root.setAttribute ("bandMix", 100.0);
+    root.setAttribute ("bandGain", 0.0);
+    writeBand (*root.createNewChildElement ("Band"), fresh);
+    const auto error = loadChainXml (band, root);
+    setStatus (error.isEmpty() ? "Reset band " + juce::String (band + 1) + " state" : error);
     return error;
 }
 bool TriadProcessor::hasCopiedBand() { return bandClipboard().xml != nullptr; }

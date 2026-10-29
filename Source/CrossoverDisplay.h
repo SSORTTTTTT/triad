@@ -29,6 +29,7 @@ struct CrossoverHost
     virtual bool hasBandState() const { return false; }
     virtual void copyBandState (int) {}
     virtual void pasteBandState (int) {}
+    virtual void resetBandState (int) {}                          // 0.20.0
     virtual bool canPasteBandState() const { return false; }
     virtual juce::String pasteBandDescription() const { return {}; }
     // Triad only (0.18.0): LFOs on the band edges. The range an LFO sweeps a divider across ({0, 0}: none), and the
@@ -43,6 +44,8 @@ struct CrossoverHost
     virtual std::vector<float> heardCrossovers() const { return effectiveCrossovers(); }
     // LOCK (0.19.0): the band's edge LFOs kept inside the band (-1: none that can be, 0: not all, 1: all locked).
     virtual int edgeLockState (int /*band*/) const { return -1; }
+    // Ghost movement on / off (0.20.0: also in the band menu; kept in the settings by the host).
+    virtual void setGhostMovement (bool) {}
     virtual void setEdgesLocked (int /*band*/, bool) {}
 };
 
@@ -153,6 +156,7 @@ private:
     void paintGhost (juce::Graphics&, const std::vector<float>& heard);   // the dividers as heard, behind the controls
     juce::Path bandResponse (int band, const std::vector<float>& at, bool fill, bool floor, float height = 1.0f) const;
     int lfoBandOf (int divider) const;   // the band whose LFO moves a divider (-1: none)
+    juce::ColourGradient litGradient (int band, const std::vector<float>& at, juce::Colour, float alpha) const;
     juce::Rectangle<float> readoutBoundsFor (int index, const std::vector<juce::Rectangle<float>>& taken) const;
     std::vector<juce::Rectangle<float>> pillRects() const;
     void paintMeters (juce::Graphics&);
@@ -186,7 +190,7 @@ private:
     juce::VBlankAttachment frames { this, [this] (double t) { frame (t); } };
     struct Tip final : juce::Component, juce::SettableTooltipClient {} meterTip;
 
-    static constexpr int fftSize = 4096;
+    static constexpr int fftSize = 8192;   // 0.20.0: twice the detail (5.9 Hz steps at 48 kHz)
     std::vector<float> samples, window, levels;
     std::vector<std::complex<float>> bins;
     float windowSum = 1.0f;

@@ -21,6 +21,8 @@ struct LfoShapeHost final : ShapeHost
     bool undo() override { return processor.undoLfo (band, lfo); }
     bool redo() override { return processor.redoLfo (band, lfo); }
     int getLength() const override { return processor.getLfoInfo (band, lfo).length; }
+    bool canResetShape() const override { return true; }
+    void resetShape() override { processor.resetLfoShape (band, lfo); }
     void setLength (int index) override { processor.setLfoLength (band, lfo, index); }
     float getPhase() const override { return processor.getLfoPhase (band, lfo); }
     float getPhaseNow() const override { return processor.getLfoPhaseNow (band, lfo); }
@@ -94,6 +96,13 @@ public:
     bool showsEdges() const;
     bool edgeSpectrum = true;
     juce::TextButton spectrumButton { "SPECTRUM" };
+    // 0.20.0 (Thomas: "the slope borders seem so hard cut"): SLOPE beside it, how soft the edges a band-edge LFO moves
+    // are (the slope of those dividers, 6 to 96 dB/oct, as on the BANDS tab).
+    juce::TextButton slopeButton { "SLOPE" };
+    void showSlopeMenu();
+    std::vector<int> movedDividers() const;
+    // Right-click an LFO's tab (0.20.0): on / off, its wave copied, pasted or reset, removed, and the band's state.
+    void showLfoMenu (int lfo);
     void visibilityChanged() override;
     // BAND NOW (design, Thomas): in the ROUTING card of a band-edge LFO, the band's curve where its edges are right now
     // (no spectrum), with dashed curves where the LFO takes it at its lowest and highest.
@@ -101,6 +110,7 @@ public:
     bool isEdgeNowShowing() const;
 
 private:
+    void updateSlopeButton();
     void rebuild();
     void updateToolbar();
     juce::String signature() const;
