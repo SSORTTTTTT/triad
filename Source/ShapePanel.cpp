@@ -822,7 +822,7 @@ bool ShapeEditor::keyPressed (const juce::KeyPress& key)
 }
 void ShapeEditor::showMenu()
 {
-    enum { selectAllId = 1, toGridId, flipHId, flipVId, copyId, pasteId, deleteId, tripletId, snapId, gridBase = 100 };
+    enum { selectAllId = 1, toGridId, flipHId, flipVId, copyId, pasteId, deleteId, tripletId, snapId, resetId, gridBase = 100 };
     juce::PopupMenu menu;
     menu.addSectionHeader ("WAVE");
     menu.addItem (selectAllId, "Select all points");
@@ -832,6 +832,7 @@ void ShapeEditor::showMenu()
     menu.addItem (copyId, "Copy wave");
     menu.addItem (pasteId, "Paste wave", ShapeEditor::clipboard.size() >= 2 || juce::SystemClipboard::getTextFromClipboard().contains ("TriadLfoShape"));
     menu.addItem (deleteId, "Delete selected points", std::count (selected.begin(), selected.end(), true) > 0);
+    if (host != nullptr && host->canResetShape()) menu.addItem (resetId, "Reset wave");
     menu.addSectionHeader ("GRID");
     menu.addItem (tripletId, "Triplet", true, triplet);
     menu.addItem (snapId, "Snap to grid", true, snap);
@@ -851,6 +852,7 @@ void ShapeEditor::showMenu()
             case copyId: self.copyShape(); break;
             case pasteId: self.pasteShape(); break;
             case deleteId: self.deleteSelected(); break;
+            case resetId: if (self.host != nullptr) { self.host->resetShape(); self.reload(); } break;
             case tripletId: self.triplet = ! self.triplet; break;
             case snapId: self.snap = ! self.snap; break;
             default: if (choice > gridBase) self.gridDivision = choice - gridBase; break;
@@ -954,7 +956,7 @@ SpectrumBackdrop::SpectrumBackdrop()
     }
 }
 void SpectrumBackdrop::paint (juce::Graphics& g, juce::Rectangle<float> plot, triad::SpectrumTap& tap, double sampleRate, float low, float high,
-                              juce::Colour colour)
+                              juce::Colour colour, int lowOrder, int highOrder)
 {
     tap.active.store (true);
     const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
@@ -993,11 +995,26 @@ void SpectrumBackdrop::paint (juce::Graphics& g, juce::Rectangle<float> plot, tr
     fill.closeSubPath();
     g.setColour (textColour.withAlpha (0.10f));
     g.fillPath (fill);
-    juce::Graphics::ScopedSaveState state (g);
-    g.reduceClipRegion (juce::Rectangle<float> (xFor (low), plot.getY(), xFor (high) - xFor (low), plot.getHeight()).toNearestInt());
-    g.setColour (colour.withAlpha (0.30f));
+    // The band's range lit in its colour, fading out with its slopes (0.20.0): as strong as the band's response.
+    juce::ColourGradient litFill (colour.withAlpha (0.0f), plot.getX(), 0.0f, colour.withAlpha (0.0f), plot.getRight(), 0.0f, false), litLine = litFill;
+    litFill.clearColours();
+    litLine.clearColours();
+    const double rate = juce::jmax (8000.0, sampleRate);
+    constexpr int steps = 160;
+    for (int i = 0; i <= steps; ++i)
+    {
+        const float f = hzFor (plot.getX() + plot.getWidth() * (float) i / (float) steps);
+        float m = 1.0f;
+        if (lowOrder > 0) m *= triad::CrossoverFilter::highMagnitude (lowOrder, f, low, rate); else if (f < low) m = 0.0f;
+        if (highOrder > 0) m *= triad::CrossoverFilter::lowMagnitude (highOrder, f, high, rate); else if (f > high) m = 0.0f;
+        const float a = std::pow (juce::jlimit (0.0f, 1.0f, m), 0.8f);
+        litFill.addColour ((double) i / steps, colour.withAlpha (0.30f * a));
+        litLine.addColour ((double) i / steps, colour.withAlpha (0.65f * a));
+    }
+    juce::ignoreUnused (xFor);
+    g.setGradientFill (litFill);
     g.fillPath (fill);
-    g.setColour (colour.withAlpha (0.65f));
+    g.setGradientFill (litLine);
     g.strokePath (line, juce::PathStrokeType (1.2f));
 }
 }

@@ -509,7 +509,7 @@ public:
 class SpectrumTap
 {
 public:
-    static constexpr int size = 8192;
+    static constexpr int size = 16384;   // 0.20.0: room for the 8192-point spectrum while it is written
     void push (const juce::AudioBuffer<float>& audio, int numSamples) noexcept
     {
         if (! active.load (std::memory_order_relaxed) || audio.getNumChannels() < 2) return;

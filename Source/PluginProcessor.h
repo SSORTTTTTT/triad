@@ -53,6 +53,9 @@ public:
     bool isBandSoloed (int band) const;
     void setBandSoloed (int band, bool);                   // as a gesture: an undo step, automation follows
     bool isAnyBandSoloed() const;
+    // Clicking SOLO (0.20.0, Thomas: "it doesn't just purely solo it"): this band soloed and every other band not
+    // (Cmd / Ctrl-click adds a band to the ones soloed instead).
+    void soloOnly (int band);
     static juce::String slopeID (int index);               // "slope0".."slope8": crossover slope order 1-16 (x 6 dB/oct)
     static constexpr float minGainDb = -36.0f, maxGainDb = 12.0f;
 
@@ -189,6 +192,11 @@ public:
     void setLfoLength (int band, int lfo, int lengthIndex);
     int addLfo (int band);
     bool removeLfo (int band, int lfo);                          // extra LFOs only
+    // 0.20.0 (Thomas): an LFO switched on or off as a whole (every route from it), from the dot on its tab; and its
+    // line reset to how it started (a band-edge LFO: flat where the edges are set, nothing moves; others: flat).
+    bool isLfoOn (int band, int lfo) const;
+    void setLfoOn (int band, int lfo, bool);
+    void resetLfoShape (int band, int lfo);
     float getLfoPhase (int band, int lfo) const;                 // 0..1, or < 0 when not running
     float getLfoPhaseNow (int band, int lfo) const;              // the same, carried on to this moment (for the screen)
     // Audio trigger (0.14.0, a band's TRIGGER: SONG / AUDIO): with AUDIO, the band's LFOs wait at their start until sound
@@ -292,6 +300,9 @@ public:
     // "Paste band state" replaces another band's chain with it (the crossovers stay as they are).
     bool copyBandState (int band);
     juce::String pasteBandState (int band);                          // error text; empty when pasted
+    // "Reset band state" (0.20.0): the band as a new one (no effects, its LFOs and band-edge LFOs gone, mix 100%,
+    // 0 dB); its crossovers, MUTE and SOLO stay. Undoable.
+    juce::String resetBandState (int band);
     static bool hasCopiedBand();
     static juce::String copiedBandDescription();                     // e.g. "band 2: OTT, Valhalla Delay"
     static void clearCopiedBand();

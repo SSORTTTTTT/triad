@@ -320,7 +320,12 @@ BandStrip::BandStrip (TriadProcessor& p, StripHost& h, int b)
         muteAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (p.parameters, TriadProcessor::bandMuteID (band), muteButton);
         // SOLO (0.18.0, Thomas): hear only this band (and any other soloed one).
         soloButton.setClickingTogglesState (true);
-        soloButton.setTooltip ("Solo this band: you hear only the soloed bands. The others keep running, so it is instant both ways.");
+        soloButton.setTooltip ("Solo this band: you hear only this band (Cmd-click: add it to the bands soloed). The others keep running, so it is instant both ways.");
+        // 0.20.0 (Thomas): a click solos this band alone; Cmd / Ctrl-click keeps the others soloed too.
+        soloButton.onClick = [this]
+        {
+            if (soloButton.getToggleState() && ! juce::ModifierKeys::currentModifiers.isCommandDown()) processor.soloOnly (band);
+        };
         soloButton.setColour (juce::TextButton::buttonOnColourId, soloColour);
         soloButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111312));
         soloButton.onStateChange = [this] { repaint(); };

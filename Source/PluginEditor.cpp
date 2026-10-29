@@ -43,6 +43,8 @@ public:
     bool hasBandState() const override { return true; }
     void copyBandState (int band) override { processor.copyBandState (band); }
     void pasteBandState (int band) override { processor.pasteBandState (band); }
+    void resetBandState (int band) override { processor.resetBandState (band); }
+    void setGhostMovement (bool on) override { juce::SharedResourcePointer<TriadSettings> settings; settings->setGhostMovement (on); }
     bool canPasteBandState() const override { return TriadProcessor::hasCopiedBand(); }
     juce::String pasteBandDescription() const override { return TriadProcessor::copiedBandDescription(); }
     bool canLinkToLfo() const override { return true; }
