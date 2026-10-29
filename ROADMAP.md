@@ -4,7 +4,27 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.18.0 ("Triad v17"): SOLO, and LFOs on the band edges (Triad as a filter)
+## Current testing version — 0.19.0 ("Triad v18"): ghost movement and LOCK for the band-edge LFOs
+
+0.19.0 (2026-10-28), Thomas, testing v17: "having the whole band moving and automating on the main screen ... you
+can't click anything because it's moving all the time ... have a little ghost ... in the back showing how the
+automation's moving"; and "lock band travel ... so that it only works within going from 2.5k to 48k versus being able
+to sweep along the whole thing". Mock-ups: `docs/mockups/ghost/`, `docs/mockups/lock/` (chosen: ghost B round 2, LOCK).
+- **The dividers stay where they are set**: with LFOs on the band edges, the frequency panel's dividers, their dots and
+  readouts, the bands and the strips' ranges no longer move, so they can always be clicked and dragged.
+- **Ghost movement** (gear menu > BANDS TAB, on to start): behind them, the band as it is right now, smaller, more
+  see-through, its slopes dotted; the spectrum lit in the band's colour where the band is now and dimmed elsewhere (as
+  SOLO does); a dot on the range lane where the divider is now.
+- **LOCK** (beside INV on a band-edge LFO's card; the band menu's "Lock LFOs inside the band" for all of them): the LFO
+  moves the edge only inside the band as set on the BANDS tab (low cut: from the band's bottom up; high cut: from its
+  top down; widen / narrow: narrower than set). The LFO tab then reads in the band's range (its scale, the spectrum
+  across it, "LOCKED TO BAND 3 · 2.5 kHz – 20 kHz", the tab "LOCKED RANGE"), and follows when the divider is moved
+  on the BANDS tab. Turning LOCK on or off redraws the line so the edge stays where it was. Crossing over stays the
+  default; Sweep the band cannot be locked. Saved with the project.
+- The LFO grid redraws its Hz labels when a divider moves on the BANDS tab (they stayed as they were until the shape
+  changed).
+
+## 0.18.0 ("Triad v17", delivered 2026-10-28): SOLO, and LFOs on the band edges (Triad as a filter)
 
 0.18.0 (2026-10-28), Thomas: "for each band ... add a [solo] button right where ... it says mute and then there's one
 slot ... is there a way ... we could even automate the band's filter, like cutoff point ... tie it to the LFO ... the high

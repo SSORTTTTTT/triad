@@ -41,6 +41,9 @@ struct CrossoverHost
     // Where the dividers are as heard right now, moved by their LFOs (the panel's dividers stay where they are set,
     // so they can be clicked and dragged; the movement is shown behind them as a ghost, 0.19.0).
     virtual std::vector<float> heardCrossovers() const { return effectiveCrossovers(); }
+    // LOCK (0.19.0): the band's edge LFOs kept inside the band (-1: none that can be, 0: not all, 1: all locked).
+    virtual int edgeLockState (int /*band*/) const { return -1; }
+    virtual void setEdgesLocked (int /*band*/, bool) {}
 };
 
 // The frequency panel: a live spectrum of the incoming audio, the bands, and one draggable divider
@@ -74,6 +77,7 @@ public:
     // "~ Link to LFO": the band's edge (0 low, 1 high, 2 move the band, 3 open / close) to an LFO of that band.
     std::function<void (int band, int edge)> onLinkEdges;
     static void addLinkItems (juce::PopupMenu&, CrossoverHost&, int band, int idBase);   // the four, with the wave
+    static constexpr int lockItem = 9;   // idBase + 9: "Lock LFOs inside the band" (0.19.0)
     // Gear menu > BANDS TAB > Ghost movement (0.19.0, Thomas: "you can't click anything because it's moving all the
     // time"): the dividers always stay where they are set; with an LFO on the band edges and this on, the band as it
     // is right now shows behind them, smaller, see-through, its slopes dotted, and the spectrum is lit in its colour

@@ -923,12 +923,13 @@ float edgeU (float hz) { return juce::jlimit (0.0f, 1.0f, std::log (juce::jmax (
 float edgeHz (float u) { return 20.0f * std::pow (1000.0f, juce::jlimit (0.0f, 1.0f, u)); }
 // What an LFO's value v (0..1) at amount a does to a band's edges uL, uH (0..1; the lowest band's low edge is 0, the
 // highest band's high edge 1): the moves (in the same units) of the low and the high edge.
-std::pair<float, float> edgeMove (int edge, float v, float a, float uL, float uH)
+std::pair<float, float> edgeMove (int edge, float v, float a, float uL, float uH, bool locked = false)
 {
     using D = TriadProcessor::Destination;
     const float c = 0.5f * (uL + uH), w = uH - uL;
-    // Mock-up (design, TRIAD_MOCK_LOCK=1): LOCK keeps the edge inside the band as set (the line's height is the band's range).
-    static const bool locked = juce::SystemStats::getEnvironmentVariable ("TRIAD_MOCK_LOCK", "0") == "1";
+    // LOCK (0.19.0): the edge stays inside the band as set; the line's height is the band's range (low cut: bottom = as
+    // set, top = the band's top; high cut: top = as set, bottom = the band's bottom; widen / narrow: top = as set,
+    // bottom = closed to its middle).
     if (locked && edge == D::lowEdge) return { a * v * w, 0.0f };
     if (locked && edge == D::highEdge) return { 0.0f, a * (v - 1.0f) * w };
     if (locked && edge == D::openEdges) return { a * 0.5f * (1.0f - v) * w, -a * 0.5f * (1.0f - v) * w };
@@ -1011,7 +1012,7 @@ bool TriadProcessor::computeEdgeMoves (int offset, int n)
                 float v = r->lfo->table.lookup (predictPhase (band, *r->lfo, offset, frame));
                 if (r->invert.load (std::memory_order_relaxed)) v = 1.0f - v;
                 const float uL = b > 0 ? knobU[(size_t) b - 1] : 0.0f, uH = b < crossovers ? knobU[(size_t) b] : 1.0f;
-                const auto m = edgeMove (r->destination.slotId, v, r->amount.load (std::memory_order_relaxed), uL, uH);
+                const auto m = edgeMove (r->destination.slotId, v, r->amount.load (std::memory_order_relaxed), uL, uH, r->locked.load (std::memory_order_relaxed));
                 if (b > 0) moved[(size_t) b - 1] += m.first;
                 if (b < crossovers) moved[(size_t) b] += m.second;
             }
@@ -1060,7 +1061,7 @@ std::pair<float, float> TriadProcessor::crossoverSweep (int index) const
             float v = triad::mod::evaluate (r->lfo->shape, (float) i / 64.0f);
             if (r->invert.load()) v = 1.0f - v;
             const float uL = b > 0 ? knobU[(size_t) b - 1] : 0.0f, uH = b < count - 1 ? knobU[(size_t) b] : 1.0f;
-            const auto m = edgeMove (r->destination.slotId, v, r->amount.load(), uL, uH);
+            const auto m = edgeMove (r->destination.slotId, v, r->amount.load(), uL, uH, r->locked.load());
             move += b == index ? m.second : m.first;
         }
         const float u = juce::jlimit (0.0f, 1.0f, knobU[(size_t) index] + move);
@@ -2427,6 +2428,7 @@ TriadProcessor::RouteInfo TriadProcessor::getRouteInfo (int band, int index) con
     i.destination = r->destination;
     i.amount = r->amount.load();
     i.invert = r->invert.load();
+    i.locked = r->locked.load();
     i.muted = r->muted.load();
     i.sourceName = "LFO " + juce::String (i.lfo + 1);
     i.destinationName = destinationName (b, r->destination);
@@ -2502,6 +2504,7 @@ void TriadProcessor::setRouteDestination (int band, int route, Destination desti
         }
         else if (r->parameter != nullptr) r->parameter->setValue (r->base.load());
         r->destination = destination;
+        if (! canLock (destination)) r->locked.store (false);
         r->automatic = false;
         b.relink();
     }
@@ -2514,6 +2517,58 @@ void TriadProcessor::setRouteAmount (int band, int route, float amount)
 void TriadProcessor::setRouteInvert (int band, int route, bool invert)
 {
     if (auto* r = routeAt (band, route)) { r->invert.store (invert); stateChanged(); }
+}
+void TriadProcessor::setRouteLocked (int band, int route, bool on)
+{
+    auto* r = routeAt (band, route);
+    if (r == nullptr || ! canLock (r->destination) || r->locked.load() == on) return;
+    // The line means another range now: its points are moved so the edges stay where they are (wherever that is inside
+    // the band; outside it they go to the band's edge).
+    const int lfo = bands[(size_t) band]->lfoIndex (r->lfoId);
+    if (auto* l = lfoAt (band, lfo))
+    {
+        const auto cuts = effectiveCrossovers();
+        const int count = getBandCount();
+        const float uL = band > 0 && band - 1 < (int) cuts.size() ? edgeU (cuts[(size_t) band - 1]) : 0.0f;
+        const float uH = band < count - 1 && band < (int) cuts.size() ? edgeU (cuts[(size_t) band]) : 1.0f;
+        const float w = juce::jmax (0.001f, uH - uL), c = 0.5f * (uL + uH), reach = juce::jmax (0.001f, juce::jmax (c, 1.0f - c));
+        const bool open = r->destination.slotId == Destination::openEdges, inverted = r->invert.load();
+        const auto convert = [&] (float v)
+        {
+            if (inverted) v = 1.0f - v;
+            float out = open ? (on ? v * reach / (0.5f * w) : v * 0.5f * w / reach)
+                             : (on ? (v - uL) / w : uL + v * w);
+            out = juce::jlimit (0.0f, 1.0f, out);
+            return inverted ? 1.0f - out : out;
+        };
+        auto shape = l->shape;
+        for (auto& point : shape) point.y = convert (point.y);
+        setLfoShape (band, lfo, shape, false);
+    }
+    r->locked.store (on);
+    stateChanged();
+}
+int TriadProcessor::getBandEdgeLock (int band) const
+{
+    if (band < 0 || band >= getBandCount()) return -1;
+    int lockable = 0, locked = 0;
+    for (auto& r : bands[(size_t) band]->routes)
+        if (canLock (r->destination)) { ++lockable; locked += r->locked.load() ? 1 : 0; }
+    return lockable == 0 ? -1 : locked == lockable ? 1 : 0;
+}
+void TriadProcessor::setBandEdgesLocked (int band, bool on)
+{
+    if (band < 0 || band >= getBandCount()) return;
+    for (int r = 0; r < (int) bands[(size_t) band]->routes.size(); ++r)
+        if (canLock (bands[(size_t) band]->routes[(size_t) r]->destination)) setRouteLocked (band, r, on);
+}
+bool TriadProcessor::isEdgeLfoLocked (int band, int lfo) const
+{
+    if (band < 0 || band >= getBandCount()) return false;
+    const auto& b = *bands[(size_t) band];
+    for (auto& r : b.routes)
+        if (canLock (r->destination) && b.lfoIndex (r->lfoId) == lfo && r->locked.load()) return true;
+    return false;
 }
 void TriadProcessor::setRouteMuted (int band, int route, bool isMuted)
 {
@@ -2750,6 +2805,7 @@ void TriadProcessor::writeBand (juce::XmlElement& node, const Band& band, bool f
         }
         x->setAttribute ("amount", (double) r->amount.load());
         x->setAttribute ("invert", r->invert.load());
+        if (r->locked.load()) x->setAttribute ("locked", true);
         x->setAttribute ("muted", r->muted.load());
         x->setAttribute ("auto", r->automatic);
     }
@@ -2824,6 +2880,7 @@ std::unique_ptr<TriadProcessor::Band> TriadProcessor::readBand (const juce::XmlE
             r->base.store (juce::jlimit (0.0f, 1.0f, (float) x->getDoubleAttribute ("base", 0.5)));
             r->amount.store (juce::jlimit (0.0f, 1.0f, (float) x->getDoubleAttribute ("amount", 1.0)));
             r->invert.store (x->getBoolAttribute ("invert"));
+            r->locked.store (canLock (r->destination) && x->getBoolAttribute ("locked"));
             r->muted.store (x->getBoolAttribute ("muted", true));
             r->automatic = x->getBoolAttribute ("auto");
             band->routes.push_back (std::move (r));

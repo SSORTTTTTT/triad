@@ -450,8 +450,9 @@ void CrossoverDisplay::addLinkItems (juce::PopupMenu& menu, CrossoverHost& h, in
         if (const int lfo = h.edgeLfo (band, edge); lfo >= 0) right = "LFO " + juce::String (lfo + 1);
         addItemWithRight (menu, idBase + edge, menuFilter (kinds[edge], names[edge]), right);
     }
-    if (lockMock())
-        addItemWithRight (menu, idBase + 9, "Lock LFOs inside the band", lo + juce::String::fromUTF8 (" \xe2\x80\x93 ") + hi, true, true);
+    // LOCK (0.19.0): the band's LFOs move its edges only inside the band as set (once it has one that can be locked).
+    if (const int state = h.edgeLockState (band); state >= 0)
+        addItemWithRight (menu, idBase + lockItem, "Lock LFOs inside the band", lo + juce::String::fromUTF8 (" \xe2\x80\x93 ") + hi, true, state == 1);
 }
 void CrossoverDisplay::showBandMenu (int band, float hz)
 {
@@ -493,6 +494,7 @@ void CrossoverDisplay::showBandMenu (int band, float hz)
         if (safe == nullptr) return;
         if (choice > allDividersBase) { safe->host.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
         if (choice >= linkBase && choice < linkBase + 4) { if (safe->onLinkEdges) safe->onLinkEdges (band, choice - linkBase); return; }
+        if (choice == linkBase + lockItem) { safe->host.setEdgesLocked (band, safe->host.edgeLockState (band) != 1); safe->refresh(); return; }
         if (choice == copyId) { safe->host.copyBandState (band); return; }
         if (choice == pasteId) safe->host.pasteBandState (band);
         else if (choice == removeId) safe->host.removeBand (band);

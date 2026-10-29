@@ -86,7 +86,7 @@ EdgeMap edgeMap (TriadProcessor& p, int band, int lfo)
     const auto cuts = p.effectiveCrossovers();
     if (band > 0 && band - 1 < (int) cuts.size()) m.uL = uOf (cuts[(size_t) band - 1]);
     if (band < (int) cuts.size()) m.uH = uOf (cuts[(size_t) band]);
-    m.locked = triad::ui::lockMock() && m.edge != D::moveEdges;
+    m.locked = m.edge != D::moveEdges && p.isEdgeLfoLocked (band, lfo);
     return m;
 }
 juce::String hzText (float hz) { return triad::ui::formatHz (hz); }
@@ -622,7 +622,7 @@ juce::String LfoPage::signature() const
     for (int i = 0; i < processor.getLfoCount (band); ++i)
     {
         const auto l = processor.getLfoInfo (band, i);
-        s << l.id << l.target << (l.active ? "+" : "-") << ";";
+        s << l.id << l.target << (l.active ? "+" : "-") << (processor.isEdgeLfoLocked (band, i) ? "L" : "") << ";";
     }
     s << "|" << processor.getRouteCount (band);
     for (int r : processor.getRoutesFrom (band, lfo)) s << "," << r;
@@ -702,7 +702,7 @@ void LfoPage::rebuild()
     {
         const auto info = processor.getLfoInfo (band, i);
         const auto top = info.name + (info.bandLfo ? u8 (" \xc2\xb7 BAND") : info.slot >= 0 ? u8 (" \xc2\xb7 SLOT ") + juce::String (info.slot + 1)
-                                      : info.edge >= 0 ? (triad::ui::lockMock() && info.edge != D::moveEdges ? u8 (" \xc2\xb7 LOCKED RANGE") : u8 (" \xc2\xb7 BAND RANGE")) : juce::String());
+                                      : info.edge >= 0 ? (processor.isEdgeLfoLocked (band, i) ? u8 (" \xc2\xb7 LOCKED RANGE") : u8 (" \xc2\xb7 BAND RANGE")) : juce::String());
         auto tab = std::make_unique<LfoTab> (top, info.target, info.active, bandColour (band));
         tab->setToggleState (i == lfo, juce::dontSendNotification);
         tab->onClick = [this, i] { select (band, i); };

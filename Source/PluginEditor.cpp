@@ -52,6 +52,8 @@ public:
     }
     std::pair<float, float> crossoverSweep (int index) const override { return processor.crossoverSweep (index); }
     int edgeLfo (int band, int edge) const override { return processor.findEdgeLfo (band, edge); }
+    int edgeLockState (int band) const override { return processor.getBandEdgeLock (band); }
+    void setEdgesLocked (int band, bool on) override { processor.setBandEdgesLocked (band, on); }
 private:
     TriadProcessor& processor;
 };

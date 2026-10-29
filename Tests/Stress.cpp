@@ -1054,7 +1054,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                             case 0: p.setRouteAmount (b, route, r.nextFloat()); break;
                             case 1: p.setRouteInvert (b, route, r.nextBool()); break;
                             case 2: p.setRouteMuted (b, route, r.nextInt (4) == 0); break;
-                            default: break;
+                            default: p.setRouteLocked (b, route, r.nextBool()); break;   // 0.19.0: LOCK
                         }
                 }
             }
