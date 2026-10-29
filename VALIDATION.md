@@ -1,5 +1,18 @@
 # Validation — Triad
 
+## Triad v19 (0.20.0), Triad Time and Triad Split on macOS — 2026-10-29
+
+Commit `99ea614`, run 40870888255 (macos-15 runner, virtual Apple M1). New in 0.20.0: Reset band state, an LFO switched
+on / off from its tab's light and a tab menu, Reset wave, SOLO on one band alone (Cmd-click adds), Ghost movement in
+the band menu, SLOPE for the edges a band-edge LFO moves, the lit spectrum fading with the band's slopes, and an
+8192-point spectrum.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v19-0.20.0`, `Triad-Time-0.20.0`, `Triad-Split-0.20.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (over simulated Triad ... v18 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| 0.20.0 | Reset band state (effects, LFOs and band-edge LFOs gone, mix and volume as new; crossovers and MUTE kept); an LFO off puts its edge back where it is set, on again moves it; Reset wave leaves the edges where they are set (locked and inverted too); SOLO from the strips: band 3 after band 1 is band 3 alone; SLOPE shows and follows the divider it moves |
+| Stress | 3,000 random edits while audio plays (SOLO alone, LFO on / off, Reset wave, SLOPE and Reset band state among them): PASS; real plug-ins (57), five random sequences: PASS, no crashes, no NaN/Inf output, all checks held |
+
 ## Triad v18 (0.19.0), Triad Time and Triad Split on macOS — 2026-10-28
 
 Commit `0c06358`, run 40813688263 (macos-15 runner, virtual Apple M1). New in 0.19.0: the frequency panel's dividers

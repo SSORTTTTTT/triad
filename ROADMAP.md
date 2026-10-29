@@ -4,7 +4,7 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.20.0 ("Triad v19"): quality-of-life, SOLO alone, softer automated edges
+## Current testing version — 0.20.0 ("Triad v19", delivered 2026-10-29): quality-of-life, SOLO alone, softer automated edges
 
 0.20.0 (2026-10-29), Thomas, testing v18 in FL Studio: "a button that says reset band state ... that little pink dot,
 I want to be able to turn it on and off from there ... right click ... copy band state, reset band state ... when I
