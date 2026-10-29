@@ -245,6 +245,7 @@ public:
         Destination destination;
         float amount = 1.0f;
         bool invert = false, muted = true;
+        bool locked = false;   // band edges (0.19.0): LOCK, the edge kept inside the band as set
         juce::String sourceName, destinationName;
     };
     int getRouteCount (int band) const;
@@ -255,6 +256,14 @@ public:
     void setRouteDestination (int band, int route, Destination);
     void setRouteAmount (int band, int route, float amount);    // 0..1
     void setRouteInvert (int band, int route, bool);
+    // LOCK (0.19.0, Thomas: "lock band travel"): a band-edge LFO (low cut, high cut, widen / narrow) moves the edge only
+    // inside the band as set on the BANDS tab; the line's height is then the band's own range. Its shape is redrawn so
+    // the edges stay where they are wherever they can. Sweep the band cannot be locked.
+    void setRouteLocked (int band, int route, bool);
+    bool isEdgeLfoLocked (int band, int lfo) const;     // the LFO's band-edge route is locked
+    int getBandEdgeLock (int band) const;               // the band's lockable edge LFOs: -1 none, 0 not all locked, 1 all
+    void setBandEdgesLocked (int band, bool);           // the band menu's "Lock LFOs inside the band"
+    static bool canLock (const Destination& d) { return d.kind == Destination::bandEdges && d.slotId != Destination::moveEdges; }
     void setRouteMuted (int band, int route, bool);
     void removeRoute (int band, int route);
     std::vector<std::pair<Destination, juce::String>> getDestinations (int band) const;
@@ -367,6 +376,7 @@ private:
         Destination destination;
         std::atomic<float> amount { 1.0f };
         std::atomic<bool> invert { false }, muted { true };
+        std::atomic<bool> locked { false };   // band edges (0.19.0): LOCK
         bool automatic = false;          // made by Triad; switches on when its LFO is first drawn
         Lfo* lfo = nullptr;              // resolved under gate
         // A knob inside an effect: its value when it was linked (the LFO moves it from there, by `amount`),

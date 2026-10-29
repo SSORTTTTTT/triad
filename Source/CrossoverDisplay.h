@@ -38,6 +38,12 @@ struct CrossoverHost
     virtual bool isBandHeard (int) const { return true; }
     virtual std::pair<float, float> crossoverSweep (int) const { return {}; }
     virtual int edgeLfo (int /*band*/, int /*edge*/) const { return -1; }
+    // Where the dividers are as heard right now, moved by their LFOs (the panel's dividers stay where they are set,
+    // so they can be clicked and dragged; the movement is shown behind them as a ghost, 0.19.0).
+    virtual std::vector<float> heardCrossovers() const { return effectiveCrossovers(); }
+    // LOCK (0.19.0): the band's edge LFOs kept inside the band (-1: none that can be, 0: not all, 1: all locked).
+    virtual int edgeLockState (int /*band*/) const { return -1; }
+    virtual void setEdgesLocked (int /*band*/, bool) {}
 };
 
 // The frequency panel: a live spectrum of the incoming audio, the bands, and one draggable divider
@@ -71,6 +77,12 @@ public:
     // "~ Link to LFO": the band's edge (0 low, 1 high, 2 move the band, 3 open / close) to an LFO of that band.
     std::function<void (int band, int edge)> onLinkEdges;
     static void addLinkItems (juce::PopupMenu&, CrossoverHost&, int band, int idBase);   // the four, with the wave
+    static constexpr int lockItem = 9;   // idBase + 9: "Lock LFOs inside the band" (0.19.0)
+    // Gear menu > BANDS TAB > Ghost movement (0.19.0, Thomas: "you can't click anything because it's moving all the
+    // time"): the dividers always stay where they are set; with an LFO on the band edges and this on, the band as it
+    // is right now shows behind them, smaller, see-through, its slopes dotted, and the spectrum is lit in its colour
+    // where it is now (the rest dimmed, as with SOLO), with a dot on the range lane. Set by the editor (TriadSettings).
+    static inline bool ghostMovement = true;
     float xForFrequency (float) const;
     float frequencyForX (float) const;
     juce::Rectangle<float> plotBounds() const;
@@ -138,6 +150,9 @@ private:
     void frame (double time);   // every frame of the screen (up to 60 a second): the spectrum
     float constrainValue (int, float) const;
     void paintStaticLayer (juce::Graphics&);
+    void paintGhost (juce::Graphics&, const std::vector<float>& heard);   // the dividers as heard, behind the controls
+    juce::Path bandResponse (int band, const std::vector<float>& at, bool fill, bool floor, float height = 1.0f) const;
+    int lfoBandOf (int divider) const;   // the band whose LFO moves a divider (-1: none)
     juce::Rectangle<float> readoutBoundsFor (int index, const std::vector<juce::Rectangle<float>>& taken) const;
     std::vector<juce::Rectangle<float>> pillRects() const;
     void paintMeters (juce::Graphics&);

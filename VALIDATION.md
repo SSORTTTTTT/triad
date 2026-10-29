@@ -1,5 +1,23 @@
 # Validation — Triad
 
+## Triad v18 (0.19.0), Triad Time and Triad Split on macOS — 2026-10-28
+
+Commit `0c06358`, run 40813688263 (macos-15 runner, virtual Apple M1). New in 0.19.0: the frequency panel's dividers
+stay where they are set while LFOs move the band edges; Ghost movement behind them (a smaller, see-through band with
+dotted slopes, the spectrum lit where the band is now; gear menu on / off); LOCK, keeping a band-edge LFO inside its
+band (routing card, band menu, the LFO tab in the band's range); the LFO grid redraws its Hz when a divider moves.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v18-0.19.0`, `Triad-Time-0.19.0`, `Triad-Split-0.19.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (over simulated Triad ... v17 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| Dividers and ghost | While LFOs move the edges, every divider stays where it is set; the panel knows where the edges are set and where they are now; drawn with Ghost movement on and off; the setting is kept |
+| LOCK | Band 3's low cut, locked, through 12 random shapes (inverted or not, fast): stayed between 2.76 and 19.4 kHz, the band from 2.5 kHz, band 2's own low edge never moved; locking leaves the edge where it was; the range follows the divider (4 kHz); saved; Sweep the band cannot be locked; the band menu locks and unlocks all |
+| Stress | 3,000 random edits while audio plays (LOCK and Ghost movement switched among them): PASS; real plug-ins (57), five random sequences: PASS, no crashes, no NaN/Inf output, all checks held |
+
+Runs 40797321356, 40802907736 and 40808581717 (same commit) each had one or two random sequences with real plug-ins
+crash inside a third-party plug-in's own code on the message thread (ChowMatrix's and REEV-R's message queues,
+FILT-R's editor), each passing again without the Chowdhury plug-ins; Triad's code was in none of them.
+
 ## Triad v17 (0.18.0), Triad Time and Triad Split on macOS — 2026-10-28
 
 Commit `e23d57f`, run 40767244479 (macos-15 runner, virtual Apple M1). New in 0.18.0: SOLO on every band, LFOs on the

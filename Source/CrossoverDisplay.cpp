@@ -272,6 +272,85 @@ void CrossoverDisplay::paintSlopeReadouts (juce::Graphics& g)
         g.strokePath (chevron, juce::PathStrokeType (1.2f));
     }
 }
+// ---- Ghost movement (0.19.0): an LFO on the band edges shown behind the dividers, which stay where they are set ----
+int CrossoverDisplay::lfoBandOf (int j) const
+{
+    if (j < 0 || j >= (int) sweeps.size() || sweeps[(size_t) j].second <= 0.0f) return -1;
+    const bool fromBelow = host.edgeLfo (j, 1) >= 0 || host.edgeLfo (j, 2) >= 0 || host.edgeLfo (j, 3) >= 0;
+    return fromBelow ? j : j + 1;
+}
+juce::Path CrossoverDisplay::bandResponse (int b, const std::vector<float>& at, bool fill, bool floor, float height) const
+{
+    // As paintBandCurves draws a band, at the crossovers `at` (height < 1: a smaller one, from the floor up).
+    const auto plot = plotBounds();
+    const int count = host.getBandCount();
+    const double sr = host.getSampleRateForDisplay();
+    const float bottom = plot.getBottom() - 3.0f, top = bottom - (bottom - (plot.getY() + 30.0f)) * height;
+    constexpr float rangeDb = 30.0f;
+    juce::Path p;
+    bool started = false;
+    if (fill) { p.startNewSubPath (plot.getX(), bottom); started = true; }
+    for (float x = plot.getX(); x <= plot.getRight() + 0.5f; x += 2.0f)
+    {
+        const float f = frequencyForX (x);
+        float magnitude = 1.0f;
+        if (b > 0 && b - 1 < (int) at.size()) magnitude *= triad::CrossoverFilter::highMagnitude (host.getCrossoverSlope (b - 1), f, at[(size_t) b - 1], sr);
+        if (b < count - 1 && b < (int) at.size()) magnitude *= triad::CrossoverFilter::lowMagnitude (host.getCrossoverSlope (b), f, at[(size_t) b], sr);
+        const float db = juce::jlimit (-rangeDb, 0.0f, juce::Decibels::gainToDecibels (magnitude, -100.0f));
+        if (! fill && ! floor && db <= -rangeDb + 0.05f) { started = false; continue; }
+        const juce::Point<float> pt (x, top + (bottom - top) * (-db / rangeDb));
+        if (! started) { p.startNewSubPath (pt); started = true; } else p.lineTo (pt);
+    }
+    if (fill) { p.lineTo (plot.getRight(), bottom); p.closeSubPath(); }
+    return p;
+}
+void CrossoverDisplay::paintGhost (juce::Graphics& g, const std::vector<float>& heard)
+{
+    const auto plot = plotBounds();
+    const int count = host.getBandCount();
+    if ((int) heard.size() != (int) cuts.size()) return;
+    std::vector<int> moving;
+    for (int j = 0; j < (int) cuts.size(); ++j)
+        if (const int b = lfoBandOf (j); b >= 0 && std::find (moving.begin(), moving.end(), b) == moving.end()) moving.push_back (b);
+    if (moving.empty()) return;
+    const float dash[] { 4.0f, 4.0f };
+    juce::ignoreUnused (dash);
+    // Thomas: the band as set stays as it is; the ghost is the quiet one, smaller, more see-through, its slopes dotted.
+    constexpr float size = 0.62f;   // of the bands' height
+    for (int b : moving)
+    {
+        const auto colour = bandColour (b);
+        g.setColour (colour.withAlpha (0.1f));
+        g.fillPath (bandResponse (b, heard, true, true, size));
+        juce::Path dots;
+        const float dotted[] { 0.01f, 4.5f };
+        juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded).createDashedStroke (dots, bandResponse (b, heard, false, false, size), dotted, 2);
+        g.setColour (colour.withAlpha (0.85f));
+        g.fillPath (dots);
+    }
+    // On the lane under the spectrum: a dot where each moved divider is right now.
+    {
+        std::array<float, 2> rowRight { -1.0e9f, -1.0e9f };
+        for (int j = 0; j < (int) sweeps.size(); ++j)
+        {
+            const auto [low, high] = sweeps[(size_t) j];
+            if (high <= 0.0f) continue;
+            const float x1 = xForFrequency (low), x2 = juce::jmax (x1 + 3.0f, xForFrequency (high));
+            const auto label = formatHz (low) + juce::String::fromUTF8 (" \xe2\x86\x94 ") + formatHz (high);
+            g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
+            const float labelWidth = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), label) + 10.0f;
+            const int row = x1 - 4.0f > rowRight[0] ? 0 : 1;
+            const float y = plot.getBottom() + 8.0f + (float) row * 11.0f;
+            rowRight[(size_t) row] = juce::jmax (x2, (x1 + x2) * 0.5f + labelWidth * 0.5f);
+            const float x = juce::jlimit (x1, x2, xForFrequency (heard[(size_t) j]));
+            const int b = lfoBandOf (j);
+            g.setColour (currentPalette.text);
+            g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ x, y }));
+            g.setColour (bandColour (juce::jmax (0, b)));
+            g.drawEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ x, y }), 1.5f);
+        }
+    }
+}
 // Each band's response (the product of its low- and high-pass) as a filled curve in its colour.
 void CrossoverDisplay::paintBandCurves (juce::Graphics& g)
 {
@@ -371,6 +450,9 @@ void CrossoverDisplay::addLinkItems (juce::PopupMenu& menu, CrossoverHost& h, in
         if (const int lfo = h.edgeLfo (band, edge); lfo >= 0) right = "LFO " + juce::String (lfo + 1);
         addItemWithRight (menu, idBase + edge, menuFilter (kinds[edge], names[edge]), right);
     }
+    // LOCK (0.19.0): the band's LFOs move its edges only inside the band as set (once it has one that can be locked).
+    if (const int state = h.edgeLockState (band); state >= 0)
+        addItemWithRight (menu, idBase + lockItem, "Lock LFOs inside the band", lo + juce::String::fromUTF8 (" \xe2\x80\x93 ") + hi, true, state == 1);
 }
 void CrossoverDisplay::showBandMenu (int band, float hz)
 {
@@ -412,6 +494,7 @@ void CrossoverDisplay::showBandMenu (int band, float hz)
         if (safe == nullptr) return;
         if (choice > allDividersBase) { safe->host.setAllCrossoverSlopes (choice - allDividersBase); safe->refresh(); return; }
         if (choice >= linkBase && choice < linkBase + 4) { if (safe->onLinkEdges) safe->onLinkEdges (band, choice - linkBase); return; }
+        if (choice == linkBase + lockItem) { safe->host.setEdgesLocked (band, safe->host.edgeLockState (band) != 1); safe->refresh(); return; }
         if (choice == copyId) { safe->host.copyBandState (band); return; }
         if (choice == pasteId) safe->host.pasteBandState (band);
         else if (choice == removeId) safe->host.removeBand (band);
@@ -836,7 +919,34 @@ void CrossoverDisplay::paint (juce::Graphics& g)
             g.setColour (colour.withAlpha (juce::jmin (1.0f, 0.72f * strength)));
             g.strokePath (spectrumLine, juce::PathStrokeType (1.3f));
         };
-        if (! anySilent)
+        // Ghost movement (0.19.0): the band an LFO moves lights up the spectrum where it is right now, the rest dimmed.
+        std::vector<int> movingBands;
+        if (ghostMovement)
+            for (int j = 0; j < (int) cuts.size(); ++j)
+                if (const int b = lfoBandOf (j); b >= 0 && std::find (movingBands.begin(), movingBands.end(), b) == movingBands.end()) movingBands.push_back (b);
+        if (! anySilent && ! movingBands.empty())
+        {
+            const auto heard = host.heardCrossovers();
+            juce::RectangleList<int> lit;
+            for (int b : movingBands)
+            {
+                const float x1 = b > 0 && b - 1 < (int) heard.size() ? xForFrequency (heard[(size_t) b - 1]) : plot.getX();
+                const float x2 = b < (int) heard.size() ? xForFrequency (heard[(size_t) b]) : plot.getRight() + 1.0f;
+                lit.add (juce::Rectangle<float> (x1, plot.getY(), x2 - x1, plot.getHeight() + 2.0f).toNearestInt());
+            }
+            {
+                juce::Graphics::ScopedSaveState state (g);
+                for (const auto& r : lit) g.excludeClipRegion (r);
+                drawSpectrum (currentPalette.faintText, 0.5f);   // the rest unlit, as with SOLO
+            }
+            for (size_t i = 0; i < movingBands.size() && i < (size_t) lit.getNumRectangles(); ++i)
+            {
+                juce::Graphics::ScopedSaveState state (g);
+                g.reduceClipRegion (lit.getRectangle ((int) i));
+                drawSpectrum (bandColour (movingBands[i]).brighter (0.2f), 1.8f);
+            }
+        }
+        else if (! anySilent)
             drawSpectrum (currentPalette.spectrum, 1.0f);
         else
         {
@@ -852,6 +962,7 @@ void CrossoverDisplay::paint (juce::Graphics& g)
             }
         }
     }
+    if (ghostMovement) paintGhost (g, host.heardCrossovers());
     const auto pills = pillRects();
     for (size_t i = 0; i < cuts.size() && i < pills.size(); ++i)
     {

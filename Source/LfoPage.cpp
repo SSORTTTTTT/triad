@@ -58,10 +58,14 @@ struct EdgeMap
 {
     int edge = -1;
     float uL = 0.0f, uH = 1.0f;
+    bool locked = false;   // design: kept inside the band as set (the grid's height is the band's range)
     float c() const { return 0.5f * (uL + uH); }
     float w() const { return uH - uL; }
     std::pair<float, float> at (float v) const   // the low and high edge (u)
     {
+        if (locked && edge == D::lowEdge) return { uL + v * w(), uH };
+        if (locked && edge == D::highEdge) return { uL, uL + v * w() };
+        if (locked && edge == D::openEdges) { const float half = 0.5f * v * w(); return { c() - half, c() + half }; }
         if (edge == D::lowEdge) return { v, uH };
         if (edge == D::highEdge) return { uL, v };
         if (edge == D::moveEdges) { const float m = 0.5f * w() + v * (1.0f - w()); return { m - 0.5f * w(), m + 0.5f * w() }; }
@@ -82,6 +86,7 @@ EdgeMap edgeMap (TriadProcessor& p, int band, int lfo)
     const auto cuts = p.effectiveCrossovers();
     if (band > 0 && band - 1 < (int) cuts.size()) m.uL = uOf (cuts[(size_t) band - 1]);
     if (band < (int) cuts.size()) m.uH = uOf (cuts[(size_t) band]);
+    m.locked = m.edge != D::moveEdges && p.isEdgeLfoLocked (band, lfo);
     return m;
 }
 juce::String hzText (float hz) { return triad::ui::formatHz (hz); }
@@ -260,10 +265,12 @@ std::vector<std::pair<float, juce::String>> LfoShapeHost::valueMarks() const
             const float hz = decade * (float) k;
             if (hz < 19.9f || hz > 20001.0f) continue;
             const float u = uOf (hz);
-            const float v = m.edge == D::moveEdges ? (u - 0.5f * m.w()) / juce::jmax (0.001f, 1.0f - m.w()) : u;
-            const bool labelled = k == 1 || k == 2 || k == 5;
+            const float v = m.locked ? (u - m.uL) / juce::jmax (0.001f, m.w())
+                          : m.edge == D::moveEdges ? (u - 0.5f * m.w()) / juce::jmax (0.001f, 1.0f - m.w()) : u;
+            const bool labelled = (k == 1 || k == 2 || k == 5) && ! (m.locked && (std::abs (v) < 0.06f || std::abs (v - 1.0f) < 0.06f));
             if (v >= -0.001f && v <= 1.001f) marks.push_back ({ juce::jlimit (0.0f, 1.0f, v), labelled ? shortHz (hz) : juce::String() });
         }
+    if (m.locked) { marks.push_back ({ 0.0f, shortHz (hzOf (m.uL)) }); marks.push_back ({ 1.0f, shortHz (hzOf (m.uH)) }); }   // the band's edges
     return marks;
 }
 // ---- Behind the grid: the sound coming in --------------------------------------------------------------------------
@@ -307,7 +314,7 @@ void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
         processor.setTracedLfo (-1, -1);
         const auto shape = processor.getLfoInfo (band, lfo).shape;
         const bool hzScale = m.edge != D::openEdges;
-        const float bottomU = m.edge == D::moveEdges ? 0.5f * m.w() : 0.0f, topU = m.edge == D::moveEdges ? 1.0f - 0.5f * m.w() : 1.0f;
+        const float bottomU = m.locked ? m.uL : m.edge == D::moveEdges ? 0.5f * m.w() : 0.0f, topU = m.locked ? m.uH : m.edge == D::moveEdges ? 1.0f - 0.5f * m.w() : 1.0f;
         const auto yForU = [&] (float u) { return plot.getBottom() - plot.getHeight() * (u - bottomU) / juce::jmax (0.001f, topU - bottomU); };
         juce::Path pass;
         std::vector<juce::Point<float>> lows, highs;
@@ -354,7 +361,29 @@ void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
             const float highHz = band < (int) heard.size() ? heard[(size_t) band] : 20000.0f;
             // Lit where the band is right now: it slides as the LFO moves the edges (Thomas: light up the part of the mix
             // being worked on).
-            backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), lowHz, highHz, colour);
+            if (m.locked)
+            {
+                // Locked: the spectrum across is the band's range too (stretched so it fills the grid).
+                juce::Graphics::ScopedSaveState state (g);
+                g.reduceClipRegion (plot.toNearestInt());
+                const float w = plot.getWidth() / juce::jmax (0.01f, m.w());
+                backdrop->spectrum.paint (g, { plot.getX() - w * m.uL, plot.getY(), w, plot.getHeight() }, processor.getSpectrumTap(),
+                                          processor.getSampleRateForDisplay(), lowHz, highHz, colour);
+            }
+            else
+                backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), lowHz, highHz, colour);
+        }
+        if (m.locked)
+        {
+            // A tag in the corner: what it is locked to.
+            const auto text = juce::String::fromUTF8 ("LOCKED TO BAND ") + juce::String (band + 1) + juce::String::fromUTF8 ("  \xc2\xb7  ")
+                            + triad::ui::formatHz (hzOf (m.uL)) + juce::String::fromUTF8 (" \xe2\x80\x93 ") + triad::ui::formatHz (hzOf (m.uH));
+            g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+            const float tw = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 16.0f;
+            const auto tag = juce::Rectangle<float> (plot.getX() + 8.0f, plot.getY() + 22.0f, tw, 17.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (tag, 4.0f);
+            g.setColour (colour); g.drawRoundedRectangle (tag.reduced (0.5f), 4.0f, 1.0f);
+            g.drawText (text, tag, juce::Justification::centred);
         }
         return;
     }
@@ -593,7 +622,7 @@ juce::String LfoPage::signature() const
     for (int i = 0; i < processor.getLfoCount (band); ++i)
     {
         const auto l = processor.getLfoInfo (band, i);
-        s << l.id << l.target << (l.active ? "+" : "-") << ";";
+        s << l.id << l.target << (l.active ? "+" : "-") << (processor.isEdgeLfoLocked (band, i) ? "L" : "") << ";";
     }
     s << "|" << processor.getRouteCount (band);
     for (int r : processor.getRoutesFrom (band, lfo)) s << "," << r;
@@ -673,7 +702,7 @@ void LfoPage::rebuild()
     {
         const auto info = processor.getLfoInfo (band, i);
         const auto top = info.name + (info.bandLfo ? u8 (" \xc2\xb7 BAND") : info.slot >= 0 ? u8 (" \xc2\xb7 SLOT ") + juce::String (info.slot + 1)
-                                      : info.edge >= 0 ? u8 (" \xc2\xb7 BAND RANGE") : juce::String());
+                                      : info.edge >= 0 ? (processor.isEdgeLfoLocked (band, i) ? u8 (" \xc2\xb7 LOCKED RANGE") : u8 (" \xc2\xb7 BAND RANGE")) : juce::String());
         auto tab = std::make_unique<LfoTab> (top, info.target, info.active, bandColour (band));
         tab->setToggleState (i == lfo, juce::dontSendNotification);
         tab->onClick = [this, i] { select (band, i); };

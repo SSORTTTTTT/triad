@@ -64,6 +64,9 @@ public:
     // each opening to the side. A favorite's type comes from the plug-in; one set by hand (a slot's menu) wins.
     bool getFavouritesByType() const;
     void setFavouritesByType (bool);
+    // Gear menu > BANDS TAB > Ghost movement (0.19.0): an LFO on the band edges shown as a ghost behind the dividers (on to start).
+    bool getGhostMovement() const;
+    void setGhostMovement (bool);
     juce::String getFavouriteType (const juce::String& key) const;            // "" = the plug-in's own
     void setFavouriteType (const juce::String& key, const juce::String& type); // "" = back to the plug-in's own
 

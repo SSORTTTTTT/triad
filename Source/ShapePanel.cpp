@@ -323,6 +323,13 @@ void ShapeEditor::paint (juce::Graphics& g)
     auto mix = [&key] (int v) { key = key * 1099511628211ull + (juce::uint64) (juce::uint32) v; };
     for (const auto& p : shape) { mix (juce::roundToInt (p.x * 1.0e6f)); mix (juce::roundToInt (p.y * 1.0e6f)); mix (juce::roundToInt (p.curve * 1.0e4f)); }
     for (bool b : selected) mix (b ? 7 : 3);
+    if (host != nullptr)
+    {
+        // What the labels say depends on more than the shape (band-edge LFOs: where the band's dividers are set), so
+        // they count too: moving a divider on the BANDS tab redraws the LFO grid's Hz.
+        for (const auto& [v, text] : host->valueMarks()) { mix (juce::roundToInt (v * 1.0e5f)); mix (text.hashCode()); }
+        for (const auto& p : shape) mix (host->pointLabel (p).hashCode());
+    }
     const int labelMode = host != nullptr ? host->segmentLabelMode() : 0;
     mix (labelMode);
     const bool backdrop = host != nullptr && host->hasBackdrop();

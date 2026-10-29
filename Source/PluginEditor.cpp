@@ -26,7 +26,8 @@ public:
     explicit TriadCrossoverHost (TriadProcessor& p) : processor (p) {}
     juce::String getProductName() const override { return "Triad"; }
     int getBandCount() const override { return processor.getBandCount(); }
-    std::vector<float> effectiveCrossovers() const override { return processor.heardCrossovers(); }   // with their LFOs
+    std::vector<float> effectiveCrossovers() const override { return processor.effectiveCrossovers(); }   // as set (0.19.0)
+    std::vector<float> heardCrossovers() const override { return processor.heardCrossovers(); }   // with their LFOs
     int getCrossoverSlope (int index) const override { return processor.getCrossoverSlope (index); }
     juce::RangedAudioParameter* crossoverParameter (int index) const override { return processor.crossoverParameter (index); }
     juce::RangedAudioParameter* slopeParameter (int index) const override { return processor.slopeParameter (index); }
@@ -51,6 +52,8 @@ public:
     }
     std::pair<float, float> crossoverSweep (int index) const override { return processor.crossoverSweep (index); }
     int edgeLfo (int band, int edge) const override { return processor.findEdgeLfo (band, edge); }
+    int edgeLockState (int band) const override { return processor.getBandEdgeLock (band); }
+    void setEdgesLocked (int band, bool on) override { processor.setBandEdgesLocked (band, on); }
 private:
     TriadProcessor& processor;
 };
@@ -198,6 +201,7 @@ TriadEditor::TriadEditor (TriadProcessor& p)
     rebuildStrips();
     setTab (Tab::bands);
     setScale (settings->getScale());
+    CrossoverDisplay::ghostMovement = settings->getGhostMovement();
     timerCallback();
     startTimerHz (15);   // labels, status, structure; the meters and dots move with the screen (animate)
 }
@@ -426,7 +430,7 @@ void TriadEditor::animate (double frameTime)
         if (processor.getBandCount() == builtCount)
         {
             frequencyDisplay.refreshIfChanged();
-            const auto cuts = processor.heardCrossovers();   // with their LFOs (0.18.0)
+            const auto cuts = processor.effectiveCrossovers();   // as set: they stay put while LFOs move the edges (0.19.0)
             for (auto& strip : strips) strip->updateEdges (cuts, builtCount, processor.nyquistFrequency());
         }
         for (auto& strip : strips) strip->animate (meters.bands[(size_t) strip->getBand()], dt);
@@ -922,7 +926,7 @@ void TriadEditor::showGearMenu()
     enum { sortCompany = 1, sortAZ, autoCheck, refreshList, rescanAll, addFolder, presetsFolder, chainsFolder,
            startupUseCurrent, startupInit, startupCurrentSettings, favouritesByType, windowSize, scaleBase = 100, removeFolderBase = 200,
            startupBase = 1000, pitchLabelsBase = 900000, themeBase = 800000, backdropSongBase = 700000, backdropAudioBase = 700010,
-           timeBackdropBase = 700020 };
+           timeBackdropBase = 700020, ghostMovementId = 700030 };
     const auto folders = settings->getFolders();
     // 0.16.0: grouped as in Thomas's picture, each group's details opening to the side.
     juce::PopupMenu menu;
@@ -970,6 +974,9 @@ void TriadEditor::showGearMenu()
     {
         return b == TriadSettings::Backdrop::waveform ? juce::String ("Waveform") : b == TriadSettings::Backdrop::spectrum ? juce::String ("Spectrum") : juce::String ("Nothing");
     };
+    menu.addSectionHeader ("BANDS TAB");
+    triad::ui::addItemWithRight (menu, ghostMovementId, triad::ui::menuLfo ("Ghost movement"), "LFOs on the band edges", true, settings->getGhostMovement());
+    menu.addSeparator();
     menu.addSectionHeader ("LFO TAB: BEHIND THE GRID");
     {
         // What is drawn behind each LFO's grid: the sound coming into its band (0.15.0).
@@ -1040,6 +1047,13 @@ void TriadEditor::showGearMenu()
             return;
         }
         if (choice == favouritesByType) { s.setFavouritesByType (! s.getFavouritesByType()); return; }
+        if (choice == ghostMovementId)
+        {
+            s.setGhostMovement (! s.getGhostMovement());
+            CrossoverDisplay::ghostMovement = s.getGhostMovement();
+            self.frequencyDisplay.repaint();
+            return;
+        }
         if (choice == startupInit || choice == startupCurrentSettings || (choice >= startupBase && choice - startupBase < presetFiles.size()))
         {
             self.setStartupPreset (choice == startupInit ? juce::String() : choice == startupCurrentSettings ? juce::String (TriadSettings::currentSettings)

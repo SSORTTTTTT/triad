@@ -196,6 +196,18 @@ bool TriadSettings::getFavouritesByType() const
     reload();
     return file->getBoolValue ("favouritesByType", true);
 }
+bool TriadSettings::getGhostMovement() const
+{
+    reload();
+    return file->getBoolValue ("ghostMovement", true);
+}
+void TriadSettings::setGhostMovement (bool on)
+{
+    reload();
+    file->setValue ("ghostMovement", on);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
+}
 void TriadSettings::setFavouritesByType (bool on)
 {
     reload();

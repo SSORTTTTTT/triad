@@ -260,12 +260,12 @@ inline void edgeTests (const juce::File& screenshots)
     juce::PopupMenu menu;
     CrossoverDisplay::addLinkItems (menu, *host, 1, 200);
     int items = 0;
-    for (juce::PopupMenu::MenuItemIterator it (menu); it.next();) if (! it.getItem().isSectionHeader && it.getItem().itemID >= 200) ++items;
+    for (juce::PopupMenu::MenuItemIterator it (menu); it.next();) if (! it.getItem().isSectionHeader && it.getItem().itemID >= 200 && it.getItem().itemID < 204) ++items;
     require (items == 4, "A middle band's menu links its four edge moves to an LFO");
     juce::PopupMenu lowest;
     CrossoverDisplay::addLinkItems (lowest, *host, 0, 200);
     items = 0;
-    for (juce::PopupMenu::MenuItemIterator it (lowest); it.next();) if (! it.getItem().isSectionHeader && it.getItem().itemID >= 200) ++items;
+    for (juce::PopupMenu::MenuItemIterator it (lowest); it.next();) if (! it.getItem().isSectionHeader && it.getItem().itemID >= 200 && it.getItem().itemID < 204) ++items;
     require (items == 3, "The lowest band's menu has no low edge");
     // The window: linking from the panel opens the LFO tab on the new LFO.
     {
@@ -295,9 +295,125 @@ inline void edgeTests (const juce::File& screenshots)
         q.setBandSoloed (2, false);
         q.setBandMuted (0, false);
         require (host->isBandHeard (0) && host->isBandHeard (1) && host->isBandHeard (2), "...and all are heard again after");
+        // 0.19.0 (Thomas: "you can't click anything because it's moving all the time"): while LFOs move the edges, the
+        // dividers stay where they are set; the movement shows behind them (Ghost movement, on or off in the gear menu).
+        {
+            std::vector<float> noise ((size_t) rate / 4);
+            juce::Random rr (9);
+            for (auto& v : noise) v = 0.3f * (rr.nextFloat() - 0.5f);
+            run (q, noise, 256);
+            auto& display = editor->getDisplay();
+            display.refreshIfChanged();
+            const auto set = q.effectiveCrossovers(), heard = q.heardCrossovers();
+            bool moved = false;
+            for (size_t j = 0; j < set.size() && j < heard.size(); ++j) moved = moved || std::abs (heard[j] - set[j]) > 1.0f;
+            require (moved, "The LFOs move the edges while audio plays");
+            require (host->heardCrossovers() == heard && host->effectiveCrossovers() == set, "The panel knows where the edges are set and where they are now");
+            for (int j = 0; j < display.getNumHandles() && j < (int) set.size(); ++j)
+                require (std::abs ((float) display.getHandle (j)->getBounds().getCentreX() - display.xForFrequency (set[(size_t) j])) < 2.0f,
+                         "The dividers stay where they are set while LFOs move the edges");
+            CrossoverDisplay::ghostMovement = true;
+            themeTests::snapshot (screenshots, "Triad-ghost-movement.png", *editor);
+            CrossoverDisplay::ghostMovement = false;
+            themeTests::snapshot (screenshots, "Triad-ghost-off.png", *editor);
+            juce::SharedResourcePointer<TriadSettings> settings;
+            const bool was = settings->getGhostMovement();
+            settings->setGhostMovement (! was);
+            require (settings->getGhostMovement() == ! was, "Ghost movement on / off is kept in the settings");
+            settings->setGhostMovement (was);
+            CrossoverDisplay::ghostMovement = was;
+        }
     }
     std::cout << "Band edges: move (9 kHz through " << passDb << " dB, blocked " << stopDb << " dB), open / close (closed " << closedDb
               << " dB, open " << openDb << " dB), fast LFOs (peak " << peak << "), saved, menus: passed" << std::endl;
+}
+
+// 0.19.0 (Thomas: "lock band travel"): LOCK keeps a band-edge LFO inside the band as set on the BANDS tab.
+inline void lockTests (const juce::File& screenshots)
+{
+    constexpr double rate = 48000.0;
+    std::vector<float> silence ((size_t) rate / 2);
+    TriadProcessor p;
+    p.prepareToPlay (rate, 512);
+    const auto set = p.effectiveCrossovers();   // 250 Hz, 2.5 kHz
+    require (p.getBandEdgeLock (2) == -1, "A band with no edge LFO has nothing to lock");
+    const int lfo = p.linkEdgesToLfo (2, D::lowEdge);   // band 3's low cut
+    const int route = p.getRoutesFrom (2, lfo).front();
+    require (p.getBandEdgeLock (2) == 0 && ! p.isEdgeLfoLocked (2, lfo), "A new edge LFO is not locked (crossing over is the default)");
+    // Unlocked, the bottom of the grid takes band 3's low cut far below its band (squeezing band 2).
+    p.setLfoShape (2, lfo, mod::flat (0.0f), false);
+    run (p, silence);
+    require (p.heardCrossovers()[1] < set[1] * 0.5f, "Unlocked: the low cut can go below the band");
+    // Locking keeps the edges where they are: the line is redrawn for the band's range.
+    p.setLfoShape (2, lfo, mod::flat (uFor (6000.0f)), false);
+    run (p, silence);
+    const float before = p.heardCrossovers()[1];
+    p.setRouteLocked (2, route, true);
+    require (p.isEdgeLfoLocked (2, lfo) && p.getRouteInfo (2, route).locked && p.getBandEdgeLock (2) == 1, "LOCK on");
+    run (p, silence);
+    require (std::abs (p.heardCrossovers()[1] / before - 1.0f) < 0.03f, "Locking leaves the edge where it was");
+    require (std::abs (p.getLfoInfo (2, lfo).shape.front().y - (uFor (6000.0f) - uFor (set[1])) / (1.0f - uFor (set[1]))) < 0.01f,
+             "...its line now reads in the band's range");
+    // Locked: whatever is drawn (and inverted), the low cut stays inside band 3 (2.5 kHz up); band 2's own low edge
+    // is never touched.
+    juce::Random r (31);
+    float lowest = 1.0e9f, highest = 0.0f;
+    for (int round = 0; round < 12; ++round)
+    {
+        mod::Shape shape;
+        const int points = 2 + r.nextInt (8);
+        for (int i = 0; i < points; ++i) shape.push_back ({ i == 0 ? 0.0f : i == points - 1 ? 1.0f : r.nextFloat(), r.nextFloat(), (r.nextFloat() - 0.5f) * 8.0f });
+        p.setLfoShape (2, lfo, shape, false);
+        p.setRouteInvert (2, route, r.nextBool());
+        p.setLfoLength (2, lfo, 4 + r.nextInt (3));   // fast: many cycles in each run
+        std::vector<float> noise ((size_t) rate / 8);
+        for (auto& v : noise) v = 0.2f * (r.nextFloat() - 0.5f);
+        const int blocks = (int) noise.size() / 256;
+        for (int k = 0; k < blocks; ++k)
+        {
+            std::vector<float> piece (noise.begin() + k * 256, noise.begin() + (k + 1) * 256);
+            run (p, piece, 256);
+            const auto heard = p.heardCrossovers();
+            lowest = juce::jmin (lowest, heard[1]); highest = juce::jmax (highest, heard[1]);
+            require (std::abs (heard[0] / set[0] - 1.0f) < 0.01f, "Locked: band 2's own low edge does not move");
+        }
+    }
+    require (lowest > set[1] * 0.97f, "Locked: the low cut never goes below the band as set");
+    require (highest > set[1] * 2.0f, "...and still moves inside it");
+    const auto sweep = p.crossoverSweep (1);
+    require (sweep.first > set[1] * 0.97f, "The range lane shows the locked range");
+    // Moving the divider on the BANDS tab moves the locked range with it.
+    if (auto* c = p.crossoverParameter (1)) c->setValueNotifyingHost (c->convertTo0to1 (4000.0f));
+    p.setLfoShape (2, lfo, mod::flat (0.0f), false);
+    p.setRouteInvert (2, route, false);
+    run (p, silence);
+    require (std::abs (p.heardCrossovers()[1] / 4000.0f - 1.0f) < 0.03f, "The locked range follows the divider (bottom of the grid = the band as set)");
+    // Saved with the project; Sweep the band cannot be locked; the band menu locks and unlocks them all.
+    juce::MemoryBlock state;
+    p.getStateInformation (state);
+    TriadProcessor q;
+    q.prepareToPlay (rate, 512);
+    q.setStateInformation (state.getData(), (int) state.getSize());
+    require (q.isEdgeLfoLocked (2, lfo), "LOCK is saved with the project");
+    const int sweepLfo = q.linkEdgesToLfo (1, D::moveEdges);
+    q.setRouteLocked (1, q.getRoutesFrom (1, sweepLfo).front(), true);
+    require (! q.isEdgeLfoLocked (1, sweepLfo) && q.getBandEdgeLock (1) == -1, "Sweep the band cannot be locked");
+    q.linkEdgesToLfo (1, D::highEdge);
+    q.setBandEdgesLocked (1, true);
+    require (q.getBandEdgeLock (1) == 1, "The band menu locks the band's LFOs");
+    q.setBandEdgesLocked (1, false);
+    require (q.getBandEdgeLock (1) == 0, "...and unlocks them");
+    // The LFO tab of a locked LFO: its scale is the band's range, with LOCK lit on its card.
+    {
+        std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (p.createEditor()));
+        editor->setVisible (true);
+        editor->setTab (TriadEditor::Tab::lfo);
+        editor->getLfoPage().select (2, lfo);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+        themeTests::snapshot (screenshots, "Triad-lock.png", *editor);
+    }
+    std::cout << "LOCK: the low cut stayed inside band 3 (" << lowest << " Hz up to " << highest << " Hz, band from " << set[1]
+              << " Hz), locking keeps the edge, follows the divider, saved, menus: passed" << std::endl;
 }
 
 inline void run (const juce::File& screenshots)
@@ -305,5 +421,6 @@ inline void run (const juce::File& screenshots)
     splitterTests();
     soloTests();
     edgeTests (screenshots);
+    lockTests (screenshots);
 }
 }

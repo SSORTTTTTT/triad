@@ -62,6 +62,14 @@ RouteRow::RouteRow (TriadProcessor& p, int b, int r, bool withSource, juce::Colo
     invert.setTooltip ("Invert: the LFO's top becomes its bottom");
     invert.onClick = [this] { processor.setRouteInvert (band, route, invert.getToggleState()); };
     addAndMakeVisible (invert);
+    if (! showSource)
+    {
+        // LOCK (0.19.0): a band-edge LFO moving the edge only inside the band as set (not for Sweep the band).
+        lock.setClickingTogglesState (true);
+        lock.setTooltip ("LOCK: the LFO moves the edge only inside the band, as set on the BANDS tab");
+        lock.onClick = [this] { processor.setRouteLocked (band, route, lock.getToggleState()); };
+        addChildComponent (lock);
+    }
     destination.setTooltip ("What this LFO moves. Click to choose.");
     destination.onClick = [this]
     {
@@ -109,6 +117,11 @@ void RouteRow::lookAndFeelChanged()
     }
     invert.setColour (juce::TextButton::buttonColourId, pill);
     invert.setColour (juce::TextButton::buttonOnColourId, accent);
+    lock.getProperties().set ("triadAlign", "centre");
+    lock.setColour (juce::TextButton::buttonColourId, pill);
+    lock.setColour (juce::TextButton::buttonOnColourId, colour);
+    lock.setColour (juce::TextButton::textColourOffId, dimTextColour);
+    lock.setColour (juce::TextButton::textColourOnId, inkColour);
     invert.setColour (juce::TextButton::textColourOffId, dimTextColour);
     invert.setColour (juce::TextButton::textColourOnId, inkColour);
     remove.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -119,13 +132,16 @@ void RouteRow::update()
     const auto next = processor.getRouteInfo (band, route);
     // Only what changed is redrawn (this runs several times a second; the screen's frames go to what moves).
     const bool changed = ! juce::exactlyEqual (next.amount, info.amount) || next.muted != info.muted || next.invert != info.invert
-                         || next.sourceName != info.sourceName || next.destinationName != info.destinationName || ! shown;
+                         || next.sourceName != info.sourceName || next.destinationName != info.destinationName || next.locked != info.locked
+                         || TriadProcessor::canLock (next.destination) != lock.isVisible() || ! shown;
     info = next;
     if (! changed) return;
     shown = true;
     light.setToggleState (! info.muted, juce::dontSendNotification);
     if (! amount.isMouseButtonDown()) amount.setValue (info.amount * 100.0, juce::dontSendNotification);
     invert.setToggleState (info.invert, juce::dontSendNotification);
+    if (! showSource && TriadProcessor::canLock (info.destination) != lock.isVisible()) { lock.setVisible (! lock.isVisible()); resized(); }
+    lock.setToggleState (info.locked, juce::dontSendNotification);
     source.setButtonText (info.sourceName);
     destination.setButtonText (info.destinationName);
     setAlpha (info.muted ? 0.62f : 1.0f);
@@ -156,6 +172,7 @@ void RouteRow::resized()
     r.removeFromTop (3);
     invert.setBounds (r.removeFromRight (40));
     r.removeFromRight (6);
+    if (lock.isVisible()) { lock.setBounds (r.removeFromRight (48)); r.removeFromRight (6); }
     amount.setBounds (r);
 }
 void RouteRow::paint (juce::Graphics& g)
