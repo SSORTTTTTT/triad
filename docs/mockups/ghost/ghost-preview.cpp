@@ -55,6 +55,53 @@ int main (int argc, char** argv)
     editor->setVisible (true);
     if (juce::SystemStats::getEnvironmentVariable ("TRIAD_GHOST_OFF", "0") == "1") CrossoverDisplay::ghostMovement = false;
     pump (300);
+    // LOCK (TRIAD_SCENE=lock, design): band 3's low cut on an LFO, kept inside the band; the LFO tab, the same after
+    // its divider is moved on the BANDS tab, and the band menu.
+    if (juce::SystemStats::getEnvironmentVariable ("TRIAD_SCENE", "bands") == "lock")
+    {
+        const bool locked = triad::ui::lockMock();
+        const juce::String tag = locked ? "locked" : "unlocked";
+        const int lfo = p.linkEdgesToLfo (2, D::lowEdge);
+        p.setLfoShape (2, lfo, locked ? mod::Shape { { 0.0f, 0.08f, 0.0f }, { 0.5f, 0.75f, 2.5f }, { 1.0f, 0.08f, -2.5f } }
+                                      : mod::Shape { { 0.0f, 0.70f, 0.0f }, { 0.5f, 0.92f, 2.5f }, { 1.0f, 0.70f, -2.5f } }, false);
+        editor->setTab (TriadEditor::Tab::lfo);
+        auto& page = editor->getLfoPage();
+        page.select (2, lfo);
+        pump (300);
+        editor->createComponentSnapshot (editor->getLocalBounds());
+        play (p, 70);
+        const auto area = juce::Rectangle<int> (16, 92, 968, 296);
+        const auto shot = [&] (const juce::String& name)
+        {
+            page.getEditor().frame (2000.0);
+            pump (30);
+            juce::FileOutputStream stream (folder.getChildFile (name));
+            juce::PNGImageFormat().writeImageToStream (editor->createComponentSnapshot (area, true, 2.0f), stream);
+            std::cout << "wrote " << name << std::endl;
+        };
+        shot ("lock-lfo-" + tag + ".png");
+        if (! locked) return 0;
+        // Move band 3's low edge (the 2.5 kHz divider) to 4 kHz on the BANDS tab: the locked range follows.
+        if (auto* c = p.crossoverParameter (1)) c->setValueNotifyingHost (c->convertTo0to1 (4000.0f));
+        play (p, 10);
+        page.select (2, 0);   // the grid redrawn with the new range (in the plug-in it follows by itself)
+        page.select (2, lfo);
+        pump (100);
+        play (p, 10);
+        shot ("lock-lfo-moved-to-4k.png");
+        if (auto* c = p.crossoverParameter (1)) c->setValueNotifyingHost (c->convertTo0to1 (2500.0f));
+        editor->setTab (TriadEditor::Tab::bands);
+        pump (200);
+        triad::ui::menusInsideWindow = true;
+        auto& display = editor->getDisplay();
+        const auto at = editor->getLocalPoint (&display, juce::Point<int> ((int) display.xForFrequency (6000.0f), (int) display.plotBounds().getY() + 30));
+        juce::Desktop::getInstance().getMainMouseSource().setScreenPosition (at.toFloat());
+        display.showBandMenu (2, 6000.0f);
+        save (*editor, folder.getChildFile ("lock-band-menu.png"));
+        juce::PopupMenu::dismissAllActiveMenus();
+        pump (100);
+        return 0;
+    }
     // The LFO tab (TRIAD_SCENE=lfo-cut: band 2's high cut opening from 500 Hz to 12 kHz and back, frames for a GIF;
     // lfo-widen: band 2 widening and narrowing, one picture).
     const auto scene = juce::SystemStats::getEnvironmentVariable ("TRIAD_SCENE", "bands");
@@ -105,7 +152,7 @@ int main (int argc, char** argv)
     {
         for (int b = 0; b < p.getBandCount(); ++b)
             if (auto* strip = editor->getStrip (b))
-                strip->updateEdges (::ghostStyle() > 0 ? p.effectiveCrossovers() : p.heardCrossovers(), p.getBandCount(), p.nyquistFrequency());
+                strip->updateEdges (p.effectiveCrossovers(), p.getBandCount(), p.nyquistFrequency());
     };
     if (frames <= 0)
     {

@@ -927,6 +927,11 @@ std::pair<float, float> edgeMove (int edge, float v, float a, float uL, float uH
 {
     using D = TriadProcessor::Destination;
     const float c = 0.5f * (uL + uH), w = uH - uL;
+    // Mock-up (design, TRIAD_MOCK_LOCK=1): LOCK keeps the edge inside the band as set (the line's height is the band's range).
+    static const bool locked = juce::SystemStats::getEnvironmentVariable ("TRIAD_MOCK_LOCK", "0") == "1";
+    if (locked && edge == D::lowEdge) return { a * v * w, 0.0f };
+    if (locked && edge == D::highEdge) return { 0.0f, a * (v - 1.0f) * w };
+    if (locked && edge == D::openEdges) return { a * 0.5f * (1.0f - v) * w, -a * 0.5f * (1.0f - v) * w };
     switch (edge)
     {
         case D::lowEdge:  return { a * (v - uL), 0.0f };

@@ -39,18 +39,9 @@ struct CrossoverHost
     virtual std::pair<float, float> crossoverSweep (int) const { return {}; }
     virtual int edgeLfo (int /*band*/, int /*edge*/) const { return -1; }
     // Where the dividers are as heard right now, moved by their LFOs (the panel's dividers stay where they are set,
-    // so they can be clicked and dragged; the movement is shown behind them as a ghost).
+    // so they can be clicked and dragged; the movement is shown behind them as a ghost, 0.19.0).
     virtual std::vector<float> heardCrossovers() const { return effectiveCrossovers(); }
 };
-
-// Mock-up switch (design, Thomas: "you can't click anything because it's moving all the time"): with an LFO on the
-// band edges, the dividers stay where they are set and the movement shows behind them. 0: the dividers move (v17);
-// 1: a ghost of the moving band; 2: the ghost, and the spectrum lit in the band's colour where it is now (backlit).
-inline int ghostStyle()
-{
-    static const int style = juce::SystemStats::getEnvironmentVariable ("TRIAD_GHOST_STYLE", "2").getIntValue();
-    return style;
-}
 
 // The frequency panel: a live spectrum of the incoming audio, the bands, and one draggable divider
 // per crossover. Every gesture edits the same crossover parameters as automation and recall.
@@ -83,8 +74,10 @@ public:
     // "~ Link to LFO": the band's edge (0 low, 1 high, 2 move the band, 3 open / close) to an LFO of that band.
     std::function<void (int band, int edge)> onLinkEdges;
     static void addLinkItems (juce::PopupMenu&, CrossoverHost&, int band, int idBase);   // the four, with the wave
-    // Gear menu > GHOST MOVEMENT (design): with an LFO on the band edges, the band as it moves, behind the dividers
-    // (which stay where they are set either way). Set by the editor from TriadSettings.
+    // Gear menu > BANDS TAB > Ghost movement (0.19.0, Thomas: "you can't click anything because it's moving all the
+    // time"): the dividers always stay where they are set; with an LFO on the band edges and this on, the band as it
+    // is right now shows behind them, smaller, see-through, its slopes dotted, and the spectrum is lit in its colour
+    // where it is now (the rest dimmed, as with SOLO), with a dot on the range lane. Set by the editor (TriadSettings).
     static inline bool ghostMovement = true;
     float xForFrequency (float) const;
     float frequencyForX (float) const;

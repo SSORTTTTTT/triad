@@ -104,6 +104,8 @@ inline juce::String formatMs (double ms)
     return ms < 10.0 ? juce::String (ms, 1) + " ms" : juce::String (juce::roundToInt (ms)) + " ms";
 }
 // Readable frequency labels: "37.6 Hz", "133 Hz", "2.5 kHz", "10.95 kHz".
+// Mock-up switch (design, Thomas: "lock band travel"): TRIAD_MOCK_LOCK=1 shows a band-edge LFO locked inside its band.
+inline bool lockMock() { static const bool on = juce::SystemStats::getEnvironmentVariable ("TRIAD_MOCK_LOCK", "0") == "1"; return on; }
 inline juce::String formatHz (float hz)
 {
     auto trimmed = [] (const juce::String& s) { return s.containsChar ('.') ? s.trimCharactersAtEnd ("0").trimCharactersAtEnd (".") : s; };

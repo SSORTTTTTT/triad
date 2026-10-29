@@ -295,6 +295,34 @@ inline void edgeTests (const juce::File& screenshots)
         q.setBandSoloed (2, false);
         q.setBandMuted (0, false);
         require (host->isBandHeard (0) && host->isBandHeard (1) && host->isBandHeard (2), "...and all are heard again after");
+        // 0.19.0 (Thomas: "you can't click anything because it's moving all the time"): while LFOs move the edges, the
+        // dividers stay where they are set; the movement shows behind them (Ghost movement, on or off in the gear menu).
+        {
+            std::vector<float> noise ((size_t) rate / 4);
+            juce::Random rr (9);
+            for (auto& v : noise) v = 0.3f * (rr.nextFloat() - 0.5f);
+            run (q, noise, 256);
+            auto& display = editor->getDisplay();
+            display.refreshIfChanged();
+            const auto set = q.effectiveCrossovers(), heard = q.heardCrossovers();
+            bool moved = false;
+            for (size_t j = 0; j < set.size() && j < heard.size(); ++j) moved = moved || std::abs (heard[j] - set[j]) > 1.0f;
+            require (moved, "The LFOs move the edges while audio plays");
+            require (host->heardCrossovers() == heard && host->effectiveCrossovers() == set, "The panel knows where the edges are set and where they are now");
+            for (int j = 0; j < display.getNumHandles() && j < (int) set.size(); ++j)
+                require (std::abs ((float) display.getHandle (j)->getBounds().getCentreX() - display.xForFrequency (set[(size_t) j])) < 2.0f,
+                         "The dividers stay where they are set while LFOs move the edges");
+            CrossoverDisplay::ghostMovement = true;
+            themeTests::snapshot (screenshots, "Triad-ghost-movement.png", *editor);
+            CrossoverDisplay::ghostMovement = false;
+            themeTests::snapshot (screenshots, "Triad-ghost-off.png", *editor);
+            juce::SharedResourcePointer<TriadSettings> settings;
+            const bool was = settings->getGhostMovement();
+            settings->setGhostMovement (! was);
+            require (settings->getGhostMovement() == ! was, "Ghost movement on / off is kept in the settings");
+            settings->setGhostMovement (was);
+            CrossoverDisplay::ghostMovement = was;
+        }
     }
     std::cout << "Band edges: move (9 kHz through " << passDb << " dB, blocked " << stopDb << " dB), open / close (closed " << closedDb
               << " dB, open " << openDb << " dB), fast LFOs (peak " << peak << "), saved, menus: passed" << std::endl;

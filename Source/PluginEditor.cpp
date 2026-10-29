@@ -26,7 +26,7 @@ public:
     explicit TriadCrossoverHost (TriadProcessor& p) : processor (p) {}
     juce::String getProductName() const override { return "Triad"; }
     int getBandCount() const override { return processor.getBandCount(); }
-    std::vector<float> effectiveCrossovers() const override { return ghostStyle() > 0 ? processor.effectiveCrossovers() : processor.heardCrossovers(); }
+    std::vector<float> effectiveCrossovers() const override { return processor.effectiveCrossovers(); }   // as set (0.19.0)
     std::vector<float> heardCrossovers() const override { return processor.heardCrossovers(); }   // with their LFOs
     int getCrossoverSlope (int index) const override { return processor.getCrossoverSlope (index); }
     juce::RangedAudioParameter* crossoverParameter (int index) const override { return processor.crossoverParameter (index); }
@@ -428,7 +428,7 @@ void TriadEditor::animate (double frameTime)
         if (processor.getBandCount() == builtCount)
         {
             frequencyDisplay.refreshIfChanged();
-            const auto cuts = ghostStyle() > 0 ? processor.effectiveCrossovers() : processor.heardCrossovers();   // design: as set
+            const auto cuts = processor.effectiveCrossovers();   // as set: they stay put while LFOs move the edges (0.19.0)
             for (auto& strip : strips) strip->updateEdges (cuts, builtCount, processor.nyquistFrequency());
         }
         for (auto& strip : strips) strip->animate (meters.bands[(size_t) strip->getBand()], dt);

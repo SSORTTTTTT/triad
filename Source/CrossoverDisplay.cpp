@@ -272,7 +272,7 @@ void CrossoverDisplay::paintSlopeReadouts (juce::Graphics& g)
         g.strokePath (chevron, juce::PathStrokeType (1.2f));
     }
 }
-// ---- Design: the LFO's movement as a ghost behind the dividers -------------------------------------------------------
+// ---- Ghost movement (0.19.0): an LFO on the band edges shown behind the dividers, which stay where they are set ----
 int CrossoverDisplay::lfoBandOf (int j) const
 {
     if (j < 0 || j >= (int) sweeps.size() || sweeps[(size_t) j].second <= 0.0f) return -1;
@@ -316,7 +316,7 @@ void CrossoverDisplay::paintGhost (juce::Graphics& g, const std::vector<float>& 
     const float dash[] { 4.0f, 4.0f };
     juce::ignoreUnused (dash);
     // Thomas: the band as set stays as it is; the ghost is the quiet one, smaller, more see-through, its slopes dotted.
-    static const float size = juce::SystemStats::getEnvironmentVariable ("TRIAD_GHOST_SIZE", "0.62").getFloatValue();
+    constexpr float size = 0.62f;   // of the bands' height
     for (int b : moving)
     {
         const auto colour = bandColour (b);
@@ -450,6 +450,8 @@ void CrossoverDisplay::addLinkItems (juce::PopupMenu& menu, CrossoverHost& h, in
         if (const int lfo = h.edgeLfo (band, edge); lfo >= 0) right = "LFO " + juce::String (lfo + 1);
         addItemWithRight (menu, idBase + edge, menuFilter (kinds[edge], names[edge]), right);
     }
+    if (lockMock())
+        addItemWithRight (menu, idBase + 9, "Lock LFOs inside the band", lo + juce::String::fromUTF8 (" \xe2\x80\x93 ") + hi, true, true);
 }
 void CrossoverDisplay::showBandMenu (int band, float hz)
 {
@@ -915,9 +917,9 @@ void CrossoverDisplay::paint (juce::Graphics& g)
             g.setColour (colour.withAlpha (juce::jmin (1.0f, 0.72f * strength)));
             g.strokePath (spectrumLine, juce::PathStrokeType (1.3f));
         };
-        // Design (style 2, backlit): the band an LFO moves lights up the spectrum where it is right now.
+        // Ghost movement (0.19.0): the band an LFO moves lights up the spectrum where it is right now, the rest dimmed.
         std::vector<int> movingBands;
-        if (ghostStyle() == 2 && ghostMovement)
+        if (ghostMovement)
             for (int j = 0; j < (int) cuts.size(); ++j)
                 if (const int b = lfoBandOf (j); b >= 0 && std::find (movingBands.begin(), movingBands.end(), b) == movingBands.end()) movingBands.push_back (b);
         if (! anySilent && ! movingBands.empty())
@@ -958,7 +960,7 @@ void CrossoverDisplay::paint (juce::Graphics& g)
             }
         }
     }
-    if (ghostStyle() > 0 && ghostMovement) paintGhost (g, host.heardCrossovers());
+    if (ghostMovement) paintGhost (g, host.heardCrossovers());
     const auto pills = pillRects();
     for (size_t i = 0; i < cuts.size() && i < pills.size(); ++i)
     {

@@ -35,6 +35,7 @@ private:
     juce::Colour colour;
     Led light { "Route on/off" };
     juce::TextButton source, invert { "INV" }, destination, remove { "x" };
+    juce::TextButton lock { "LOCK" };   // design: a band-edge LFO kept inside its band
     TriadProcessor::RouteInfo info;
     bool shown = false;
 };

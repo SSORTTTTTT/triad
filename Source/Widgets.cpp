@@ -62,6 +62,18 @@ RouteRow::RouteRow (TriadProcessor& p, int b, int r, bool withSource, juce::Colo
     invert.setTooltip ("Invert: the LFO's top becomes its bottom");
     invert.onClick = [this] { processor.setRouteInvert (band, route, invert.getToggleState()); };
     addAndMakeVisible (invert);
+    if (! showSource && lockMock())
+    {
+        using D = TriadProcessor::Destination;
+        const auto i = processor.getRouteInfo (band, route);
+        if (i.destination.kind == D::bandEdges && i.destination.slotId != D::moveEdges)
+        {
+            lock.setClickingTogglesState (true);
+            lock.setToggleState (true, juce::dontSendNotification);
+            lock.setTooltip ("LOCK: the LFO moves the edge only inside the band, as set on the BANDS tab");
+            addAndMakeVisible (lock);
+        }
+    }
     destination.setTooltip ("What this LFO moves. Click to choose.");
     destination.onClick = [this]
     {
@@ -109,6 +121,11 @@ void RouteRow::lookAndFeelChanged()
     }
     invert.setColour (juce::TextButton::buttonColourId, pill);
     invert.setColour (juce::TextButton::buttonOnColourId, accent);
+    lock.getProperties().set ("triadAlign", "centre");
+    lock.setColour (juce::TextButton::buttonColourId, pill);
+    lock.setColour (juce::TextButton::buttonOnColourId, colour);
+    lock.setColour (juce::TextButton::textColourOffId, dimTextColour);
+    lock.setColour (juce::TextButton::textColourOnId, inkColour);
     invert.setColour (juce::TextButton::textColourOffId, dimTextColour);
     invert.setColour (juce::TextButton::textColourOnId, inkColour);
     remove.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -156,6 +173,7 @@ void RouteRow::resized()
     r.removeFromTop (3);
     invert.setBounds (r.removeFromRight (40));
     r.removeFromRight (6);
+    if (lock.isVisible()) { lock.setBounds (r.removeFromRight (48)); r.removeFromRight (6); }
     amount.setBounds (r);
 }
 void RouteRow::paint (juce::Graphics& g)

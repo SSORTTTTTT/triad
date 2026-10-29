@@ -1037,6 +1037,7 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                 // its route switched off, its amount or inverting changed.
                 begin ("LFO on band edges");
                 namespace mod = triad::mod;
+                if (r.nextInt (4) == 0) CrossoverDisplay::ghostMovement = ! CrossoverDisplay::ghostMovement;   // 0.19.0: gear menu
                 const int b = r.nextInt (juce::jmax (1, p.getBandCount()));
                 const int lfo = p.linkEdgesToLfo (b, r.nextInt (4));
                 if (lfo >= 0)
