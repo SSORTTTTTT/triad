@@ -74,8 +74,10 @@ public:
     SpectrumBackdrop();
     // lowOrder / highOrder (0.20.0): the band's slopes (crossover orders), so the lit range fades as they do; 0: a hard
     // edge (an open end).
+    // viewLow / viewHigh (0.21.0): the frequencies across the plot (the LFO tab's spectrum zoomed to the range an LFO
+    // works in; FULL SPECTRUM: 20 Hz to 20 kHz).
     void paint (juce::Graphics&, juce::Rectangle<float> plot, triad::SpectrumTap&, double sampleRate, float lowHz, float highHz, juce::Colour colour,
-                int lowOrder = 0, int highOrder = 0);
+                int lowOrder = 0, int highOrder = 0, float viewLow = 20.0f, float viewHigh = 20000.0f);
 private:
     static constexpr int fftSize = 8192;   // 0.20.0: twice the detail (5.9 Hz steps at 48 kHz)
     std::vector<float> samples, window, levels;

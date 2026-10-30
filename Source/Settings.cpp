@@ -148,7 +148,7 @@ TriadSettings::Backdrop TriadSettings::getLfoBackdrop (bool audioTrigger) const
 {
     reload();
     return (Backdrop) juce::jlimit (0, 2, file->getIntValue (audioTrigger ? "lfoBackdropAudio" : "lfoBackdropSong",
-                                                             (int) (audioTrigger ? Backdrop::waveform : Backdrop::off)));
+                                                             (int) (audioTrigger ? Backdrop::waveform : Backdrop::spectrum)));
 }
 void TriadSettings::setLfoBackdrop (bool audioTrigger, Backdrop mode)
 {
@@ -195,6 +195,18 @@ bool TriadSettings::getFavouritesByType() const
 {
     reload();
     return file->getBoolValue ("favouritesByType", true);
+}
+bool TriadSettings::getLfoFullSpectrum() const
+{
+    reload();
+    return file->getBoolValue ("lfoFullSpectrum", false);
+}
+void TriadSettings::setLfoFullSpectrum (bool on)
+{
+    reload();
+    file->setValue ("lfoFullSpectrum", on);
+    file->saveIfNeeded();
+    loadedModification = options().getDefaultFile().getLastModificationTime();
 }
 bool TriadSettings::getGhostMovement() const
 {

@@ -89,6 +89,15 @@ public:
     // LFO's index in the band, or -1.
     int linkEdgesToLfo (int band, int edge);
     int findEdgeLfo (int band, int edge) const;            // the LFO already linked to that (-1: none)
+    // The BANDS tab's range lane (0.21.0, Thomas: "grab that little end piece ... drag it left or right ... and it would
+    // actually manipulate the endpoint in the LFO"): an end of where its LFO takes a divider, dragged to `hz`. The LFO's
+    // wave is stretched (its highest or lowest point moved, the other one and the shape kept) so that end of the range
+    // lands there; a locked LFO stays inside its band. One undo step per drag. beginSweepDrag: false when no LFO moves
+    // the divider (or it is at 0%). Returns the LFO moved (its band and index) through sweepDragLfo().
+    bool beginSweepDrag (int divider, bool highEnd);
+    void dragSweepTo (float hz);
+    void endSweepDrag();
+    std::pair<int, int> sweepDragLfo() const noexcept { return { sweepDrag.band, sweepDrag.lfo }; }
     static juce::String edgeName (int edge);               // "Low edge", "High edge", "Move the band", "Open / close"
     // Crossover slopes: order 1 (6 dB/oct, soft) to 16 (96 dB/oct, near brickwall); 4 (24 dB/oct) by default.
     juce::RangedAudioParameter* slopeParameter (int index) const;
@@ -519,6 +528,7 @@ private:
     double createdAt = 0.0;
     std::atomic<int> pendingCreations { 0 }, bandCount { 3 }, structureVersion { 0 };
     struct LastAdd { int band = -1, version = -1; std::vector<float> after; } lastAdd;   // the band + BAND last added
+    struct SweepDrag { int divider = -1, band = -1, lfo = -1; bool high = false, changed = false; float a = 0.0f, b = 0.0f; triad::mod::Shape from; } sweepDrag;
     std::atomic<double> tail { 0.0 };
     std::atomic<double> rate { 44100.0 };
     std::atomic<int> totalLatency { 0 }, preLatency { 0 }, postLatency { 0 };

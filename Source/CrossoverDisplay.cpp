@@ -63,8 +63,8 @@ juce::Component* CrossoverDisplay::getHandle (int index) const
 }
 juce::Rectangle<float> CrossoverDisplay::plotBounds() const
 {
-    // Design: a lane under the spectrum for how far LFOs move the dividers (22 px), then the frequencies.
-    return { 20.0f, 38.0f, juce::jmax (1.0f, (float) getWidth() - 40.0f - meterWidth), juce::jmax (1.0f, (float) getHeight() - 70.0f - 22.0f) };
+    // Design: a lane under the spectrum for how far LFOs move the dividers (laneHeight), then the frequencies.
+    return { 20.0f, 38.0f, juce::jmax (1.0f, (float) getWidth() - 40.0f - meterWidth), juce::jmax (1.0f, (float) getHeight() - 70.0f - laneHeight()) };
 }
 float CrossoverDisplay::xForFrequency (float frequency) const
 {
@@ -349,26 +349,16 @@ void CrossoverDisplay::paintGhost (juce::Graphics& g, const std::vector<float>& 
         g.fillPath (dots);
     }
     // On the lane under the spectrum: a dot where each moved divider is right now.
+    for (const auto& lane : laneRanges())
     {
-        std::array<float, 2> rowRight { -1.0e9f, -1.0e9f };
-        for (int j = 0; j < (int) sweeps.size(); ++j)
-        {
-            const auto [low, high] = sweeps[(size_t) j];
-            if (high <= 0.0f) continue;
-            const float x1 = xForFrequency (low), x2 = juce::jmax (x1 + 3.0f, xForFrequency (high));
-            const auto label = formatHz (low) + juce::String::fromUTF8 (" \xe2\x86\x94 ") + formatHz (high);
-            g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
-            const float labelWidth = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), label) + 10.0f;
-            const int row = x1 - 4.0f > rowRight[0] ? 0 : 1;
-            const float y = plot.getBottom() + 8.0f + (float) row * 11.0f;
-            rowRight[(size_t) row] = juce::jmax (x2, (x1 + x2) * 0.5f + labelWidth * 0.5f);
-            const float x = juce::jlimit (x1, x2, xForFrequency (heard[(size_t) j]));
-            const int b = lfoBandOf (j);
-            g.setColour (currentPalette.text);
-            g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ x, y }));
-            g.setColour (bandColour (juce::jmax (0, b)));
-            g.drawEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ x, y }), 1.5f);
-        }
+        if (lane.divider >= (int) heard.size()) continue;
+        const float x = juce::jlimit (lane.x1, lane.x2, xForFrequency (heard[(size_t) lane.divider]));
+        const int b = lfoBandOf (lane.divider);
+        g.setColour (currentPalette.text);
+        g.fillEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ x, lane.y }));
+        g.setColour (bandColour (juce::jmax (0, b)));
+        g.drawEllipse (juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ x, lane.y }), 1.5f);
+        if (laneLabelBounds (lane).expanded (4.0f, 0.0f).contains (x, lane.y)) paintLaneLabel (g, lane);   // the dot passes behind its numbers
     }
 }
 // Each band's response (the product of its low- and high-pass) as a filled curve in its colour.
@@ -449,7 +439,114 @@ void CrossoverDisplay::mouseDown (const juce::MouseEvent& e)
     for (int i = 0; i < (int) cuts.size(); ++i)
         if (slopeReadoutBounds (i).contains (e.position)) { showSlopeMenu (i); return; }
     // Right-click a band's area: remove it (or add a band right there).
-    if (e.mods.isPopupMenu() && plotBounds().contains (e.position)) showBandMenu (bandAt (e.position.x), frequencyForX (e.position.x));
+    if (e.mods.isPopupMenu() && plotBounds().contains (e.position)) { showBandMenu (bandAt (e.position.x), frequencyForX (e.position.x)); return; }
+    // An end of a range on the lane: drag it to change where the LFO takes the divider (0.21.0).
+    if (! e.mods.isPopupMenu())
+        if (const auto end = laneEndAt (e.position); end.divider >= 0 && host.beginSweepDrag (end.divider, end.high))
+        {
+            laneDrag = end;
+            laneHover = {};
+            repaint();
+        }
+}
+void CrossoverDisplay::mouseDrag (const juce::MouseEvent& e)
+{
+    if (laneDrag.divider < 0) return;
+    host.dragSweepTo (frequencyForX (e.position.x));
+    for (int j = 0; j < (int) cuts.size() && j < (int) sweeps.size(); ++j) sweeps[(size_t) j] = host.crossoverSweep (j);
+    repaint();
+}
+void CrossoverDisplay::mouseUp (const juce::MouseEvent& e)
+{
+    if (laneDrag.divider < 0) return;
+    host.endSweepDrag();
+    laneDrag = {};
+    refresh();
+    mouseMove (e);
+}
+void CrossoverDisplay::mouseMove (const juce::MouseEvent& e)
+{
+    const auto end = laneEndAt (e.position);
+    if (end.divider != laneHover.divider || end.high != laneHover.high)
+    {
+        laneHover = end;
+        setMouseCursor (end.divider >= 0 ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::NormalCursor);
+        repaint();
+    }
+}
+void CrossoverDisplay::mouseExit (const juce::MouseEvent&)
+{
+    if (laneHover.divider < 0) return;
+    laneHover = {};
+    setMouseCursor (juce::MouseCursor::NormalCursor);
+    repaint();
+}
+juce::String CrossoverDisplay::getTooltip()
+{
+    if (laneHover.divider < 0) return {};
+    const auto who = host.sweepDescription (laneHover.divider);
+    return juce::String (laneHover.high ? "The top" : "The bottom") + " of where " + (who.isEmpty() ? juce::String ("its LFO") : who)
+         + " takes divider " + juce::String (laneHover.divider + 1) + ". Drag left or right to change it (the LFO's wave stretches to match).";
+}
+juce::Rectangle<float> CrossoverDisplay::laneLabelBounds (const LaneRange& lane) const
+{
+    if (lane.x2 - lane.x1 <= lane.labelWidth + 20.0f) return {};   // no room: none
+    return juce::Rectangle<float> (lane.labelWidth, 14.0f).withCentre ({ (lane.x1 + lane.x2) * 0.5f, lane.y });
+}
+void CrossoverDisplay::paintLaneLabel (juce::Graphics& g, const LaneRange& lane) const
+{
+    const auto pill = laneLabelBounds (lane);
+    if (pill.isEmpty()) return;
+    const int j = lane.divider;
+    const bool fromBelow = host.edgeLfo (j, 1) >= 0 || host.edgeLfo (j, 2) >= 0 || host.edgeLfo (j, 3) >= 0;
+    g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+    g.setColour (currentPalette.grid); g.fillRoundedRectangle (pill, 4.0f);
+    g.setColour (bandColour (fromBelow ? j : j + 1)); g.drawText (lane.label, pill, juce::Justification::centred);
+}
+std::vector<CrossoverDisplay::LaneRange> CrossoverDisplay::laneRanges() const
+{
+    // As drawn: overlapping ranges (with their labels) take a second row.
+    std::vector<LaneRange> lanes;
+    const auto plot = plotBounds();
+    const juce::Font font (juce::FontOptions (10.5f, juce::Font::bold));
+    std::array<float, 2> rowRight { -1.0e9f, -1.0e9f };
+    for (int j = 0; j < (int) sweeps.size(); ++j)
+    {
+        const auto [low, high] = sweeps[(size_t) j];
+        if (high <= 0.0f) continue;
+        LaneRange lane;
+        lane.divider = j;
+        lane.x1 = xForFrequency (low);
+        lane.x2 = juce::jmax (lane.x1 + 3.0f, xForFrequency (high));
+        lane.label = formatHz (low) + juce::String::fromUTF8 (" \xe2\x86\x94 ") + formatHz (high);
+        lane.labelWidth = juce::GlyphArrangement::getStringWidth (font, lane.label) + 12.0f;
+        const int row = lane.x1 - 8.0f > rowRight[0] ? 0 : 1;
+        lane.y = plot.getBottom() + 9.0f + (float) row * 14.0f;
+        rowRight[(size_t) row] = juce::jmax (lane.x2, (lane.x1 + lane.x2) * 0.5f + lane.labelWidth * 0.5f);
+        lanes.push_back (lane);
+    }
+    return lanes;
+}
+CrossoverDisplay::LaneEnd CrossoverDisplay::laneEndAt (juce::Point<float> p) const
+{
+    const auto plot = plotBounds();
+    if (p.y < plot.getBottom() + 1.0f || p.y > plot.getBottom() + laneHeight() + 2.0f) return {};
+    LaneEnd best;
+    float bestDistance = 9.0f;   // pixels from a cap
+    for (const auto& lane : laneRanges())
+    {
+        if (std::abs (p.y - lane.y) > 8.0f) continue;
+        for (const bool high : { false, true })
+            if (const float d = std::abs (p.x - (high ? lane.x2 : lane.x1)); d < bestDistance || (d <= bestDistance && high == (p.x > (lane.x1 + lane.x2) * 0.5f)))
+            { bestDistance = d; best = { lane.divider, high }; }
+    }
+    return best;
+}
+juce::Point<float> CrossoverDisplay::laneEndPosition (LaneEnd end) const
+{
+    for (const auto& lane : laneRanges())
+        if (lane.divider == end.divider) return { end.high ? lane.x2 : lane.x1, lane.y };
+    return {};
 }
 void CrossoverDisplay::addLinkItems (juce::PopupMenu& menu, CrossoverHost& h, int band, int idBase)
 {
@@ -757,7 +854,7 @@ void CrossoverDisplay::frame (double time)
     const FramePacer::Timed timed (*pacer);
     if (onFrame) onFrame (dt);
     updateSpectrum (dt);
-    repaint (plotBounds().toNearestInt().expanded (2));
+    repaint (plotBounds().withHeight (plotBounds().getHeight() + laneHeight()).toNearestInt().expanded (2));   // the lane's dots move too
     repaint (getWidth() - (int) meterWidth - 24, 0, (int) meterWidth + 24, getHeight());
 }
 void CrossoverDisplay::updateSpectrum (double dt)
@@ -867,34 +964,27 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
         g.setColour (colour.withAlpha (0.6f)); g.drawRoundedRectangle (tag.reduced (0.5f), 4.5f, 1.0f);
         IconButton::drawIcon (g, IconButton::Icon::lfo, tag.reduced (5.0f, 4.0f), colour);
     }
-    // The lane under the spectrum (design, Thomas): each moved divider's range as a line with small end caps, in the
-    // colour of the band whose LFO moves it, with its two frequencies; overlapping ranges take a second row.
+    // The lane under the spectrum (design, Thomas): each moved divider's range as a line with end caps, in the colour of
+    // the band whose LFO moves it, with its two frequencies; overlapping ranges take a second row. 0.21.0 (Thomas: "make
+    // that slightly more visible and clickable"): a thicker line, and caps to grab (drag them to change the range).
+    g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+    for (const auto& lane : laneRanges())
     {
-        std::array<float, 2> rowRight { -1.0e9f, -1.0e9f };
-        for (int j = 0; j < (int) sweeps.size(); ++j)
+        const int j = lane.divider;
+        const bool fromBelow = host.edgeLfo (j, 1) >= 0 || host.edgeLfo (j, 2) >= 0 || host.edgeLfo (j, 3) >= 0;
+        const auto colour = bandColour (fromBelow ? j : j + 1);
+        const float x1 = lane.x1, x2 = lane.x2, y = lane.y;
+        g.setColour (colour.withAlpha (0.22f));
+        g.fillRoundedRectangle (juce::Rectangle<float> (x1, y - 4.0f, x2 - x1, 8.0f), 4.0f);   // a soft glow under the line
+        g.setColour (colour.withAlpha (0.95f));
+        g.fillRoundedRectangle (juce::Rectangle<float> (x1, y - 1.75f, x2 - x1, 3.5f), 1.75f);
+        for (float x : { x1, x2 })
         {
-            const auto [low, high] = sweeps[(size_t) j];
-            if (high <= 0.0f) continue;
-            const bool fromBelow = host.edgeLfo (j, 1) >= 0 || host.edgeLfo (j, 2) >= 0 || host.edgeLfo (j, 3) >= 0;
-            const auto colour = bandColour (fromBelow ? j : j + 1);
-            const float x1 = xForFrequency (low), x2 = juce::jmax (x1 + 3.0f, xForFrequency (high));
-            const auto label = formatHz (low) + juce::String::fromUTF8 (" \xe2\x86\x94 ") + formatHz (high);
-            g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
-            const float labelWidth = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), label) + 10.0f;
-            const int row = x1 - 4.0f > rowRight[0] ? 0 : 1;
-            const float y = plot.getBottom() + 8.0f + (float) row * 11.0f;
-            rowRight[(size_t) row] = juce::jmax (x2, (x1 + x2) * 0.5f + labelWidth * 0.5f);
-            g.setColour (colour.withAlpha (0.9f));
-            g.fillRoundedRectangle (juce::Rectangle<float> (x1, y - 1.25f, x2 - x1, 2.5f), 1.25f);
-            g.fillRoundedRectangle (juce::Rectangle<float> (x1 - 1.0f, y - 4.5f, 2.0f, 9.0f), 1.0f);
-            g.fillRoundedRectangle (juce::Rectangle<float> (x2 - 1.0f, y - 4.5f, 2.0f, 9.0f), 1.0f);
-            if (x2 - x1 > labelWidth + 16.0f)
-            {
-                const auto pill = juce::Rectangle<float> (labelWidth, 11.0f).withCentre ({ (x1 + x2) * 0.5f, y });
-                g.setColour (currentPalette.grid); g.fillRoundedRectangle (pill, 3.0f);
-                g.setColour (colour); g.drawText (label, pill, juce::Justification::centred);
-            }
+            const auto cap = juce::Rectangle<float> (6.0f, 15.0f).withCentre ({ x, y });
+            g.setColour (colour); g.fillRoundedRectangle (cap, 3.0f);
+            g.setColour (currentPalette.grid.withAlpha (0.9f)); g.fillRoundedRectangle (cap.reduced (2.0f, 4.0f), 1.0f);   // a grip
         }
+        paintLaneLabel (g, lane);
     }
     g.setColour (currentPalette.gridLines.withAlpha (0.07f));
     for (float f : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
@@ -904,9 +994,9 @@ void CrossoverDisplay::paintStaticLayer (juce::Graphics& g)
     g.setFont (juce::FontOptions (10.0f)); g.setColour (currentPalette.faintText);
     for (float f : { 100.0f, 1000.0f, 10000.0f })
         if (f < host.nyquistFrequency() * 0.8f)
-            g.drawText (formatHz (f), juce::Rectangle<float> (xForFrequency (f) - 35, plot.getBottom() + 34, 70, 16), juce::Justification::centred);
-    g.drawText ("20 Hz", juce::Rectangle<float> (plot.getX(), plot.getBottom() + 34, 65, 16), juce::Justification::centredLeft);
-    g.drawText (formatHz (host.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + 34, 90, 16), juce::Justification::centredRight);
+            g.drawText (formatHz (f), juce::Rectangle<float> (xForFrequency (f) - 35, plot.getBottom() + laneHeight() + 12.0f, 70, 16), juce::Justification::centred);
+    g.drawText ("20 Hz", juce::Rectangle<float> (plot.getX(), plot.getBottom() + laneHeight() + 12.0f, 65, 16), juce::Justification::centredLeft);
+    g.drawText (formatHz (host.nyquistFrequency()), juce::Rectangle<float> (plot.getRight() - 90, plot.getBottom() + laneHeight() + 12.0f, 90, 16), juce::Justification::centredRight);
 }
 void CrossoverDisplay::paint (juce::Graphics& g)
 {
@@ -982,6 +1072,31 @@ void CrossoverDisplay::paint (juce::Graphics& g)
         }
     }
     if (ghostMovement) paintGhost (g, host.heardCrossovers());
+    // The range end under the mouse, or being dragged: larger and lit; while dragged, where it is.
+    if (const auto end = laneDrag.divider >= 0 ? laneDrag : laneHover; end.divider >= 0)
+    {
+        const auto at = laneEndPosition (end);
+        if (at.x > 0.0f)
+        {
+            const bool fromBelow = host.edgeLfo (end.divider, 1) >= 0 || host.edgeLfo (end.divider, 2) >= 0 || host.edgeLfo (end.divider, 3) >= 0;
+            const auto colour = bandColour (fromBelow ? end.divider : end.divider + 1);
+            const auto cap = juce::Rectangle<float> (9.0f, 19.0f).withCentre (at);
+            g.setColour (colour.withAlpha (0.35f)); g.fillRoundedRectangle (cap.expanded (3.0f), 6.0f);
+            g.setColour (currentPalette.text); g.fillRoundedRectangle (cap, 4.0f);
+            g.setColour (colour); g.drawRoundedRectangle (cap.reduced (0.75f), 4.0f, 1.5f);
+            if (laneDrag.divider >= 0 && laneDrag.divider < (int) sweeps.size())
+            {
+                const auto range = sweeps[(size_t) laneDrag.divider];
+                const auto text = formatHz (laneDrag.high ? range.second : range.first);
+                g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+                const float w = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 16.0f;
+                const auto tag = juce::Rectangle<float> (w, 20.0f).withCentre ({ juce::jlimit (plot.getX() + w * 0.5f, plot.getRight() - w * 0.5f, at.x), plot.getBottom() - 16.0f });
+                g.setColour (currentPalette.pill.withAlpha (0.96f)); g.fillRoundedRectangle (tag, 4.0f);
+                g.setColour (colour); g.drawRoundedRectangle (tag.reduced (0.5f), 4.0f, 1.0f);
+                g.setColour (currentPalette.text); g.drawText (text, tag, juce::Justification::centred);
+            }
+        }
+    }
     const auto pills = pillRects();
     for (size_t i = 0; i < cuts.size() && i < pills.size(); ++i)
     {
@@ -1066,6 +1181,8 @@ void CrossoverDisplay::Handle::mouseMove (const juce::MouseEvent& event)
 bool CrossoverDisplay::Handle::hitTest (int x, int y)
 {
     if (! getLocalBounds().contains (x, y)) return false;
+    // The ends of the ranges on the lane are the panel's (0.21.0: dragged to change where an LFO takes a divider).
+    if (owner.laneEndAt (getPosition().toFloat() + juce::Point<float> ((float) x, (float) y)).divider >= 0) return false;
     // Overlapping hit areas go to the nearest divider, so no handle is ever unreachable.
     const float position = (float) (getX() + x);
     int nearest = -1;

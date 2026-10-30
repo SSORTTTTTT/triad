@@ -47,6 +47,12 @@ struct CrossoverHost
     // Ghost movement on / off (0.20.0: also in the band menu; kept in the settings by the host).
     virtual void setGhostMovement (bool) {}
     virtual void setEdgesLocked (int /*band*/, bool) {}
+    // The range lane (0.21.0, Thomas): an end of a divider's range dragged left or right changes where its LFO takes
+    // it (the LFO's wave is stretched to match). begin: false when the range cannot be changed.
+    virtual bool beginSweepDrag (int /*divider*/, bool /*highEnd*/) { return false; }
+    virtual void dragSweepTo (float /*hz*/) {}
+    virtual void endSweepDrag() {}
+    virtual juce::String sweepDescription (int /*divider*/) const { return {}; }   // "LFO 3 of band 2 (high cut)"
 };
 
 // The frequency panel: a live spectrum of the incoming audio, the bands, and one draggable divider
@@ -55,7 +61,7 @@ struct CrossoverHost
 // Each divider also has a slope dot higher up: drag it up for a soft slope (bands blend into each
 // other), down for a hard cut; its readout shows the slope in dB/octave (click it for a list).
 // Each band is drawn as its own coloured response curve, so the overlap between bands is visible.
-class CrossoverDisplay final : public juce::Component
+class CrossoverDisplay final : public juce::Component, public juce::TooltipClient
 {
 public:
     explicit CrossoverDisplay (CrossoverHost&);
@@ -65,6 +71,11 @@ public:
     void resized() override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+    juce::String getTooltip() override;
     void refresh();
     void refreshIfChanged();   // refresh() only when the bands, crossovers or slopes changed
     // Peak levels since the last call (linear) and Triad's CPU share, once a frame (dt: seconds since the last).
@@ -124,6 +135,16 @@ public:
     triad::ui::FramePacer& getPacer() noexcept { return *pacer; }
     int getStaticLayerRenders() const noexcept { return staticRenders; }
     bool isSpectrumVisible() const noexcept { return spectrumVisible; }
+    // The range lane under the spectrum (0.18.0; 0.21.0: taller, its ends draggable): where LFOs take each divider.
+    float laneHeight() const { return host.canLinkToLfo() ? 30.0f : 22.0f; }   // Triad Split (no LFOs) as before
+    struct LaneRange { int divider = -1; float x1 = 0.0f, x2 = 0.0f, y = 0.0f; juce::String label; float labelWidth = 0.0f; };
+    std::vector<LaneRange> laneRanges() const;
+    struct LaneEnd { int divider = -1; bool high = false; };
+    LaneEnd laneEndAt (juce::Point<float>) const;          // the range end there ({-1}: none)
+    juce::Point<float> laneEndPosition (LaneEnd) const;
+    juce::Rectangle<float> laneLabelBounds (const LaneRange&) const;
+    void paintLaneLabel (juce::Graphics&, const LaneRange&) const;
+    LaneEnd getLaneDrag() const noexcept { return laneDrag; }
 
 private:
     class Handle final : public juce::Component
@@ -184,6 +205,7 @@ private:
     juce::Image staticLayer;
     std::vector<float> staticKey, refreshKey;
     std::vector<std::pair<float, float>> sweeps;   // per divider: where its LFOs take it (empty: none)
+    LaneEnd laneHover, laneDrag;
     int staticRenders = 0;
     double lastFrame = 0.0;
     juce::SharedResourcePointer<triad::ui::FramePacer> pacer;

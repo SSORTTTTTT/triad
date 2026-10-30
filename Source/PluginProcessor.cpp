@@ -1074,6 +1074,81 @@ std::pair<float, float> TriadProcessor::crossoverSweep (int index) const
     }
     return { edgeHz (low), edgeHz (high) };
 }
+bool TriadProcessor::beginSweepDrag (int divider, bool highEnd)
+{
+    sweepDrag = {};
+    const int count = getBandCount();
+    if (divider < 0 || divider >= count - 1) return false;
+    // The LFO that moves it, as the panel colours its range: the band below's (high cut, sweep, widen / narrow) first,
+    // then the band above's (low cut, sweep, widen / narrow).
+    const Route* mover = nullptr;
+    int moverBand = -1;
+    for (int b : { divider, divider + 1 })
+    {
+        const std::array<int, 3> edges { b == divider ? (int) Destination::highEdge : (int) Destination::lowEdge, (int) Destination::moveEdges, (int) Destination::openEdges };
+        for (int edge : edges)
+            for (auto& r : bands[(size_t) b]->routes)
+                if (mover == nullptr && r->destination.kind == Destination::bandEdges && r->destination.slotId == edge && ! r->muted.load() && r->lfo != nullptr)
+                { mover = r.get(); moverBand = b; }
+        if (mover != nullptr) break;
+    }
+    if (mover == nullptr) return false;
+    const auto cuts = effectiveCrossovers();
+    if ((int) cuts.size() < count - 1) return false;
+    const float uL = moverBand > 0 ? edgeU (cuts[(size_t) moverBand - 1]) : 0.0f, uH = moverBand < count - 1 ? edgeU (cuts[(size_t) moverBand]) : 1.0f;
+    const float set = edgeU (cuts[(size_t) divider]);
+    // Where the divider is for a line height s: a straight line in s (a + b s).
+    const auto at = [&] (float s)
+    {
+        if (mover->invert.load()) s = 1.0f - s;
+        const auto m = edgeMove (mover->destination.slotId, s, mover->amount.load(), uL, uH, mover->locked.load());
+        return set + (moverBand == divider ? m.second : m.first);
+    };
+    sweepDrag.a = at (0.0f);
+    sweepDrag.b = at (1.0f) - sweepDrag.a;
+    if (std::abs (sweepDrag.b) < 1.0e-4f) { sweepDrag = {}; return false; }
+    sweepDrag.divider = divider;
+    sweepDrag.band = moverBand;
+    sweepDrag.lfo = bands[(size_t) moverBand]->lfoIndex (mover->lfoId);
+    sweepDrag.high = highEnd;
+    sweepDrag.from = mover->lfo->shape;
+    if (sweepDrag.lfo < 0 || sweepDrag.from.size() < 2) { sweepDrag = {}; return false; }
+    return true;
+}
+void TriadProcessor::dragSweepTo (float hz)
+{
+    if (sweepDrag.band < 0 || lfoAt (sweepDrag.band, sweepDrag.lfo) == nullptr) return;
+    const float target = juce::jlimit (0.0f, 1.0f, (edgeU (hz) - sweepDrag.a) / sweepDrag.b);
+    auto shape = sweepDrag.from;
+    float lowest = 1.0f, highest = 0.0f;
+    for (const auto& p : shape) { lowest = juce::jmin (lowest, p.y); highest = juce::jmax (highest, p.y); }
+    // The end dragged is the wave's highest point when the divider rises with the line, else its lowest.
+    const bool top = sweepDrag.high == (sweepDrag.b > 0.0f);
+    const float moving = top ? highest : lowest, fixed = top ? lowest : highest;
+    if (std::abs (moving - fixed) < 1.0e-4f)
+        for (auto& p : shape) p.y = target;   // a flat line: it moves
+    else
+    {
+        // Stretched from the other end (the shape and its curves kept); never past that end.
+        const float to = (target - fixed) * (moving - fixed) < 0.0f ? fixed : target;
+        const float k = (to - fixed) / (moving - fixed);
+        for (auto& p : shape) p.y = juce::jlimit (0.0f, 1.0f, fixed + (p.y - fixed) * k);
+    }
+    if (! sweepDrag.changed) { beginLfoEdit (sweepDrag.band, sweepDrag.lfo); sweepDrag.changed = true; }
+    setLfoShape (sweepDrag.band, sweepDrag.lfo, shape, false);
+}
+void TriadProcessor::endSweepDrag()
+{
+    if (sweepDrag.changed)
+    {
+        stateChanged();
+        const auto range = crossoverSweep (sweepDrag.divider);
+        if (range.second > 0.0f)
+            setStatus ("LFO " + juce::String (sweepDrag.lfo + 1) + " of " + chainName (sweepDrag.band) + " now takes divider " + juce::String (sweepDrag.divider + 1)
+                       + " from " + triad::ui::formatHz (range.first) + " to " + triad::ui::formatHz (range.second));
+    }
+    sweepDrag = {};
+}
 int TriadProcessor::findEdgeLfo (int band, int edge) const
 {
     if (band < 0 || band >= getBandCount()) return -1;

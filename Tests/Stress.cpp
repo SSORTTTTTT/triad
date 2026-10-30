@@ -1069,6 +1069,13 @@ void editsWhilePlaying (const Pool& pool, juce::int64 seed, int operations, doub
                             case 2: p.setRouteMuted (b, route, r.nextInt (4) == 0); break;
                             default: p.setRouteLocked (b, route, r.nextBool()); break;   // 0.19.0: LOCK
                         }
+                    // 0.21.0: an end of a divider's range dragged on the BANDS tab (its own random numbers).
+                    juce::Random d ((juce::int64) op * 6151 + 3);
+                    if (const int divider = d.nextInt (juce::jmax (1, p.getBandCount() - 1)); d.nextBool() && p.beginSweepDrag (divider, d.nextBool()))
+                    {
+                        for (int k = 0; k < 4; ++k) p.dragSweepTo (20.0f * std::pow (1000.0f, d.nextFloat()));
+                        p.endSweepDrag();
+                    }
                 }
             }
             else
