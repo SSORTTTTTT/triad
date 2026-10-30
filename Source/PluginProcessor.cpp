@@ -1576,13 +1576,39 @@ bool TriadProcessor::addBand (float hz)
     setParameterValue (bandSoloID (index + 1), getParameterValue (bandSoloID (index)));   // and of a soloed one, soloed
     muted.store (false);
     ++structureVersion;
+    lastAdd = { index + 1, structureVersion.load(), effectiveCrossovers() };
     refreshWindowTitles();
     stateChanged();
     return true;
 }
+bool TriadProcessor::isBandEmpty (int band) const
+{
+    if (band < 0 || band >= getBandCount()) return false;
+    const auto& b = *bands[(size_t) band];
+    for (auto& s : b.slots) if (s->effect != nullptr || s->pendingRequest != 0) return false;
+    for (auto& r : b.routes) if (r->destination.kind == Destination::bandEdges) return false;
+    for (auto& l : b.lfos) if (l->touched) return false;
+    return std::abs (getParameterValue (bandMixID (band)) - 100.0f) < 0.01f && std::abs (getParameterValue (bandGainID (band))) < 0.01f
+        && ! isBandMuted (band) && ! isBandSoloed (band);
+}
 bool TriadProcessor::removeBand (int band)
 {
     endParameterLearn();   // LEARN listens to the effects: stop before any of them moves or goes
+    const int asked = band;
+    {
+        // An empty band removed straight after a band was added (nothing else changed since): the band just added
+        // goes instead (it is empty too, so nothing is lost), and the dividers are back where they were before.
+        const auto add = lastAdd;
+        lastAdd = {};
+        if (add.band >= 0 && band != add.band && add.version == structureVersion.load() && add.band < getBandCount()
+            && isBandEmpty (band) && isBandEmpty (add.band))
+        {
+            const auto cuts = effectiveCrossovers();
+            bool same = cuts.size() == add.after.size();
+            for (size_t j = 0; same && j < cuts.size(); ++j) same = std::abs (cuts[j] / add.after[j] - 1.0f) < 1.0e-4f;
+            if (same) band = add.band;
+        }
+    }
     std::unique_ptr<Band> removed;
     int count = 0;
     bool wasPrepared = false;
@@ -1633,6 +1659,7 @@ bool TriadProcessor::removeBand (int band)
     setParameterValue (bandSoloID (count), 0.0f);
     muted.store (false);
     ++structureVersion;
+    if (band != asked) setStatus ("Removed band " + juce::String (asked + 1) + ": the bands are back as they were before band " + juce::String (band + 1) + " was added");
     refreshWindowTitles();
     stateChanged();
     return true;
@@ -1858,10 +1885,31 @@ juce::String TriadProcessor::loadFile (int band, int slot, const juce::File& fil
     setStatus (result.isEmpty() ? "Effect loaded" : result);
     return result;
 }
+// Triad Time's settings from the state Triad kept for an installed copy of it: a VST3's holds Triad Time's own state in
+// its IComponent chunk; an AU's class info (a binary property list) holds it as it is. Both are what the built-in reads.
+juce::MemoryBlock TriadProcessor::triadTimeStateFromInstalled (const juce::MemoryBlock& state)
+{
+    if (state.isEmpty()) return {};
+    if (auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize()); xml != nullptr && xml->hasTagName ("VST3PluginState"))
+        if (auto* component = xml->getChildByName ("IComponent"))
+        {
+            juce::MemoryBlock chunk;
+            if (chunk.fromBase64Encoding (component->getAllSubText().trim())) return chunk;
+        }
+    const auto* bytes = static_cast<const juce::uint8*> (state.getData());
+    for (size_t i = 0; i + 8 < state.getSize(); ++i)   // JUCE's binary XML: "VC2!", then its size
+        if (bytes[i] == 0x56 && bytes[i + 1] == 0x43 && bytes[i + 2] == 0x32 && bytes[i + 3] == 0x21)
+            return juce::MemoryBlock (bytes + i, state.getSize() - i);
+    return {};
+}
 juce::String TriadProcessor::requestInstall (int band, int slot, const juce::PluginDescription& desc,
                                              const juce::MemoryBlock& state, bool openEditor, bool restoringSlot)
 {
     if (slotAt (band, slot) == nullptr) return "That slot does not exist.";
+    // 0.21.0 (Thomas: "it just gives me this window ... no way to modify it"): Triad Time installed as its own plug-in
+    // is Triad's built-in Triad Time; Triad loads the built-in (with the same settings), whose window is always its own.
+    if (desc.pluginFormatName != TriadTime::formatName && (triad::isBuiltInTwin (desc.name) || triad::isBuiltInTwin (desc.descriptiveName)))
+        return requestInstall (band, slot, TriadTime::makeDescription(), triadTimeStateFromInstalled (state), openEditor, restoringSlot);
     juce::AudioPluginFormat* format = nullptr;
     for (auto* f : formats.getFormats())
         if (f->getName() == desc.pluginFormatName) format = f;
