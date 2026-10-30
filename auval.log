@@ -1,0 +1,576 @@
+
+    AU Validation Tool
+    Version: 1.10.0 
+    Copyright 2003-2019, Apple Inc. All Rights Reserved.
+    Specify -h (-help) for command options
+
+--------------------------------------------------
+VALIDATING AUDIO UNIT: 'aufx' - 'Trid' - 'Tsrt'
+--------------------------------------------------
+Manufacturer String: Thomas Ross
+AudioUnit Name: Triad v22
+Component Version: 0.22.0 (0x1600)
+
+* * PASS
+--------------------------------------------------
+TESTING OPEN TIMES:
+COLD:
+Time to open AudioUnit:         7.035 ms
+WARM:
+Time to open AudioUnit:         1.476  ms
+This AudioUnit is a version 2 implementation.
+FIRST TIME:
+Time for initialization:        0.008 ms
+
+* * PASS
+--------------------------------------------------
+VERIFYING DEFAULT SCOPE FORMATS:
+Input Scope Bus Configuration:
+ Default Bus Count:1
+    Bus Name: Input
+    Default Format: AudioStreamBasicDescription:  2 ch,  44100 Hz, Float32, deinterleaved
+    Has Channel Layouts: 0x650002 0x660002 0x670002 0x6A0002 
+    Default Layout:
+	Tag=0x650002, Num Chan Descs=0
+
+Output Scope Bus Configuration:
+ Default Bus Count:1
+    Bus Name: Output
+    Default Format: AudioStreamBasicDescription:  2 ch,  44100 Hz, Float32, deinterleaved
+    Has Channel Layouts: 0x650002 0x660002 0x670002 0x6A0002 
+    Default Layout:
+	Tag=0x650002, Num Chan Descs=0
+
+* * PASS
+--------------------------------------------------
+VERIFYING REQUIRED PROPERTIES:
+
+* * PASS
+--------------------------------------------------
+VERIFYING RECOMMENDED PROPERTIES:
+  VERIFYING PROPERTY: Latency
+    PASS
+  VERIFYING PROPERTY: Tail Time
+    PASS
+  VERIFYING PROPERTY: Bypass Effect
+    PASS
+
+* * PASS
+--------------------------------------------------
+VERIFYING OPTIONAL PROPERTIES:
+
+* * PASS
+--------------------------------------------------
+VERIFYING SPECIAL PROPERTIES:
+
+VERIFYING CUSTOM UI
+Cocoa Views Available: 1
+  JUCE_AUCocoaViewClass_db088b32f8419184
+    PASS
+
+HAS FACTORY PRESETS
+    ID:   0    Name: Untitled
+
+VERIFYING CLASS INFO
+    PASS
+
+TESTING HOST CALLBACKS
+    PASS
+
+* * PASS
+--------------------------------------------------
+PUBLISHED PARAMETER INFO:
+
+# # # 58 Global Scope Parameters:
+Parameter ID:3351892
+Name: Band 1 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:3351893
+Name: Band 2 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:3351894
+Name: Band 3 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:915452224
+Name: Crossover 2
+Parameter Type: Generic
+Values: Minimum = 20.00, Default = 2500.00, Maximum = 20000.00
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1050588750
+Name: Crossover 1
+Parameter Type: Generic
+Values: Minimum = 20.00, Default = 250.00, Maximum = 20000.00
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:3351895
+Name: Band 4 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:3351896
+Name: Band 5 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:3351897
+Name: Band 6 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:3351898
+Name: Band 7 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:3351899
+Name: Band 8 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:3351900
+Name: Band 9 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:3351901
+Name: Band 10 Mix
+Parameter Type: Generic
+Values: Minimum = 0.0, Default = 100.0, Maximum = 100.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:795504627
+Name: Crossover 3
+Parameter Type: Generic
+Values: Minimum = 20.00, Default = 6000.00, Maximum = 20000.00
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:795504628
+Name: Crossover 4
+Parameter Type: Generic
+Values: Minimum = 20.00, Default = 9000.00, Maximum = 20000.00
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:795504629
+Name: Crossover 5
+Parameter Type: Generic
+Values: Minimum = 20.00, Default = 12000.00, Maximum = 20000.00
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:795504630
+Name: Crossover 6
+Parameter Type: Generic
+Values: Minimum = 20.00, Default = 14000.00, Maximum = 20000.00
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:795504631
+Name: Crossover 7
+Parameter Type: Generic
+Values: Minimum = 20.00, Default = 16000.00, Maximum = 20000.00
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:795504632
+Name: Crossover 8
+Parameter Type: Generic
+Values: Minimum = 20.00, Default = 17500.00, Maximum = 20000.00
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:795504633
+Name: Crossover 9
+Parameter Type: Generic
+Values: Minimum = 20.00, Default = 19000.00, Maximum = 20000.00
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116753
+Name: Band 1 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116754
+Name: Band 2 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116755
+Name: Band 3 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116756
+Name: Band 4 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116757
+Name: Band 5 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116758
+Name: Band 6 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116759
+Name: Band 7 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116760
+Name: Band 8 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116761
+Name: Band 9 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:98116762
+Name: Band 10 Volume
+Parameter Type: Generic
+Values: Minimum = -36.0, Default = +0.0, Maximum = +12.0
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1248026597
+Name: Crossover 1 Slope
+Parameter Type: Generic
+Values: Minimum = 6 dB/oct, Default = 24 dB/oct, Maximum = 96 dB/oct
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1248026598
+Name: Crossover 2 Slope
+Parameter Type: Generic
+Values: Minimum = 6 dB/oct, Default = 24 dB/oct, Maximum = 96 dB/oct
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1248026599
+Name: Crossover 3 Slope
+Parameter Type: Generic
+Values: Minimum = 6 dB/oct, Default = 24 dB/oct, Maximum = 96 dB/oct
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1248026600
+Name: Crossover 4 Slope
+Parameter Type: Generic
+Values: Minimum = 6 dB/oct, Default = 24 dB/oct, Maximum = 96 dB/oct
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1248026601
+Name: Crossover 5 Slope
+Parameter Type: Generic
+Values: Minimum = 6 dB/oct, Default = 24 dB/oct, Maximum = 96 dB/oct
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1248026602
+Name: Crossover 6 Slope
+Parameter Type: Generic
+Values: Minimum = 6 dB/oct, Default = 24 dB/oct, Maximum = 96 dB/oct
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1248026603
+Name: Crossover 7 Slope
+Parameter Type: Generic
+Values: Minimum = 6 dB/oct, Default = 24 dB/oct, Maximum = 96 dB/oct
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1248026604
+Name: Crossover 8 Slope
+Parameter Type: Generic
+Values: Minimum = 6 dB/oct, Default = 24 dB/oct, Maximum = 96 dB/oct
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:1248026605
+Name: Crossover 9 Slope
+Parameter Type: Generic
+Values: Minimum = 6 dB/oct, Default = 24 dB/oct, Maximum = 96 dB/oct
+Flags: Values Have Strings, High Resolution, Can Ramp, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104263991
+Name: Band 1 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104263992
+Name: Band 2 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104263993
+Name: Band 3 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104263994
+Name: Band 4 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104263995
+Name: Band 5 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104263996
+Name: Band 6 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104263997
+Name: Band 7 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104263998
+Name: Band 8 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104263999
+Name: Band 9 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:104264000
+Name: Band 10 Mute
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109618993
+Name: Band 1 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109618994
+Name: Band 2 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109618995
+Name: Band 3 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109618996
+Name: Band 4 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109618997
+Name: Band 5 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109618998
+Name: Band 6 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109618999
+Name: Band 7 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109619000
+Name: Band 8 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109619001
+Name: Band 9 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Parameter ID:109619002
+Name: Band 10 Solo
+Parameter Type: Boolean
+Values: Minimum = Off, Default = Off, Maximum = On
+Flags: Values Have Strings, High Resolution, Readable, Writable 
+  -parameter PASS
+
+Testing that parameters retain value across reset and initialization
+  PASS
+
+* * PASS
+--------------------------------------------------
+FORMAT TESTS:
+
+Reported Channel Capabilities (explicit):
+      [2, 2]  
+
+Input/Output Channel Handling:
+1-1   1-2   1-4   1-5   1-6   1-7   1-8   2-2   2-4   2-5   2-6   2-7   2-8   4-4   4-5   5-5   6-6   7-7   8-8
+                                          X                                                                       
+
+# # AudioChannelLayouts (4), Input Scope:
+ChannelLayout is Writable: T
+The Unit publishes the following Channel Layouts:
+  0x650002, 0x660002, 0x670002, 0x6A0002, 
+
+Is Audio Channel Layout Available:
+Mono    Stereo  Binau.  AU_4    Ambi.   AU_5    AU_5_0  AU_6    AU_6_0  AU_7_0  AU_7_0F AU_8    AU_5_1  AU_6_1  AU_7_1  AU_7_1F 
+        X       X                                                                                                               
+
+Current Format:AudioStreamBasicDescription:  2 ch,  44100 Hz, Float32, deinterleaved
+Current Format Tag = 0x650002, New Format Tag = 0x650002, Successsful
+
+Current Format:AudioStreamBasicDescription:  2 ch,  44100 Hz, Float32, deinterleaved
+Current Format Tag = 0x650002, New Format Tag = 0x6A0002, Successsful
+
+# # AudioChannelLayouts (4), Output Scope:
+ChannelLayout is Writable: T
+The Unit publishes the following Channel Layouts:
+  0x650002, 0x660002, 0x670002, 0x6A0002, 
+
+Is Audio Channel Layout Available:
+Mono    Stereo  Binau.  AU_4    Ambi.   AU_5    AU_5_0  AU_6    AU_6_0  AU_7_0  AU_7_0F AU_8    AU_5_1  AU_6_1  AU_7_1  AU_7_1F 
+        X       X                                                                                                               
+
+Current Format:AudioStreamBasicDescription:  2 ch,  44100 Hz, Float32, deinterleaved
+Current Format Tag = 0x650002, New Format Tag = 0x650002, Successsful
+
+Current Format:AudioStreamBasicDescription:  2 ch,  44100 Hz, Float32, deinterleaved
+Current Format Tag = 0x650002, New Format Tag = 0x6A0002, Successsful
+
+* * PASS
+--------------------------------------------------
+RENDER TESTS:
+
+Input Format: AudioStreamBasicDescription:  2 ch,  44100 Hz, Float32, deinterleaved
+Output Format: AudioStreamBasicDescription:  2 ch,  44100 Hz, Float32, deinterleaved
+Render Test at 512 frames
+Slicing Render Test at 64 frames
+  PASS
+
+
+Render Test at 64 frames, sample rate: 22050 Hz
+Render Test at 137 frames, sample rate: 96000 Hz
+Render Test at 4096 frames, sample rate: 48000 Hz
+Render Test at 4096 frames, sample rate: 192000 Hz
+Render Test at 4096 frames, sample rate: 11025 Hz
+Render Test at 512 frames, sample rate: 44100 Hz
+  PASS
+
+Checking connection semantics:
+Connection format:
+AudioStreamBasicDescription:  2 ch,  44100 Hz, Float32, deinterleaved
+  PASS
+
+Bad Max Frames - Render should fail
+  PASS
+
+Checking parameter setting
+Using AudioUnitSetParameter
+Using AudioUnitScheduleParameter
+  PASS
+
+Checking ramped parameter scheduling
+  PASS
+
+Test MIDI
+  PASS
+
+* * PASS
+--------------------------------------------------
+AU VALIDATION SUCCEEDED.
+--------------------------------------------------

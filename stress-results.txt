@@ -1,0 +1,95 @@
+Triad stress test, Triad 0.22.0 (Mac OSX 15.7.9, Apple M1 (Virtual), 3 cores)
+Effect pool: 22 different effects: Triad Test Effect (VST3), AUBandpass (AU), AUDelay (AU), AUDistortion (AU), AUDynamicsProcessor (AU), AUFilter (AU), AUGraphicEQ (AU), AUHighShelfFilter (AU), AUHipass (AU), AULowpass (AU), AULowShelfFilter (AU), AUMatrixReverb (AU), AUMultibandCompressor (AU), AUNBandEQ (AU), AUNewPitch (AU), AUParametricEQ (AU), AUPeakLimiter (AU), AUPitch (AU), AUReverb2 (AU), AURogerBeep (AU), AUSampleDelay (AU), Triad Time (built in)
+
+== 0. Removing effects: each effect loaded, played, its window opened and removed 8 times, then 6 copies removed at once (each effect in its own process) ==
+22 of 22 effects were removed and deleted 14 times each without a problem
+
+== 1. Big project: 10 bands x 20 slots ==
+Loaded 200 effects in 504.16 ms; Triad latency 8496 samples
+20 s of audio through 200 effects: average 4.66 ms per 256-sample block (87.4% of one core), worst 16.01 ms, peak level -24.8 dBFS
+Switched on every LFO: 220 knobs now move with the song (slot mixes, band mixes, band volumes)
+20 s of audio through 200 effects with every LFO on: average 4.70 ms per 256-sample block (88.2% of one core), worst 15.59 ms, peak level -13.4 dBFS
+LFO cost: 0.8% more processing than the same project without LFOs
+Saved (460 KB) in 22.16 ms, reopened in 591.05 ms with 200 effects running
+Undo with 200 effects: a snapshot takes 19.01 ms; undoing a removed effect 16.48 ms (it is loaded again, the others stay as they are); undoing a slot mix 21.47 ms; redoing both 33.47 ms
+Closed the 200-effect project in 50.77 ms
+
+== 2. 3000 random edits while audio plays on another thread (seed 20261015) ==
+3000 edits in 30.3 s: 5548 audio blocks processed alongside the edits (703 automation moves), worst block 115.96 ms, up to 54 effects loaded at once, up to 550 removed effects waiting their 1.5 s to be deleted (0 of them 3 s late or more), memory up to 755 MB
+Effect windows opened on top of Triad: 53
+Final layout: 10 bands, 32 effects; NaN/Inf output: none
+Edits: LFO length / trigger x54, LFO on band edges x62, LFO palette: folders, pages, USER, dice x73, LIVE on/off x32, PRE / POST chain x65, add band x93, add empty slot x120, add/remove an LFO x53, all dividers: hard wall / default / soft x55, bypass/enable slot x111, chain preset copy x31, close effect windows x42, copy / paste band state x33, copy / paste plugin state x58, crossover slope x37, drag a slot x58, drag crossover x35, draw an LFO x125, knob link / LEARN x84, load effect (new slot) x391, matrix edit x132, move a band x95, move slot x103, open effect window x85, open/close Triad window, switch tabs x63, remove band x98, remove effect, keep slot x73, remove slot x183, replace effect x159, sample rate / buffer change x43, save and reload project x79, slot mix x167, undo / redo x108
+Slowest edits: open effect window avg 33.51 ms, worst 634.90 ms (edit 41); LFO on band edges avg 8.56 ms, worst 262.45 ms (edit 42); undo / redo avg 21.52 ms, worst 165.53 ms (edit 960); add band avg 10.52 ms, worst 137.59 ms (edit 1437); remove slot avg 7.61 ms, worst 129.42 ms (edit 1314)
+
+== 3. Many Triad instances (one per track), every LFO on ==
+24 instances with 288 hosted effects created in 1900.51 ms
+10 s of audio through all of them: average 15.22 ms per block for the whole project (142.7% of one core's real-time budget), worst 55.43 ms
+All instances closed in 220.57 ms
+40 create/play/destroy cycles in 3396.90 ms
+
+== 4. Live vocal monitoring: latency and real-time safety ==
+Triad alone, 3 bands, 24 dB/oct (default): reports 0 samples (0.00 ms) to the DAW; the sound starts at sample 0, its peak at sample 1 (0.02 ms)
+Triad alone, 3 bands, 6 dB/oct (softest): reports 0 samples (0.00 ms) to the DAW; the sound starts at sample 0, its peak at sample 0 (0.00 ms)
+Triad alone, 3 bands, 96 dB/oct (hardest): reports 0 samples (0.00 ms) to the DAW; the sound starts at sample 0, its peak at sample 1 (0.02 ms)
+Triad alone, 10 bands, 96 dB/oct: reports 0 samples (0.00 ms) to the DAW; the sound starts at sample 2, its peak at sample 5 (0.10 ms)
+Crossover timing smear (group delay of the bands added back, crossovers at 250 Hz and 2.5 kHz), in ms at:
+                 100 Hz   250 Hz   500 Hz  1.0 kHz  2.5 kHz  5.0 kHz 10.0 kHz
+6 dB/oct           0.00     0.00     0.00    -0.00    -0.00     0.00     0.00
+12 dB/oct          1.22     0.76     0.38     0.18     0.08     0.03     0.01
+24 dB/oct          2.21     1.98     0.72     0.32     0.20     0.06     0.02
+48 dB/oct          3.92     5.03     1.29     0.57     0.51     0.11     0.03
+72 dB/oct          5.73     8.51     1.87     0.84     0.87     0.16     0.04
+96 dB/oct          7.58    12.28     2.47     1.11     1.25     0.20     0.05
+(For comparison: a singer 1 m from the microphone arrives 2.9 ms late; a 64-sample buffer is 1.33 ms.)
+16 of 22 effects add no latency; these do (Triad then reports the largest band total to the DAW): Triad Test Effect (VST3) 73 samples (1.52 ms); AUDynamicsProcessor (AU) 256 samples (5.33 ms); AUMultibandCompressor (AU) 256 samples (5.33 ms); AUNewPitch (AU) 4096 samples (85.33 ms); AUPeakLimiter (AU) 96 samples (2.00 ms); AUPitch (AU) 3719 samples (77.48 ms)
+With AUNewPitch (AU) in band 2 (slot at 0% mix): Triad reports 4096 samples (85.33 ms); the dry sound comes out at sample 4096 (peak at 4097)
+Vocal chain effects: AUGraphicEQ (AU), AUNBandEQ (AU), AUParametricEQ (AU), AUDelay (AU), AUSampleDelay (AU)
+Each case plays 6 s per buffer size at 48 kHz on an audio thread paced like an interface, with Triad's window open. Times are Triad's own work per block (CPU time); "late": the work took longer than the buffer lasts (a dropout on any machine); "paused by the system": the test machine (shared, virtual) stopped the thread for a moment, not Triad's work; "silenced": blocks Triad output as silence because its window was changing the bands at that moment. The project is saved every second meanwhile, like a DAW's autosave.
+  Triad alone, 3 bands, 24 dB/oct,  32 samples (0.67 ms): average 13 us (1.9% of the time), 99.9% under 245 us, worst 976 us; late 3 of 9000, silenced 0, paused by the system 402 (longest wait 1490.3 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 3 bands, 24 dB/oct,  64 samples (1.33 ms): average 23 us (1.7% of the time), 99.9% under 228 us, worst 2392 us; late 1 of 4500, silenced 0, paused by the system 226 (longest wait 910.5 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 3 bands, 24 dB/oct, 128 samples (2.67 ms): average 31 us (1.2% of the time), 99.9% under 404 us, worst 623 us; late 0 of 2250, silenced 0, paused by the system 0 (longest wait 0.6 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 3 bands, 24 dB/oct, 256 samples (5.33 ms): average 52 us (1.0% of the time), 99.9% under 591 us, worst 2058 us; late 0 of 1125, silenced 0, paused by the system 0 (longest wait 2.1 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct,  32 samples (0.67 ms): average 126 us (18.9% of the time), 99.9% under 1048 us, worst 2156 us; late 22 of 9000, silenced 0, paused by the system 314 (longest wait 105.6 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct,  64 samples (1.33 ms): average 240 us (18.0% of the time), 99.9% under 1857 us, worst 5667 us; late 8 of 4500, silenced 0, paused by the system 106 (longest wait 42.3 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, 128 samples (2.67 ms): average 461 us (17.3% of the time), 99.9% under 1549 us, worst 2221 us; late 0 of 2250, silenced 0, paused by the system 0 (longest wait 2.2 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, 256 samples (5.33 ms): average 889 us (16.7% of the time), 99.9% under 4010 us, worst 4705 us; late 0 of 1125, silenced 0, paused by the system 0 (longest wait 4.7 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, every LFO on,  32 samples (0.67 ms): average 132 us (19.8% of the time), 99.9% under 676 us, worst 1811 us; late 9 of 9000, silenced 0, paused by the system 58 (longest wait 18.8 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, every LFO on,  64 samples (1.33 ms): average 245 us (18.4% of the time), 99.9% under 1812 us, worst 3502 us; late 10 of 4500, silenced 0, paused by the system 8 (longest wait 22.3 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, every LFO on, 128 samples (2.67 ms): average 502 us (18.8% of the time), 99.9% under 3249 us, worst 4275 us; late 3 of 2250, silenced 0, paused by the system 0 (longest wait 4.3 ms); Triad latency 0 samples (0.00 ms)
+  Triad alone, 10 bands, 96 dB/oct, every LFO on, 256 samples (5.33 ms): average 1299 us (24.4% of the time), 99.9% under 4475 us, worst 5533 us; late 1 of 1125, silenced 0, paused by the system 0 (longest wait 5.5 ms); Triad latency 0 samples (0.00 ms)
+  vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct,  32 samples (0.67 ms): average 29 us (4.3% of the time), 99.9% under 435 us, worst 1898 us; late 4 of 9000, silenced 0, paused by the system 3 (longest wait 1.9 ms); Triad latency 0 samples (0.00 ms)
+  vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct,  64 samples (1.33 ms): average 45 us (3.4% of the time), 99.9% under 212 us, worst 349 us; late 0 of 4500, silenced 0, paused by the system 0 (longest wait 0.3 ms); Triad latency 0 samples (0.00 ms)
+  vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct, 128 samples (2.67 ms): average 121 us (4.5% of the time), 99.9% under 1057 us, worst 1534 us; late 0 of 2250, silenced 0, paused by the system 0 (longest wait 1.5 ms); Triad latency 0 samples (0.00 ms)
+  vocal chain: 3 bands, 5 effects, LFOs on, 48 dB/oct, 256 samples (5.33 ms): average 221 us (4.1% of the time), 99.9% under 616 us, worst 878 us; late 0 of 1125, silenced 0, paused by the system 0 (longest wait 0.9 ms); Triad latency 0 samples (0.00 ms)
+
+== 5. Knobs inside the effects: Triad's LFO links, LEARN and undo, with every effect ==
+22 of 22 effects have knobs an LFO can link to (median 4 each, up to 33). With Triad's own links (an LFO on up to 4 knobs, set every 64 samples): the knobs followed in 22, the sound followed in 21; LEARN linked a knob in 22; undo put a turned knob back in 22; none crashed
+  note: AURogerBeep (AU): its first knobs did not change the sound of the test noise
+
+== 7. Recording through Triad: the extra-strong live test ==
+The session: no pitch corrector installed (PRE empty); 3 bands at 250 Hz / 2.5 kHz (24 dB/oct) with AUGraphicEQ (AU), AUNBandEQ (AU), AUParametricEQ (AU), AUDelay (AU), AUSampleDelay (AU); every LFO on (band volumes as a 60% tremolo) and an LFO linked to a knob inside an effect; Triad's window open; the project saved every second.
+(a) Monitoring while you work: a knob turned, an LFO drawn, a window opened, an undo step kept... every 150 ms. "Silenced": blocks Triad output as silence because its window was changing the bands at that moment; "dropouts": output blocks that were silent while the voice was there, for any reason; "late": Triad's work took longer than the buffer lasts.
+  48.0 kHz,  32 samples (0.67 ms), 6 s, 31 actions: Triad's work average 43 us (6.4% of the time), 99.9% under 221 us; late 0 of 9000, paused by the system 2; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+  48.0 kHz,  64 samples (1.33 ms), 8 s, 49 actions: Triad's work average 51 us (3.9% of the time), 99.9% under 249 us; late 0 of 6000, paused by the system 0; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+  48.0 kHz, 128 samples (2.67 ms), 6 s, 32 actions: Triad's work average 150 us (5.6% of the time), 99.9% under 676 us; late 0 of 2250, paused by the system 0; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+  44.1 kHz,  64 samples (1.45 ms), 5 s, 29 actions: Triad's work average 63 us (4.4% of the time), 99.9% under 227 us; late 0 of 3445, paused by the system 0; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+  96.0 kHz,  64 samples (0.67 ms), 5 s, 30 actions: Triad's work average 47 us (7.0% of the time), 99.9% under 314 us; late 1 of 7500, paused by the system 2; silenced 0, dropouts 0, not-a-number 0; Triad latency 0 samples (0.0 ms)
+(b) Layout changes while recording (48 kHz, 64 samples, one every 400 ms for 12 s): late 1 of 9000, not-a-number 0. How long each kind of change interrupted the sound:
+  LIVE on or off (x5): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  add / remove a band (x3): Triad silenced 0.4 ms on average, the sound dropped out 0.4 ms on average, worst 1.3 ms
+  all dividers: hard wall / default / soft (x4): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  bypass / enable an effect (x3): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  drag an effect to another slot (x4): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  load an effect into a new slot (x2): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  redo (x6): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+  undo (x1): Triad silenced 0.0 ms on average, the sound dropped out 0.0 ms on average, worst 0.0 ms
+
+== 8. Pitch correction with a sung vocal: a plain track, Triad's PRE, and a copy in each band (250 Hz / 2.5 kHz) ==
+No pitch corrector is installed on this computer (the CI Mac installs Graillon 3 Free for this): skipped
+
+== 6. Plug-in list: 60 plug-ins, 20 of which crash when loaded ==
+First scan: 60 plug-ins in 4.9 s: 20 read from disk, 20 checked by Triad Scanner, 20 crashed the scanner (Triad unaffected)
+Next session (from the cache): 72.20 ms
+Closed during a full rescan in 495.99 ms
+
+PASS: no crashes, no NaN/Inf output, all checks held
