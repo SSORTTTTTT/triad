@@ -5,7 +5,23 @@ and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Since v21
 matches the version: Triad vN is 0.N.0. Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.21.0 ("Triad v21", delivered 2026-10-30): Triad Time's own window, bands back in place, range ends to drag, FULL SPECTRUM
+## Current testing version — 0.22.0 ("Triad v22", delivered 2026-10-30): BAND NOW for every LFO, a thinner ROUTING, every added band undone
+
+0.22.0 (2026-10-30), Thomas, testing v21: "this band metering thing ... even if it's not moving or any LFOs linked to
+it, just be appearing on the UI for the LFO tab as a whole ... shave a third off of it [ROUTING] ... put that band now
+metering up on top"; "make the routing tab go all the way up to there"; and "adding multiple bands and it not resetting
+... unless I delete like one of the middle one, not the one to the left". Mock-ups drawn by Triad's code, option A chosen.
+- **BAND NOW at the top of the LFO tab, for every LFO** (an LFO on a knob, a mix, PRE / POST: every band), left of
+  TRIGGER, as tall as the band and LFO rows; on the band edges, with where the LFO takes the band (dashed).
+- **ROUTING a third thinner** (232 to 156 px; the grid has the rest), from just under a small TRIGGER (its top level with
+  BAND NOW) down to the toolbar; its cards put the amount across with LOCK and INV under it, + ROUTE TO and LEARN one
+  above the other. The editing tips no longer fit at the top at the default size (hidden there).
+- **Removing bands added puts the dividers back, in any order**: removing an empty band that would take away a divider
+  that was there before takes the newest divider + BAND added instead (its band above empty too), even after moving
+  the added dividers. Bands with effects are removed as before; a project, preset or undo step that sets the dividers
+  starts afresh.
+
+## 0.21.0 ("Triad v21", delivered 2026-10-30): Triad Time's own window, bands back in place, range ends to drag, FULL SPECTRUM
 
 Named so the v number matches the version (Thomas, 2026-10-29: "match it ... for the title and installation files"):
 Triad vN is version 0.N.0 from now on. 0.21.0 was first delivered as "Triad v20"; "Triad v21" replaces it, with the

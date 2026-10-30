@@ -145,14 +145,16 @@ public:
         r.reduce (10.0f, 7.0f);
         const int count = processor.getBandCount();
         const auto cuts = processor.heardCrossovers();
-        if (band < 0 || band >= count || (int) cuts.size() < count - 1) return;
-        const auto colour = bandColour (band);
+        // PRE and POST (0.22.0: BAND NOW for every LFO): the whole sound, every band.
+        const bool whole = TriadProcessor::isExtraChain (band);
+        if ((! whole && (band < 0 || band >= count)) || (int) cuts.size() < count - 1) return;
+        const auto colour = whole ? accent : bandColour (band);
         const float top = processor.nyquistFrequency();
-        const float lo = band > 0 ? cuts[(size_t) band - 1] : 0.0f, hi = band < count - 1 ? cuts[(size_t) band] : top;
+        const float lo = whole || band == 0 ? 0.0f : cuts[(size_t) band - 1], hi = whole || band == count - 1 ? top : cuts[(size_t) band];
         auto head = r.removeFromTop (16.0f);
         g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
         g.setColour (dimTextColour);
-        g.drawText ("BAND " + juce::String (band + 1) + " NOW", head, juce::Justification::centredLeft);
+        g.drawText (whole ? TriadProcessor::chainName (band) + juce::String (": EVERY BAND") : "BAND " + juce::String (band + 1) + " NOW", head, juce::Justification::centredLeft);
         g.setColour (colour);
         g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
         g.drawFittedText (formatHz (lo) + juce::String::fromUTF8 (" \xe2\x80\x93 ") + formatHz (hi), head.withTrimmedLeft (78.0f).toNearestInt(),
@@ -188,7 +190,16 @@ public:
             fill.lineTo (plot.getRight(), plot.getBottom()); fill.lineTo (plot.getX(), plot.getBottom()); fill.closeSubPath();
             return fill;
         };
-        // The other bands, faint; this band, lit.
+        // The other bands, faint; this band, lit (PRE / POST: every band, lit).
+        if (whole)
+        {
+            for (int b = 0; b < count; ++b)
+            {
+                g.setColour (bandColour (b).withAlpha (0.2f)); g.fillPath (filled (curve (b, cuts)));
+                g.setColour (bandColour (b)); g.strokePath (curve (b, cuts, false), juce::PathStrokeType (1.3f));
+            }
+            return;
+        }
         for (int b = 0; b < count; ++b)
             if (b != band) { g.setColour (bandColour (b).withAlpha (0.1f)); g.fillPath (filled (curve (b, cuts))); }
         // Where the LFO takes the band: its lowest and highest (dashed).
@@ -248,6 +259,7 @@ private:
     std::vector<float> key;
 };
 bool LfoPage::isEdgeNowShowing() const { return edgeNow != nullptr && edgeNow->isVisible(); }
+juce::Rectangle<int> LfoPage::getEdgeNowBounds() const { return edgeNow != nullptr ? edgeNow->getBounds() : juce::Rectangle<int>(); }
 
 juce::String LfoShapeHost::valueLabel (int percent) const
 {
@@ -505,29 +517,33 @@ public:
         auto r = getLocalBounds().toFloat().reduced (1.0f);
         g.setColour (settings.audio ? currentPalette.controlsOn : over ? slotRowHover : slotRow);
         g.fillRoundedRectangle (r, 5.0f);
-        auto area = getLocalBounds().reduced (10, 4);
+        // 0.22.0: as tall as BAND NOW beside it: TRIGGER, then SONG / AUDIO, then (AUDIO) the level on its own row.
+        const bool tall = getHeight() >= 56;
+        auto area = getLocalBounds().reduced (10, tall ? 8 : 4);
         auto top = area.removeFromTop (14);
         g.setColour (dimTextColour);
         g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
         g.drawText ("TRIGGER", top, juce::Justification::centredLeft);
         juce::Path arrow;
-        const float ax = (float) getWidth() - 14.0f, ay = 11.0f;
+        const float ax = (float) getWidth() - 14.0f, ay = (float) top.getCentreY();
         arrow.addTriangle (ax - 4.0f, ay - 2.0f, ax + 4.0f, ay - 2.0f, ax, ay + 3.0f);
         g.fillPath (arrow);
         g.setColour (settings.audio ? accent : textColour);
-        g.setFont (juce::FontOptions (12.5f, juce::Font::bold));
+        g.setFont (juce::FontOptions (tall ? 14.0f : 12.5f, juce::Font::bold));
+        auto value = tall ? area.removeFromTop (26) : area;
         if (! settings.audio)
         {
-            g.drawText ("SONG", area, juce::Justification::centredLeft);
+            g.drawText ("SONG", value, juce::Justification::centredLeft);
             return;
         }
-        g.drawText ("AUDIO", area.removeFromLeft (46), juce::Justification::centredLeft);
+        g.drawText ("AUDIO", value.removeFromLeft (tall ? 52 : 46), juce::Justification::centredLeft);
         // The light: flashes at every restart, dim while waiting for sound.
-        const auto light = area.removeFromLeft (12).toFloat().withSizeKeepingCentre (8.0f, 8.0f);
+        const auto light = value.removeFromLeft (12).toFloat().withSizeKeepingCentre (8.0f, 8.0f);
         const float flash = juce::jlimit (0.0f, 1.0f, 1.0f - (float) (juce::Time::getMillisecondCounterHiRes() - lastHit) / 250.0f);
         g.setColour (waiting ? currentPalette.ledOff : ledColour.withAlpha (0.45f + 0.55f * flash));
         g.fillEllipse (light.expanded (flash * 1.5f));
-        area.removeFromLeft (6);
+        value.removeFromLeft (6);
+        if (! tall) area = value;
         // The level (-60 .. 0 dB) and the threshold on it.
         auto meter = area.withSizeKeepingCentre (area.getWidth(), 6).toFloat();
         g.setColour (currentPalette.meterBack);
@@ -966,14 +982,24 @@ void LfoPage::resized()
 {
     // 0.16.1, Thomas's layout (as Triad Time's): the bands and the tips, the LFOs and TRIGGER, the grid with ROUTING
     // beside it, one toolbar, then the shapes browser and GENERATE.
+    // 0.22.0 (Thomas): ROUTING and TRIGGER a third thinner, the grid wider, and BAND NOW at the top for every LFO, left of
+    // TRIGGER, as tall as the band and LFO rows.
     auto r = getLocalBounds();
     auto bandRow = r.removeFromTop (32);
-    for (auto& b : bandButtons) { b->setBounds (bandRow.removeFromLeft (chipWidth()).withTrimmedRight (4)); }
-    hintArea = bandRow.withTrimmedLeft (12);
     r.removeFromTop (6);
     auto tabRow = r.removeFromTop (44);
-    triggerButton->setBounds (tabRow.removeFromRight (routingWidth).withSizeKeepingCentre (routingWidth, 38));
-    tabRow.removeFromRight (8);
+    // TRIGGER small at the top of the right column (Thomas: "that tab can just be that small"), ROUTING under it, up to
+    // there; BAND NOW beside them, as tall as the band and LFO rows.
+    const int topY = bandRow.getY() + 2, bottomY = tabRow.getBottom() - 3;
+    triggerButton->setBounds (tabRow.getRight() - routingWidth, topY, routingWidth, 36);
+    tabRow.removeFromRight (routingWidth + 10);
+    const auto nowArea = juce::Rectangle<int> (tabRow.getRight() - nowWidth(), topY, nowWidth(), bottomY - topY);
+    edgeNow->setBounds (nowArea);
+    edgeNow->setVisible (true);
+    tabRow.setRight (nowArea.getX() - 10);
+    bandRow.setRight (nowArea.getX() - 12);
+    for (auto& b : bandButtons) { b->setBounds (bandRow.removeFromLeft (chipWidth()).withTrimmedRight (4)); }
+    hintArea = bandRow.withTrimmedLeft (12);
     tabView.setBounds (tabRow.withTrimmedRight (40));
     addLfoButton.setBounds (juce::Rectangle<int> (tabRow.getX() + juce::jmin (tabRow.getWidth() - 34, (int) tabs.size() * 160), tabRow.getY(), 30, tabRow.getHeight())
                                 .withSizeKeepingCentre (28, 28));
@@ -988,33 +1014,36 @@ void LfoPage::resized()
     shapes.getBrowser().setBounds (generatorArea);
     shapes.setGridInsetRight (routingWidth);
     shapes.setBounds (r);
-    routingArea = juce::Rectangle<int> (r.getRight() - routingWidth, r.getY(), routingWidth, r.getHeight() - ShapePanel::browserToolbarHeight - 8);
+    // ROUTING from just under TRIGGER (0.22.0, Thomas's option A), down to the toolbar.
+    routingArea = juce::Rectangle<int> (r.getRight() - routingWidth, r.getY(), routingWidth, r.getHeight() - ShapePanel::browserToolbarHeight - 8)
+                      .withTop (triggerButton->getBottom() + 8);
     // The header (ROUTING, where from), the cards, then + ROUTE TO and LEARN side by side (0.17.0: room for two cards
     // or more in the default window).
     auto panel = routingArea.reduced (10, 0).withTrimmedTop (48).withTrimmedBottom (10);
-    auto buttons = panel.removeFromBottom (28);
-    learnButton.setBounds (buttons.removeFromRight (juce::jmax (70, buttons.getWidth() * 2 / 5)));
-    buttons.removeFromRight (6);
-    addRouteButton.setBounds (buttons);
-    panel.removeFromBottom (8);
-    constexpr int cardHeight = 52, cardGap = 5;
-    // A band-edge LFO: BAND NOW under its card, when there is room for it.
+    // + ROUTE TO and LEARN, one above the other (side by side when there is room).
+    const bool narrow = routingArea.getWidth() < 200;
+    auto buttons = panel.removeFromBottom (narrow ? 62 : 28);
+    if (narrow)
     {
-        const bool edges = showsEdges() && ! TriadProcessor::isExtraChain (band);
-        const int nowHeight = juce::jmin (96, panel.getHeight() - cardHeight - cardGap - 8);
-        if (edges && nowHeight >= 56)
-        {
-            edgeNow->setBounds (panel.removeFromBottom (nowHeight));
-            panel.removeFromBottom (8);
-        }
-        edgeNow->setVisible (edges && nowHeight >= 56);
+        learnButton.setBounds (buttons.removeFromBottom (28));
+        buttons.removeFromBottom (6);
+        addRouteButton.setBounds (buttons);
     }
+    else
+    {
+        learnButton.setBounds (buttons.removeFromRight (juce::jmax (70, buttons.getWidth() * 2 / 5)));
+        buttons.removeFromRight (6);
+        addRouteButton.setBounds (buttons);
+    }
+    panel.removeFromBottom (8);
+    const int cardHeight = narrow ? 74 : 52, cardGap = 5;   // narrow: the amount across, LOCK and INV under it
     routeView.setBounds (panel);
     const int width = panel.getWidth() - ((int) routeRows.size() * (cardHeight + cardGap) - cardGap > panel.getHeight() ? 7 : 0);
     int y = 0;
     for (auto& row : routeRows) { row->setBounds (0, y, width, cardHeight); y += cardHeight + cardGap; }
     routeHolder.setSize (width, juce::jmax (y, 1));
-    removeLfoButton.setBounds (juce::Rectangle<int> (routingArea.getRight() - 96, routingArea.getY() + 10, 86, 22));
+    removeLfoButton.setButtonText (narrow ? "REMOVE" : "REMOVE LFO");
+    removeLfoButton.setBounds (juce::Rectangle<int> (routingArea.getRight() - (narrow ? 72 : 96), routingArea.getY() + 10, narrow ? 62 : 86, 22));
     // Over the grid's top right corner: SLOPE (band-edge LFOs), SPECTRUM and FULL SPECTRUM.
     {
         const auto grid = shapes.getBounds().withWidth (shapes.getWidth() - routingWidth - 8);

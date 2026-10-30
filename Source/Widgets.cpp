@@ -170,6 +170,16 @@ void RouteRow::resized()
     top.removeFromRight (4);
     destination.setBounds (top);
     r.removeFromTop (3);
+    if (getHeight() >= 70)
+    {
+        // A narrow card (0.22.0, the LFO tab's thinner ROUTING): the amount box across, LOCK and INV under it.
+        amount.setBounds (r.removeFromTop (20));
+        r.removeFromTop (3);
+        auto row = r.removeFromTop (20);
+        if (lock.isVisible()) { lock.setBounds (row.removeFromLeft ((row.getWidth() - 6) / 2)); row.removeFromLeft (6); }
+        invert.setBounds (row);
+        return;
+    }
     invert.setBounds (r.removeFromRight (40));
     r.removeFromRight (6);
     if (lock.isVisible()) { lock.setBounds (r.removeFromRight (48)); r.removeFromRight (6); }

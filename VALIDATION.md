@@ -1,5 +1,21 @@
 # Validation — Triad
 
+## Triad v22 (0.22.0), Triad Time and Triad Split on macOS — 2026-10-30
+
+Commit `eb4a0ba`, run 41031517398 (macos-15 runner, virtual Apple M1). New in 0.22.0: BAND NOW at the top of the LFO
+tab for every LFO, a small TRIGGER beside it with ROUTING a third thinner from just under it (option A, from mock-ups
+drawn by the code), and removing the bands + BAND added (in any order) puts the dividers back.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v22-0.22.0`, `Triad-Time-0.22.0`, `Triad-Split-0.22.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (over simulated Triad ... v21 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| 0.22.0 | 1 to 7 bands added, removed left, right, middle or at random first, and with the added dividers moved by hand: the dividers back where they were; bands with effects, projects and undo as before; BAND NOW, TRIGGER and ROUTING placed for knob, edge and POST LFOs |
+| Stress | 3,000 random edits while audio plays: PASS; real plug-ins (55), five random sequences: PASS, no crashes, no NaN/Inf output, all checks held |
+
+Run 41025611557 (same commit): with real plug-ins, one sequence crashed inside Graillon 3's own audio code (its phase
+vocoder) and one had 109 removed effects deleted 3 s late (limit 100) on the virtual runner; both passed again without
+the Chowdhury plug-ins, and the re-run passed clean.
+
 ## Triad v21 (0.21.0), Triad Time and Triad Split on macOS — 2026-10-30
 
 Commit `374d58d`, run 41010941690 (macos-15 runner, virtual Apple M1). Triad v20's fixes renamed so the v number
