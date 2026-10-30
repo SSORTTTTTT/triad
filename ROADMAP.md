@@ -4,7 +4,20 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.20.0 ("Triad v19", delivered 2026-10-29): quality-of-life, SOLO alone, softer automated edges
+## Current testing version — 0.21.0 ("Triad v20", delivered 2026-10-29): Triad Time's own window in a band, bands back in place
+
+0.21.0 (2026-10-29), Thomas, testing v19: "when I go to click open window on the post band to work on something in the
+triad time, it just gives me this window ... can you fix it so that it opens the triad time window"; and, adding a band
+then removing an empty one, "it just puts all the placement of the bands ... not back in their original spot".
+- **Triad Time always opens its own window inside Triad.** The cause: the Triad Time *installed as its own plug-in*
+  (VST3 / AU) was being hosted, and its VST3 refuses a second window while it thinks one is open, so Triad fell back to
+  a plain list of knobs. Triad now lists and loads its built-in Triad Time only; projects holding the installed one
+  switch to the built-in when they open, keeping its settings (pattern, lengths, mix, VOLUME before TIME ...).
+- **+ BAND then removing an empty band puts the bands back**: removing an empty band straight after + BAND (nothing
+  else changed, the added band still empty) removes the added band instead, so the dividers return to where they were.
+  A band with effects, LFOs or settings is removed as before, and so is any band once the dividers have moved.
+
+## 0.20.0 ("Triad v19", delivered 2026-10-29): quality-of-life, SOLO alone, softer automated edges
 
 0.20.0 (2026-10-29), Thomas, testing v18 in FL Studio: "a button that says reset band state ... that little pink dot,
 I want to be able to turn it on and off from there ... right click ... copy band state, reset band state ... when I

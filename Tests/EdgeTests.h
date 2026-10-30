@@ -528,6 +528,72 @@ inline void v19Tests (const juce::File& screenshots)
     std::cout << "0.20.0: Reset band state, LFO on / off, Reset wave (locked, inverted), SOLO alone (and Cmd-click), SLOPE, spectrum: passed" << std::endl;
 }
 
+// 0.21.0 (Thomas, testing v19): Triad Time opens its own window (the installed copy is loaded as the built-in), and a
+// band added then an empty band removed puts the dividers back.
+inline void v191Tests()
+{
+    constexpr double rate = 48000.0;
+    TriadProcessor p;
+    p.prepareToPlay (rate, 512);
+    // Triad Time installed as a VST3 or an AU: the built-in loads, with the same settings.
+    for (const auto* format : { "VST3", "AudioUnit" })
+    {
+        juce::PluginDescription installed;
+        installed.name = "Triad Time";
+        installed.pluginFormatName = format;
+        installed.manufacturerName = "Thomas Ross";
+        installed.fileOrIdentifier = "/Library/Audio/Plug-Ins/Triad Time";
+        require (p.loadEffect (0, 0, installed, false).isEmpty(), "Triad Time (installed) loads");
+        require (p.getSlotInfo (0, 0).loaded && p.getSlotInfo (0, 0).format == TriadTime::formatName, "...as Triad's built-in Triad Time (its own window)");
+        p.removeSlot (0, 0);
+    }
+    TriadTime original;
+    original.getParameters()[2]->setValueNotifyingHost (0.73f);
+    juce::MemoryBlock own;
+    original.getStateInformation (own);
+    // A VST3's kept state: Triad Time's own state, plus JUCE's private data after it, in the IComponent chunk.
+    juce::MemoryBlock chunk (own);
+    const char trailer[] = "\0\0\0\0\0\0\0\0JUCEPrivateData";
+    chunk.append (trailer, sizeof (trailer));
+    juce::XmlElement vst3 ("VST3PluginState");
+    vst3.createNewChildElement ("IComponent")->addTextElement (chunk.toBase64Encoding());
+    juce::MemoryBlock vst3State;
+    juce::AudioProcessor::copyXmlToBinary (vst3, vst3State);
+    // An AU's: its class info (a binary property list) with Triad Time's state inside as it is.
+    juce::MemoryBlock auState ("bplist00\xd4\x01\x02\x03jucePluginState", 27);
+    auState.append (own.getData(), own.getSize());
+    auState.append ("\x08\x0f\x1f", 3);
+    for (const auto& kept : { vst3State, auState })
+    {
+        TriadTime restored;
+        const auto converted = TriadProcessor::triadTimeStateFromInstalled (kept);
+        restored.setStateInformation (converted.getData(), (int) converted.getSize());
+        require (std::abs (restored.getParameters()[2]->getValue() - original.getParameters()[2]->getValue()) < 0.001f, "The installed Triad Time's settings carry over");
+    }
+    // A band added (+ BAND), then the empty top band removed: the dividers back where they were.
+    TriadProcessor q;
+    q.prepareToPlay (rate, 512);
+    const auto before = q.effectiveCrossovers();
+    require (q.addBand() && q.getBandCount() == 4, "+ BAND");
+    require (q.isBandEmpty (3) && q.removeBand (3) && q.getBandCount() == 3, "Remove the empty top band");
+    auto after = q.effectiveCrossovers();
+    require (after.size() == before.size() && std::abs (after[0] / before[0] - 1.0f) < 0.001f && std::abs (after[1] / before[1] - 1.0f) < 0.001f,
+             "...the dividers are back where they were before the band was added");
+    // Not when the band removed has an effect, or the dividers were moved after adding.
+    require (q.addBand(), "+ BAND again");
+    require (q.loadEffect (3, 0, TriadTime::makeDescription(), false).isEmpty() && q.removeBand (3), "Remove a band with an effect");
+    after = q.effectiveCrossovers();
+    require (after.size() == 2 && std::abs (after[1] / before[1] - 1.0f) > 0.01f, "...it goes as it always did (its range joins the band below)");
+    TriadProcessor r;
+    r.prepareToPlay (rate, 512);
+    r.addBand();
+    if (auto* c = r.crossoverParameter (2)) c->setValueNotifyingHost (c->convertTo0to1 (9000.0f));
+    const auto moved = r.effectiveCrossovers();
+    r.removeBand (3);
+    require (std::abs (r.effectiveCrossovers()[0] / moved[0] - 1.0f) < 0.001f, "...and when the dividers were moved after adding");
+    std::cout << "0.21.0: Triad Time loads as the built-in (VST3 / AU settings carried over), + BAND then removing an empty band restores the dividers: passed" << std::endl;
+}
+
 inline void run (const juce::File& screenshots)
 {
     splitterTests();
@@ -535,5 +601,6 @@ inline void run (const juce::File& screenshots)
     edgeTests (screenshots);
     lockTests (screenshots);
     v19Tests (screenshots);
+    v191Tests();
 }
 }

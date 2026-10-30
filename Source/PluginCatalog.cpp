@@ -304,7 +304,7 @@ void PluginCatalog::listAudioUnits()
                 auto& k = auKinds[key];   // an instrument of the same name wins
                 k = { juce::jmax (k.first, instrument ? 2 : 1), maker };
             }
-        if (! effect || triad::isTriadName (name)) continue;
+        if (! effect || triad::isTriadName (name) || triad::isBuiltInTwin (name)) continue;
         EffectEntry e;
         e.name = name;
         e.manufacturer = maker.isNotEmpty() ? maker : fourCC (c.manufacturer).trim();
@@ -342,7 +342,7 @@ PluginCatalog::FileRecord PluginCatalog::classify (const juce::File& bundle)
     {
         record.source = Source::audioUnit;
         if (twin->second.first == 2) { record.instruments = 1; return record; }
-        if (triad::isTriadName (base)) return record;
+        if (triad::isTriadName (base) || triad::isBuiltInTwin (base)) return record;
         EffectEntry e;
         e.name = base;
         e.manufacturer = twin->second.second;
@@ -383,7 +383,7 @@ bool PluginCatalog::readModuleInfo (const juce::File& bundle, FileRecord& record
         const auto joined = subs.joinIntoString ("|");
         const auto name = c.getProperty ("Name", {}).toString().trim();
         if (looksLikeInstrument (joined)) { ++record.instruments; continue; }
-        if (name.isEmpty() || triad::isTriadName (name)) continue;
+        if (name.isEmpty() || triad::isTriadName (name) || triad::isBuiltInTwin (name)) continue;
         EffectEntry e;
         e.name = name;
         e.manufacturer = c.getProperty ("Vendor", {}).toString().trim();
@@ -425,7 +425,7 @@ void PluginCatalog::runScanner (const juce::File& bundle, FileRecord& record)
         juce::PluginDescription d;
         if (! d.loadFromXml (*p)) continue;
         if (d.isInstrument) { ++record.instruments; continue; }
-        if (triad::isTriadName (d.name)) continue;
+        if (triad::isTriadName (d.name) || triad::isBuiltInTwin (d.name)) continue;
         EffectEntry e;
         e.description = d;
         e.name = d.name;

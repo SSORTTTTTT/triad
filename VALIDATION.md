@@ -1,5 +1,21 @@
 # Validation — Triad
 
+## Triad v20 (0.21.0), Triad Time and Triad Split on macOS — 2026-10-29
+
+Commit `47fcfcf`, run 40999214790 (macos-15 runner, virtual Apple M1). New in 0.21.0: Triad Time installed as its own
+plug-in is loaded as Triad's built-in Triad Time (its window always opens; the installed copy is no longer listed;
+projects holding it switch over with their settings), and removing an empty band straight after + BAND puts the
+dividers back where they were.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v20-0.21.0`, `Triad-Time-0.21.0`, `Triad-Split-0.21.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (over simulated Triad ... v19 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| 0.21.0 | An installed Triad Time (VST3 and AU descriptions) loads as the built-in; its VST3 state (VST3PluginState / IComponent) and AU state carry over; + BAND then removing an empty band restores the dividers; a band with an effect, or after the dividers moved, is removed as before |
+| Stress | 3,000 random edits while audio plays: PASS; real plug-ins (55: the installed Triad Time is now the built-in), five random sequences: PASS, no crashes, no NaN/Inf output, all checks held |
+
+Run 40996829789 (same commit) failed one timing check: monitoring at 96 kHz / 64 samples, Triad silenced 1 block of
+7,500 while working in its window (as once before in v15); passed on the re-run.
+
 ## Triad v19 (0.20.0), Triad Time and Triad Split on macOS — 2026-10-29
 
 Commit `99ea614`, run 40870888255 (macos-15 runner, virtual Apple M1). New in 0.20.0: Reset band state, an LFO switched
