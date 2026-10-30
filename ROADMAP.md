@@ -4,7 +4,10 @@ Release names (Thomas, 2026-10-17): every new installer gets the next name, **Tr
 and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.21.0 ("Triad v20", delivered 2026-10-29): Triad Time's own window in a band, bands back in place
+## Current testing version — 0.21.0 ("Triad v21"): Triad Time's own window in a band, bands back in place
+
+Named so the v number matches the version (Thomas, 2026-10-29: "match it ... for the title and installation files"):
+Triad vN is version 0.N.0 from now on. 0.21.0 was first delivered as "Triad v20"; "Triad v21" replaces it (same code).
 
 0.21.0 (2026-10-29), Thomas, testing v19: "when I go to click open window on the post band to work on something in the
 triad time, it just gives me this window ... can you fix it so that it opens the triad time window"; and, adding a band
