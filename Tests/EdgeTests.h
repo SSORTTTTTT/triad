@@ -276,9 +276,9 @@ inline void edgeTests (const juce::File& screenshots)
         require (editor->getTab() == TriadEditor::Tab::lfo && editor->getLfoPage().getBand() == 0
                  && q.getLfoInfo (0, editor->getLfoPage().getLfo()).edge == D::highEdge, "Link to LFO opens the band's LFO tab on it");
         themeTests::snapshot (screenshots, "Triad-edge-lfo.png", *editor);
-        require (editor->getLfoPage().isEdgeNowShowing(), "A band-edge LFO shows BAND NOW in its routing card");
+        require (editor->getLfoPage().isEdgeNowShowing(), "A band-edge LFO shows BAND NOW");
         editor->getLfoPage().select (0, 0);
-        require (! editor->getLfoPage().isEdgeNowShowing(), "...and other LFOs do not");
+        require (editor->getLfoPage().isEdgeNowShowing(), "...and (0.22.0) every other LFO too");
         editor->linkEdgesToLfo (0, D::highEdge);
         require (editor->getLfoPage().isEdgeNowShowing(), "...back on the edge LFO, it shows again");
         editor->setTab (TriadEditor::Tab::bands);
@@ -590,7 +590,8 @@ inline void v191Tests()
     if (auto* c = r.crossoverParameter (2)) c->setValueNotifyingHost (c->convertTo0to1 (9000.0f));
     const auto moved = r.effectiveCrossovers();
     r.removeBand (3);
-    require (std::abs (r.effectiveCrossovers()[0] / moved[0] - 1.0f) < 0.001f, "...and when the dividers were moved after adding");
+    require (r.effectiveCrossovers().size() == 2 && std::abs (r.effectiveCrossovers()[1] / moved[2] - 1.0f) < 0.001f,
+             "...a divider moved after adding stays where it was moved; the one added goes (0.22.0)");
     std::cout << "0.21.0: Triad Time loads as the built-in (VST3 / AU settings carried over), + BAND then removing an empty band restores the dividers: passed" << std::endl;
 }
 
@@ -746,6 +747,127 @@ inline void v21Tests (const juce::File& screenshots)
     std::cout << "0.21.0: the range lane's ends drag where an LFO takes a divider (top, bottom, inverted, locked, undo, mouse), SPECTRUM and FULL SPECTRUM on every LFO: passed" << std::endl;
 }
 
+// 0.22.0 (Thomas, testing v21: "adding multiple bands and it not resetting ... unless I delete like one of the middle
+// one, not the one to the left"): any number of bands added, removed in any order, puts the dividers back.
+inline void v22Tests()
+{
+    constexpr double rate = 48000.0;
+    const auto same = [] (const std::vector<float>& a, const std::vector<float>& b)
+    {
+        if (a.size() != b.size()) return false;
+        for (size_t j = 0; j < a.size(); ++j) if (std::abs (a[j] / b[j] - 1.0f) > 0.001f) return false;
+        return true;
+    };
+    const auto describe = [] (const std::vector<float>& cuts)
+    {
+        juce::StringArray s;
+        for (auto c : cuts) s.add (juce::String (juce::roundToInt (c)));
+        return s.joinIntoString (" / ");
+    };
+    // Every way of removing them: the left band, the right band, a middle one, and at random.
+    juce::Random random (2210);
+    for (int way = 0; way < 4; ++way)
+        for (int added = 1; added <= 7; ++added)
+        {
+            TriadProcessor p;
+            p.prepareToPlay (rate, 512);
+            const auto original = p.effectiveCrossovers();
+            for (int i = 0; i < added; ++i) require (p.addBand (i % 3 == 2 ? 300.0f + 1000.0f * random.nextFloat() : -1.0f), "+ BAND");
+            require (p.getBandCount() == 3 + added, "...the bands added");
+            while (p.getBandCount() > 3)
+            {
+                const int n = p.getBandCount();
+                const int band = way == 0 ? 0 : way == 1 ? n - 1 : way == 2 ? n / 2 : random.nextInt (n);
+                require (p.removeBand (band), "Remove a band");
+            }
+            if (! same (p.effectiveCrossovers(), original))
+                throw std::runtime_error (("Removing the " + juce::String (added) + " bands added (" + juce::StringArray ({ "left", "right", "middle", "random" })[way]
+                                           + " first) puts the dividers back: " + describe (p.effectiveCrossovers()) + " instead of " + describe (original)).toStdString());
+        }
+    // The dividers added moved by hand first: still back where they were.
+    {
+        TriadProcessor p;
+        p.prepareToPlay (rate, 512);
+        const auto original = p.effectiveCrossovers();
+        p.addBand(); p.addBand(); p.addBand();
+        const auto cuts = p.effectiveCrossovers();
+        for (int j = 0; j < (int) cuts.size(); ++j)
+            if (std::none_of (original.begin(), original.end(), [&] (float o) { return std::abs (o / cuts[(size_t) j] - 1.0f) < 0.001f; }))
+                if (auto* c = p.crossoverParameter (j))
+                {
+                    const float lo = j > 0 ? cuts[(size_t) j - 1] : 20.0f, hi = j + 1 < (int) cuts.size() ? cuts[(size_t) j + 1] : 20000.0f;
+                    c->setValueNotifyingHost (c->convertTo0to1 (std::sqrt (lo * cuts[(size_t) j]) * 0.5f + std::sqrt (cuts[(size_t) j] * hi) * 0.5f));
+                }
+        while (p.getBandCount() > 3) p.removeBand (0);
+        require (same (p.effectiveCrossovers(), original), "Added dividers moved by hand: removing the bands still puts the dividers back");
+    }
+    // Bands with something in them are removed as they always were; a band added that has an effect stays.
+    {
+        TriadProcessor p;
+        p.prepareToPlay (rate, 512);
+        p.addBand();   // splits band 1 at 70.7 Hz: band 2 is the new one
+        require (p.loadEffect (1, 0, TriadTime::makeDescription(), false).isEmpty(), "An effect in the band added");
+        require (p.removeBand (3) && p.getBandCount() == 3 && p.getSlotInfo (1, 0).loaded, "Removing an empty band keeps the added band with its effect");
+        const auto cuts = p.effectiveCrossovers();
+        require (cuts.size() == 2 && cuts[0] < 100.0f && std::abs (cuts[1] / 250.0f - 1.0f) < 0.001f, "...and the top band goes as it always did");
+        TriadProcessor q;
+        q.prepareToPlay (rate, 512);
+        const auto original = q.effectiveCrossovers();
+        q.addBand();
+        require (q.loadEffect (3, 0, TriadTime::makeDescription(), false).isEmpty() && q.removeBand (3), "Remove a band with an effect (the top one)");
+        require (q.getBandCount() == 3 && ! same (q.effectiveCrossovers(), original), "...it goes, as it always did");
+    }
+    // A project or preset opened, or an undo step that sets the dividers: what was added before is forgotten.
+    {
+        TriadProcessor p;
+        p.prepareToPlay (rate, 512);
+        p.addBand(); p.addBand();
+        juce::MemoryBlock state;
+        p.getStateInformation (state);
+        TriadProcessor q;
+        q.prepareToPlay (rate, 512);
+        q.setStateInformation (state.getData(), (int) state.getSize());
+        const auto opened = q.effectiveCrossovers();
+        require (q.removeBand (4) && q.getBandCount() == 4, "A project with 5 bands: remove the top one");
+        auto expected = opened;
+        expected.erase (expected.begin() + 3);
+        require (same (q.effectiveCrossovers(), expected), "...it goes as it always did (nothing was added in this project)");
+        // Undo of an unrelated change keeps what + BAND added.
+        TriadProcessor u;
+        u.prepareToPlay (rate, 512);
+        const auto original = u.effectiveCrossovers();
+        u.commitHistory();
+        u.addBand();
+        u.commitHistory();
+        u.parameters.getParameter (TriadProcessor::bandGainID (0))->setValueNotifyingHost (0.3f);
+        u.commitHistory();
+        require (u.undo(), "Undo a band volume");
+        require (u.removeBand (0) && same (u.effectiveCrossovers(), original), "...then removing a band still puts the dividers back");
+    }
+    // The LFO tab (Thomas's option A): BAND NOW at the top for every LFO, TRIGGER small beside it (their tops level),
+    // ROUTING a third thinner from just under TRIGGER.
+    {
+        TriadProcessor p;
+        p.prepareToPlay (rate, 512);
+        std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (p.createEditor()));
+        editor->setVisible (true);
+        editor->setTab (TriadEditor::Tab::lfo);
+        auto& page = editor->getLfoPage();
+        for (int band : { 0, 1, TriadProcessor::postBand })
+        {
+            page.select (band, 0);
+            const auto now = page.getEdgeNowBounds(), trigger = page.getTriggerButton().getBounds(), routing = page.getRoutingArea();
+            require (page.isEdgeNowShowing() && now.getHeight() >= 60 && now.getY() < 10, "BAND NOW at the top, for an LFO on a knob and for POST too");
+            require (trigger.getY() == now.getY() && trigger.getHeight() <= 40 && trigger.getX() > now.getRight(), "TRIGGER small, beside it, their tops level");
+            require (routing.getWidth() == trigger.getWidth() && routing.getWidth() < 160 && routing.getY() == trigger.getBottom() + 8 && routing.getX() == trigger.getX(),
+                     "ROUTING a third thinner, from just under TRIGGER");
+        }
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+    }
+    std::cout << "0.22.0: 1 to 7 bands added, removed left, right, middle or at random first (and moved by hand), put the dividers back; "
+                 "bands with effects, projects and undo as before; the LFO tab's BAND NOW, TRIGGER and ROUTING: passed" << std::endl;
+}
+
 inline void run (const juce::File& screenshots)
 {
     splitterTests();
@@ -755,5 +877,6 @@ inline void run (const juce::File& screenshots)
     v19Tests (screenshots);
     v191Tests();
     v21Tests (screenshots);
+    v22Tests();
 }
 }

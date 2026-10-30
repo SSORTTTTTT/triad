@@ -83,7 +83,10 @@ public:
     juce::Button* getPaletteButton (int i) const { return shapes.getPaletteButton (i); }
     void resized() override;
     // The band / PRE / POST buttons above the grid: narrower when there are many.
-    int chipWidth() const noexcept { return juce::jlimit (48, 76, (getWidth() - 220) / juce::jmax (1, (int) bandButtons.size())); }
+    int chipWidth() const noexcept { return juce::jlimit (48, 76, (getWidth() - routingWidth - nowWidth() - 120) / juce::jmax (1, (int) bandButtons.size())); }
+    // BAND NOW (0.22.0, Thomas: "a visual display of ... what the band looks like ... to get a better idea of what you're
+    // affecting"): for every LFO, at the top beside TRIGGER, as tall as the band and LFO rows.
+    int nowWidth() const noexcept { return juce::jlimit (200, 340, getWidth() / 4); }
     void paint (juce::Graphics&) override;
     void lookAndFeelChanged() override { colourBandButtons(); }   // the theme changed
     // Behind the grid (0.15.0, the gear menu's LFO BACKGROUND): nothing, the sound coming in as a waveform across the
@@ -119,6 +122,8 @@ public:
     // (no spectrum), with dashed curves where the LFO takes it at its lowest and highest.
     class EdgeNow;
     bool isEdgeNowShowing() const;
+    juce::Rectangle<int> getEdgeNowBounds() const;
+    juce::Rectangle<int> getRoutingArea() const noexcept { return routingArea; }
 
 private:
     void updateSlopeButton();
@@ -155,5 +160,5 @@ private:
     juce::Component routeHolder;
     juce::Rectangle<int> routingArea, generatorArea, hintArea;
     std::unique_ptr<EdgeNow> edgeNow;
-    static constexpr int routingWidth = 232;
+    static constexpr int routingWidth = 156;   // 0.22.0 (Thomas: "shave a third off of it"): 232 before; the grid has the rest
 };

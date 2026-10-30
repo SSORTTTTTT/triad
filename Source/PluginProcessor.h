@@ -108,9 +108,10 @@ public:
     static float defaultCrossover (int index, int bandCount) { return triad::defaultCrossover (index, bandCount); }
     // Adds a band by splitting the band containing `hz` there (or the widest band if hz <= 0).
     bool addBand (float hz = -1.0f);
-    // 0.21.0 (Thomas: "it just puts all the placement of the bands ... not back in their original spot"): removing an
-    // empty band straight after adding one (nothing else changed) takes the band just added away instead, so the
-    // dividers go back to where they were.
+    // 0.21.0 (Thomas: "it just puts all the placement of the bands ... not back in their original spot"); 0.22.0 ("adding
+    // multiple bands and it not resetting"): removing an empty band that would take away a divider that was there
+    // before takes away the newest divider + BAND added instead (when the band above it is empty too), so removing the
+    // bands added, in any order, puts the dividers back where they were, even after moving the added ones.
     bool removeBand (int band);
     bool isBandEmpty (int band) const;   // no effects, no LFO drawn or on its edges, mix 100%, 0 dB, not muted or soloed
     // Triad Time installed as its own plug-in is loaded as the built-in Triad Time (0.21.0): its kept state (a VST3's or
@@ -527,7 +528,11 @@ private:
     bool startupDecided = false;
     double createdAt = 0.0;
     std::atomic<int> pendingCreations { 0 }, bandCount { 3 }, structureVersion { 0 };
-    struct LastAdd { int band = -1, version = -1; std::vector<float> after; } lastAdd;   // the band + BAND last added
+    // Per divider: 0 when it was there before, else the order + BAND added it in (forgotten when a project, preset or
+    // undo step sets the bands).
+    std::vector<int> addedDividers;
+    int addSerial = 0;
+    void forgetAddedBands() { addedDividers.assign ((size_t) juce::jmax (0, getBandCount() - 1), 0); }
     struct SweepDrag { int divider = -1, band = -1, lfo = -1; bool high = false, changed = false; float a = 0.0f, b = 0.0f; triad::mod::Shape from; } sweepDrag;
     std::atomic<double> tail { 0.0 };
     std::atomic<double> rate { 44100.0 };

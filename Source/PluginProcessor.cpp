@@ -1651,7 +1651,9 @@ bool TriadProcessor::addBand (float hz)
     setParameterValue (bandSoloID (index + 1), getParameterValue (bandSoloID (index)));   // and of a soloed one, soloed
     muted.store (false);
     ++structureVersion;
-    lastAdd = { index + 1, structureVersion.load(), effectiveCrossovers() };
+    // The new divider is index (the band split keeps its lower part; the new band index + 1 is above it).
+    if ((int) addedDividers.size() != count - 2) addedDividers.assign ((size_t) juce::jmax (0, count - 2), 0);
+    addedDividers.insert (addedDividers.begin() + index, ++addSerial);
     refreshWindowTitles();
     stateChanged();
     return true;
@@ -1671,17 +1673,16 @@ bool TriadProcessor::removeBand (int band)
     endParameterLearn();   // LEARN listens to the effects: stop before any of them moves or goes
     const int asked = band;
     {
-        // An empty band removed straight after a band was added (nothing else changed since): the band just added
-        // goes instead (it is empty too, so nothing is lost), and the dividers are back where they were before.
-        const auto add = lastAdd;
-        lastAdd = {};
-        if (add.band >= 0 && band != add.band && add.version == structureVersion.load() && add.band < getBandCount()
-            && isBandEmpty (band) && isBandEmpty (add.band))
+        // An empty band whose removal would take away a divider that was there before: the newest divider + BAND
+        // added goes instead, with the (empty) band above it, so nothing is lost and the dividers go back.
+        const int count = getBandCount();
+        if ((int) addedDividers.size() != count - 1) forgetAddedBands();
+        if (band >= 0 && band < count && count > 1 && isBandEmpty (band) && addedDividers[(size_t) (band == 0 ? 0 : band - 1)] == 0)
         {
-            const auto cuts = effectiveCrossovers();
-            bool same = cuts.size() == add.after.size();
-            for (size_t j = 0; same && j < cuts.size(); ++j) same = std::abs (cuts[j] / add.after[j] - 1.0f) < 1.0e-4f;
-            if (same) band = add.band;
+            int newest = -1;
+            for (int j = 0; j < (int) addedDividers.size(); ++j)
+                if (addedDividers[(size_t) j] > 0 && isBandEmpty (j + 1) && (newest < 0 || addedDividers[(size_t) j] > addedDividers[(size_t) newest])) newest = j;
+            if (newest >= 0) band = newest + 1;
         }
     }
     std::unique_ptr<Band> removed;
@@ -1697,6 +1698,7 @@ bool TriadProcessor::removeBand (int band)
         const auto cuts = effectiveCrossovers();
         // The band's range joins its lower neighbour (or the upper one, for the lowest band).
         const int removedCrossover = band == 0 ? 0 : band - 1;
+        if ((int) addedDividers.size() == numBands - 1) addedDividers.erase (addedDividers.begin() + removedCrossover);
         for (int j = 0, k = 0; j < (int) cuts.size(); ++j)
             if (j != removedCrossover) { nextSlopes[(size_t) k] = slopes[(size_t) j]; next[(size_t) k++] = cuts[(size_t) j]; }
         muted.store (true);
@@ -1734,7 +1736,7 @@ bool TriadProcessor::removeBand (int band)
     setParameterValue (bandSoloID (count), 0.0f);
     muted.store (false);
     ++structureVersion;
-    if (band != asked) setStatus ("Removed band " + juce::String (asked + 1) + ": the bands are back as they were before band " + juce::String (band + 1) + " was added");
+    if (band != asked) setStatus ("Removed an empty band: band " + juce::String (band + 1) + ", the one added last, so the dividers go back to where they were");
     refreshWindowTitles();
     stateChanged();
     return true;
@@ -3259,6 +3261,7 @@ void TriadProcessor::restoreFrom (const juce::XmlElement& xml)
         alignLatency();
     }
     ++structureVersion;
+    forgetAddedBands();   // a project or preset: its dividers are where they are
     for (int b = 0; b <= postBand; ++b)
         if (b < count || isExtraChain (b))
             for (auto& load : loads[(size_t) b]) installFromXml (b, load.slot, *load.node, true);
@@ -3575,6 +3578,7 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
     JUCE_ASSERT_MESSAGE_THREAD
     endParameterLearn();   // LEARN listens to the effects: stop before any of them moves or goes
     const juce::ScopedValueSetter<bool> applying (historyApplying, true);
+    const auto dividersBefore = effectiveCrossovers();
     const int count = juce::jlimit (1, triad::maxBands, xml.getIntAttribute ("bands", 3));
     // Crossovers, slopes, band mixes and volumes.
     if (auto* p = xml.getChildByName ("Parameters")) parameters.replaceState (juce::ValueTree::fromXml (*p));
@@ -3703,6 +3707,13 @@ void TriadProcessor::applyHistory (const juce::XmlElement& xml)
                     }
                 }
     ++structureVersion;
+    {
+        // An undo / redo step that set the dividers: what + BAND added is forgotten.
+        const auto now = effectiveCrossovers();
+        bool same = now.size() == dividersBefore.size();
+        for (size_t j = 0; same && j < now.size(); ++j) same = std::abs (now[j] / juce::jmax (1.0f, dividersBefore[j]) - 1.0f) < 1.0e-4f;
+        if (! same) forgetAddedBands();
+    }
     refreshWindowTitles();
     historyDirty = false;
     historyRefresh = true;
