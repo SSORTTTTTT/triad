@@ -1,5 +1,17 @@
 # Validation — Triad
 
+## Triad v21 (0.21.0), Triad Time and Triad Split on macOS — 2026-10-30
+
+Commit `374d58d`, run 41010941690 (macos-15 runner, virtual Apple M1). Triad v20's fixes renamed so the v number
+matches the version (vN = 0.N.0), plus: the BANDS tab's range lane with ends to drag (the LFO's wave stretched to
+match; taller, thicker, with grips), SPECTRUM on every LFO's grid, and FULL SPECTRUM beside it.
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v21-0.21.0`, `Triad-Time-0.21.0`, `Triad-Split-0.21.0` (`-macOS-AppleSilicon.pkg`) | All three built and installed (over simulated Triad ... v20 installs, all removed); AU VALIDATION SUCCEEDED for all three; pluginval SUCCESS for all six; integration tests passed |
+| 0.21.0 range lane and spectrum | A high cut's range dragged by its top end to 10 kHz (peak moved, low points and curve kept), by its bottom end to 1 kHz, never past the other end; inverted and locked (inside the band) too; one undo step; with the mouse on the panel to 8 kHz; SPECTRUM and FULL SPECTRUM on edge and knob LFOs, kept in the settings |
+| Stress | 3,000 random edits while audio plays (range ends dragged among them): PASS; real plug-ins (55), five random sequences: PASS, no crashes, no NaN/Inf output, all checks held |
+
 ## Triad v20 (0.21.0), Triad Time and Triad Split on macOS — 2026-10-29
 
 Commit `47fcfcf`, run 40999214790 (macos-15 runner, virtual Apple M1). New in 0.21.0: Triad Time installed as its own

@@ -35,10 +35,15 @@ public:
     void setPitchLabels (PitchLabels);
     // Behind the LFO grid (0.15.0): nothing, the sound as a waveform across the LFO's cycle, or its spectrum (the
     // band's range lit in its colour). One choice for bands on TRIGGER: AUDIO (waveform to start with), one for SONG
-    // (off to start with); Triad Time's grid has its own (off to start with: the waveform or the spectrum, as Triad's).
+    // (the spectrum to start with since 0.21.0, before: nothing); Triad Time's grid has its own (off to start with: the
+    // waveform or the spectrum, as Triad's). The LFO tab's SPECTRUM button switches the spectrum on and off too.
     enum class Backdrop { off = 0, waveform = 1, spectrum = 2 };
     Backdrop getLfoBackdrop (bool audioTrigger) const;
     void setLfoBackdrop (bool audioTrigger, Backdrop);
+    // FULL SPECTRUM (0.21.0, Thomas): the LFO tab's spectrum from 20 Hz to 20 kHz; off (to start with), just the range
+    // the LFO works in (the band's, or where its edges go), as large as the grid.
+    bool getLfoFullSpectrum() const;
+    void setLfoFullSpectrum (bool);
     Backdrop getTimeBackdrop() const;
     void setTimeBackdrop (Backdrop);
 

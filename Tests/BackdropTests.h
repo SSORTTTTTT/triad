@@ -48,9 +48,9 @@ inline void run (const juce::File& screenshots)
     constexpr int block = 480;
     juce::SharedResourcePointer<TriadSettings> held;   // kept for the whole test (a temporary one would let go of it)
     auto& settings = *held;
-    require (settings.getLfoBackdrop (true) == TriadSettings::Backdrop::waveform && settings.getLfoBackdrop (false) == TriadSettings::Backdrop::off
-                 && settings.getTimeBackdrop() == TriadSettings::Backdrop::off,
-             "Behind the grid, to start with: the waveform with TRIGGER: AUDIO, nothing with SONG, nothing in Triad Time");
+    require (settings.getLfoBackdrop (true) == TriadSettings::Backdrop::waveform && settings.getLfoBackdrop (false) == TriadSettings::Backdrop::spectrum
+                 && settings.getTimeBackdrop() == TriadSettings::Backdrop::off && ! settings.getLfoFullSpectrum(),
+             "Behind the grid, to start with: the waveform with TRIGGER: AUDIO, the spectrum (the band's range) with SONG (0.21.0), nothing in Triad Time");
     {
         // SONG: a tone on for the first half of each 1/4-note cycle: the trace shows the first half of the grid loud.
         TriadProcessor p;

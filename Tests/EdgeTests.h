@@ -594,6 +594,158 @@ inline void v191Tests()
     std::cout << "0.21.0: Triad Time loads as the built-in (VST3 / AU settings carried over), + BAND then removing an empty band restores the dividers: passed" << std::endl;
 }
 
+// 0.21.0 (Thomas, testing v19): the range lane's ends dragged on the BANDS tab change where an LFO takes a divider (its
+// wave stretched to match), SPECTRUM on every LFO's grid, and FULL SPECTRUM beside it.
+inline void v21Tests (const juce::File& screenshots)
+{
+    constexpr double rate = 48000.0;
+    TriadProcessor p;
+    p.prepareToPlay (rate, 512);
+    const auto set = p.effectiveCrossovers();   // 250 Hz, 2.5 kHz
+    const auto near = [] (float a, float b, float tolerance) { return std::abs (a / b - 1.0f) < tolerance; };
+    require (! p.beginSweepDrag (1, true), "No LFO on a divider: its range cannot be dragged");
+    // Band 2's high cut, between 158 Hz and 5 kHz over the cycle.
+    const int lfo = p.linkEdgesToLfo (1, D::highEdge);
+    const int route = p.getRoutesFrom (1, lfo).front();
+    const mod::Shape wave { { 0.0f, 0.3f, 0.0f }, { 0.5f, 0.8f, 2.0f }, { 1.0f, 0.3f, 0.0f } };
+    p.setLfoShape (1, lfo, wave, true);
+    p.commitHistory();
+    const auto before = p.crossoverSweep (1);
+    require (near (before.first, 20.0f * std::pow (1000.0f, 0.3f), 0.02f) && near (before.second, 20.0f * std::pow (1000.0f, 0.8f), 0.02f), "The range: 158 Hz to 5 kHz");
+    require (! p.beginSweepDrag (0, true), "...the divider below has none");
+    // The top end dragged to 10 kHz: the wave's highest point moves there, its lowest stays, the shape is kept.
+    require (p.beginSweepDrag (1, true), "Grab the range's top end");
+    p.dragSweepTo (7000.0f);
+    p.dragSweepTo (10000.0f);
+    p.endSweepDrag();
+    p.commitHistory();   // (the editor's timer keeps undo steps)
+    auto now = p.crossoverSweep (1);
+    require (near (now.second, 10000.0f, 0.02f) && near (now.first, before.first, 0.01f), "Dragged to 10 kHz: the top moves there, the bottom stays");
+    const auto shape = p.getLfoInfo (1, lfo).shape;
+    require (shape.size() == 3 && std::abs (shape[0].y - 0.3f) < 0.001f && std::abs (shape[1].y - uFor (10000.0f)) < 0.01f && std::abs (shape[1].curve - 2.0f) < 0.001f,
+             "...the LFO's wave: its peak moved, its curve and its low points kept");
+    require (p.undo() && near (p.crossoverSweep (1).second, before.second, 0.01f), "One undo step puts it back");
+    // The bottom end: up to 1 kHz; never past the top (it stops there, flat).
+    require (p.beginSweepDrag (1, false), "Grab the bottom end");
+    p.dragSweepTo (1000.0f);
+    now = p.crossoverSweep (1);
+    require (near (now.first, 1000.0f, 0.02f) && near (now.second, before.second, 0.01f), "Dragged to 1 kHz: the bottom moves there, the top stays");
+    p.dragSweepTo (15000.0f);
+    now = p.crossoverSweep (1);
+    require (near (now.first, now.second, 0.01f) && near (now.second, before.second, 0.01f), "...dragged past the top it stops there");
+    p.dragSweepTo (1000.0f);
+    p.endSweepDrag();
+    // Inverted: the ends still follow the mouse.
+    p.setRouteInvert (1, route, true);
+    const auto inverted = p.crossoverSweep (1);
+    require (p.beginSweepDrag (1, true), "Inverted: grab the top end");
+    p.dragSweepTo (12000.0f);
+    p.endSweepDrag();
+    now = p.crossoverSweep (1);
+    require (near (now.second, 12000.0f, 0.02f) && near (now.first, inverted.first, 0.01f), "...dragged to 12 kHz: the top moves there, the bottom stays");
+    p.setRouteInvert (1, route, false);
+    // Locked: the range stays inside the band as set.
+    p.setLfoShape (1, lfo, wave, true);
+    p.setRouteLocked (1, route, true);
+    require (p.beginSweepDrag (1, true), "Locked: grab the top end");
+    p.dragSweepTo (15000.0f);
+    p.endSweepDrag();
+    now = p.crossoverSweep (1);
+    require (now.second <= set[1] * 1.01f && now.first >= set[0] * 0.99f, "...it stays inside the band");
+    p.setRouteLocked (1, route, false);
+    p.setLfoShape (1, lfo, wave, true);
+
+    // The BANDS tab: the lane's ends, grabbed and dragged with the mouse.
+    std::unique_ptr<TriadEditor> editor (dynamic_cast<TriadEditor*> (p.createEditor()));
+    editor->setVisible (true);
+    std::vector<float> noise ((size_t) rate / 2);
+    juce::Random rr (21);
+    for (auto& v : noise) v = 0.3f * (rr.nextFloat() - 0.5f);
+    run (p, noise, 256);
+    auto& display = editor->getDisplay();
+    display.refresh();
+    const auto lanes = display.laneRanges();
+    require (lanes.size() == 1 && lanes.front().divider == 1, "The lane shows divider 2's range");
+    const auto& lane = lanes.front();
+    require (std::abs (lane.x2 - display.xForFrequency (before.second)) < 1.0f && lane.y > display.plotBounds().getBottom(), "...from where it goes to where it goes, under the spectrum");
+    const auto top = display.laneEndAt ({ lane.x2 + 3.0f, lane.y + 2.0f });
+    require (top.divider == 1 && top.high && display.laneEndAt ({ lane.x1 - 2.0f, lane.y }).divider == 1 && ! display.laneEndAt ({ lane.x1 - 2.0f, lane.y }).high,
+             "Its two ends can be grabbed");
+    require (display.laneEndAt ({ 0.5f * (lane.x1 + lane.x2), lane.y }).divider < 0 && display.laneEndAt ({ lane.x2, display.plotBounds().getCentreY() }).divider < 0,
+             "...not its middle, nor the spectrum above");
+    for (int j = 0; j < display.getNumHandles(); ++j)
+    {
+        auto* handle = display.getHandle (j);
+        const auto local = juce::Point<float> (lane.x2, lane.y) - handle->getPosition().toFloat();
+        if (handle->getLocalBounds().toFloat().contains (local))
+            require (! handle->hitTest ((int) local.x, (int) local.y), "A divider's handle leaves the range's end to the lane");
+    }
+    const auto mouse = [&display] (juce::Point<float> at, bool dragging)
+    {
+        return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier), 1, 0, 0, 0, 0,
+                                 &display, &display, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 1, dragging);
+    };
+    const float to = display.xForFrequency (8000.0f);
+    display.mouseMove (mouse ({ lane.x2, lane.y }, false));
+    require (display.getTooltip().contains ("LFO " + juce::String (lfo + 1)), "Its tooltip says which LFO it is");
+    display.mouseDown (mouse ({ lane.x2, lane.y }, false));
+    require (display.getLaneDrag().divider == 1 && display.getLaneDrag().high, "Mouse down on the top end grabs it");
+    display.mouseDrag (mouse ({ to, lane.y }, true));
+    themeTests::snapshot (screenshots, "Triad-v21-lane-drag.png", *editor);
+    display.mouseUp (mouse ({ to, lane.y }, false));
+    require (near (p.crossoverSweep (1).second, 8000.0f, 0.03f) && display.getLaneDrag().divider < 0, "...dragged to 8 kHz with the mouse: the LFO now takes the divider there");
+    require (near (display.laneRanges().front().x2, to, 0.01f), "...and the lane shows it");
+    display.mouseMove (mouse ({ lane.x1, lane.y }, false));
+    themeTests::snapshot (screenshots, "Triad-v21-lane.png", *editor);
+
+    // The LFO tab: SPECTRUM and FULL SPECTRUM on every LFO's grid.
+    juce::SharedResourcePointer<TriadSettings> settings;
+    const auto songWas = settings->getLfoBackdrop (false);
+    const bool fullWas = settings->getLfoFullSpectrum();
+    settings->setLfoFullSpectrum (false);
+    editor->setTab (TriadEditor::Tab::lfo);
+    auto& page = editor->getLfoPage();
+    require (p.getLfoInfo (1, lfo).shape != wave, "(the wave was changed on the BANDS tab)");
+    page.select (1, lfo);
+    require (page.getEditorShape() == p.getLfoInfo (1, lfo).shape, "The LFO tab shows the wave as dragged on the BANDS tab");
+    require (page.spectrumButton.isVisible() && page.fullSpectrumButton.isVisible(), "A band-edge LFO: SPECTRUM and FULL SPECTRUM");
+    run (p, noise, 256);
+    themeTests::snapshot (screenshots, "Triad-v21-edge-spectrum.png", *editor);
+    page.select (1, 0);   // the band's own LFO (its mix), not on the edges
+    require (! page.showsEdges() && page.spectrumButton.isVisible() && page.fullSpectrumButton.isVisible(), "An LFO on a knob: SPECTRUM and FULL SPECTRUM too");
+    settings->setLfoBackdrop (false, TriadSettings::Backdrop::off);
+    page.refresh();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (600);
+    page.refresh();
+    require (! page.spectrumButton.getToggleState(), "...SPECTRUM off with nothing behind the grid");
+    page.spectrumButton.triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+    require (page.spectrumButton.getToggleState() && settings->getLfoBackdrop (false) == TriadSettings::Backdrop::spectrum, "SPECTRUM on: the spectrum behind the grid (kept)");
+    const auto bandView = page.spectrumView (uFor (set[0]), uFor (set[1]));
+    require (near (bandView.first, set[0], 0.01f) && near (bandView.second, set[1], 0.01f), "...across the grid: band 2 as set");
+    run (p, noise, 256);
+    themeTests::snapshot (screenshots, "Triad-v21-spectrum.png", *editor);
+    page.fullSpectrumButton.triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+    require (settings->getLfoFullSpectrum() && page.fullSpectrumButton.getToggleState(), "FULL SPECTRUM on (kept)");
+    const auto full = page.spectrumView (uFor (set[0]), uFor (set[1]));
+    require (near (full.first, 20.0f, 0.01f) && near (full.second, 20000.0f, 0.01f), "...20 Hz to 20 kHz");
+    run (p, noise, 256);
+    themeTests::snapshot (screenshots, "Triad-v21-full-spectrum.png", *editor);
+    page.spectrumButton.triggerClick();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+    require (settings->getLfoBackdrop (false) == TriadSettings::Backdrop::off, "SPECTRUM off: back to what was behind the grid before");
+    const auto narrow = page.spectrumView (uFor (1000.0f), uFor (1100.0f));
+    settings->setLfoFullSpectrum (false);
+    page.refresh();
+    juce::MessageManager::getInstance()->runDispatchLoopUntil (600);
+    const auto zoomed = page.spectrumView (uFor (1000.0f), uFor (1100.0f));
+    require (near (narrow.first, 20.0f, 0.01f) && zoomed.second / zoomed.first > 1.99f, "A narrow range is shown at least an octave wide");
+    settings->setLfoBackdrop (false, songWas);
+    settings->setLfoFullSpectrum (fullWas);
+    std::cout << "0.21.0: the range lane's ends drag where an LFO takes a divider (top, bottom, inverted, locked, undo, mouse), SPECTRUM and FULL SPECTRUM on every LFO: passed" << std::endl;
+}
+
 inline void run (const juce::File& screenshots)
 {
     splitterTests();
@@ -602,5 +754,6 @@ inline void run (const juce::File& screenshots)
     lockTests (screenshots);
     v19Tests (screenshots);
     v191Tests();
+    v21Tests (screenshots);
 }
 }

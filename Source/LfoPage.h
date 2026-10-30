@@ -96,6 +96,17 @@ public:
     bool showsEdges() const;
     bool edgeSpectrum = true;
     juce::TextButton spectrumButton { "SPECTRUM" };
+    // 0.21.0 (Thomas: "a spectrum button on every LFO ... and full spectrum"): SPECTRUM on every LFO's grid (the band's
+    // sound behind it; for an LFO not on the band edges it is the gear menu's LFO TAB: BEHIND THE GRID, switched between
+    // the spectrum and what it was), and FULL SPECTRUM beside it: 20 Hz to 20 kHz, or (off) just the range the LFO works
+    // in as large as the grid (its band as set; locked, the band; on the band edges, where it takes them).
+    juce::TextButton fullSpectrumButton { "FULL SPECTRUM" };
+    triad::mod::Shape getEditorShape() { return shapes.getEditor().getShape(); }   // the wave on the grid
+    bool spectrumShown() const;
+    void setSpectrumShown (bool);
+    void updateSpectrumButtons();
+    // The frequencies across the grid for a range (0..1 from 20 Hz to 20 kHz, in octaves): at least an octave wide.
+    std::pair<float, float> spectrumView (float lowU, float highU) const;
     // 0.20.0 (Thomas: "the slope borders seem so hard cut"): SLOPE beside it, how soft the edges a band-edge LFO moves
     // are (the slope of those dividers, 6 to 96 dB/oct, as on the BANDS tab).
     juce::TextButton slopeButton { "SLOPE" };
@@ -131,7 +142,9 @@ private:
     struct Backdrop;
     std::unique_ptr<Backdrop> backdrop;
     mutable TriadSettings::Backdrop backdropMode = TriadSettings::Backdrop::off;
-    mutable bool backdropAudio = false;
+    mutable bool backdropAudio = false, fullSpectrum = false;
+    triad::mod::Shape seenShape;   // the LFO's wave when last looked at (refresh)
+    std::array<TriadSettings::Backdrop, 2> beforeSpectrum { TriadSettings::Backdrop::off, TriadSettings::Backdrop::waveform };   // SONG, AUDIO
     mutable double backdropChecked = -1.0;
     juce::SharedResourcePointer<TriadSettings> settings;
     ShapePanel shapes;

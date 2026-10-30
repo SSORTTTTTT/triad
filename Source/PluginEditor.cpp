@@ -56,6 +56,18 @@ public:
     int edgeLfo (int band, int edge) const override { return processor.findEdgeLfo (band, edge); }
     int edgeLockState (int band) const override { return processor.getBandEdgeLock (band); }
     void setEdgesLocked (int band, bool on) override { processor.setBandEdgesLocked (band, on); }
+    bool beginSweepDrag (int divider, bool highEnd) override { return processor.beginSweepDrag (divider, highEnd); }
+    void dragSweepTo (float hz) override { processor.dragSweepTo (hz); }
+    void endSweepDrag() override { processor.endSweepDrag(); }
+    juce::String sweepDescription (int divider) const override
+    {
+        // Which LFO a range belongs to (for the lane's tooltip).
+        for (int b : { divider, divider + 1 })
+            for (int edge : { b == divider ? 1 : 0, 2, 3 })
+                if (const int lfo = processor.findEdgeLfo (b, edge); lfo >= 0)
+                    return "LFO " + juce::String (lfo + 1) + " of band " + juce::String (b + 1) + " (" + TriadProcessor::edgeName (edge).toLowerCase() + ")";
+        return {};
+    }
 private:
     TriadProcessor& processor;
 };

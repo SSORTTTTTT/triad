@@ -956,8 +956,10 @@ SpectrumBackdrop::SpectrumBackdrop()
     }
 }
 void SpectrumBackdrop::paint (juce::Graphics& g, juce::Rectangle<float> plot, triad::SpectrumTap& tap, double sampleRate, float low, float high,
-                              juce::Colour colour, int lowOrder, int highOrder)
+                              juce::Colour colour, int lowOrder, int highOrder, float viewLow, float viewHigh)
 {
+    viewLow = juce::jmax (1.0f, viewLow);
+    const float viewOctaves = std::log (juce::jmax (viewLow * 1.01f, viewHigh) / viewLow);
     tap.active.store (true);
     const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
     const float decay = (float) (36.0 * juce::jlimit (0.0, 0.25, now - lastTime));
@@ -976,8 +978,8 @@ void SpectrumBackdrop::paint (juce::Graphics& g, juce::Rectangle<float> plot, tr
     }
     else for (auto& l : levels) l -= decay;
     const float binHz = (float) juce::jmax (8000.0, sampleRate) / (float) fftSize;
-    const auto xFor = [&plot] (float hz) { return plot.getX() + plot.getWidth() * std::log (hz / 20.0f) / std::log (1000.0f); };
-    const auto hzFor = [&plot] (float x) { return 20.0f * std::pow (1000.0f, (x - plot.getX()) / plot.getWidth()); };
+    const auto xFor = [&] (float hz) { return plot.getX() + plot.getWidth() * std::log (hz / viewLow) / viewOctaves; };
+    const auto hzFor = [&] (float x) { return viewLow * std::exp (viewOctaves * (x - plot.getX()) / plot.getWidth()); };
     const auto yFor = [&plot] (float db) { return juce::jmap (juce::jlimit (-84.0f, 6.0f, db), -84.0f, 6.0f, plot.getBottom(), plot.getY()); };
     juce::Path fill, line;
     fill.startNewSubPath (plot.getX(), plot.getBottom());

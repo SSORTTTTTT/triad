@@ -110,6 +110,19 @@ EdgeMap edgeMap (TriadProcessor& p, int band, int lfo)
     return m;
 }
 juce::String hzText (float hz) { return triad::ui::formatHz (hz); }
+// The frequencies at the spectrum's two ends, small, in the grid's bottom corners (0.21.0).
+void paintSpectrumEnds (juce::Graphics& g, juce::Rectangle<float> plot, std::pair<float, float> view)
+{
+    g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    for (const bool right : { false, true })
+    {
+        const auto text = triad::ui::formatHz (right ? view.second : view.first);
+        const float w = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 10.0f;
+        const auto tag = juce::Rectangle<float> (right ? plot.getRight() - w - 4.0f : plot.getX() + 4.0f, plot.getBottom() - 18.0f, w, 14.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.45f)); g.fillRoundedRectangle (tag, 3.0f);
+        g.setColour (triad::ui::dimTextColour); g.drawText (text, tag, juce::Justification::centred);
+    }
+}
 juce::String changeText (float from, float to)
 {
     const float d = to - from;
@@ -316,8 +329,48 @@ TriadSettings::Backdrop LfoPage::getBackdrop() const
         backdropAudio = audio;
         backdropChecked = now;
         backdropMode = settings->getLfoBackdrop (audio);
+        fullSpectrum = settings->getLfoFullSpectrum();
     }
     return backdropMode;
+}
+bool LfoPage::spectrumShown() const { return showsEdges() ? edgeSpectrum : getBackdrop() == TriadSettings::Backdrop::spectrum; }
+void LfoPage::setSpectrumShown (bool on)
+{
+    if (showsEdges()) edgeSpectrum = on;
+    else
+    {
+        // The gear menu's choice for this band's TRIGGER: the spectrum, or back to what it was before.
+        const bool audio = processor.getTrigger (band).audio;
+        auto& before = beforeSpectrum[audio ? 1 : 0];
+        const auto now = settings->getLfoBackdrop (audio);
+        if (on && now != TriadSettings::Backdrop::spectrum) before = now;
+        settings->setLfoBackdrop (audio, on ? TriadSettings::Backdrop::spectrum : before);
+        backdropChecked = -1.0;
+    }
+    updateSpectrumButtons();
+    shapes.getEditor().repaint();
+}
+void LfoPage::updateSpectrumButtons()
+{
+    const bool shown = spectrumShown();
+    spectrumButton.setToggleState (shown, juce::dontSendNotification);
+    fullSpectrumButton.setToggleState (fullSpectrum, juce::dontSendNotification);
+    fullSpectrumButton.setAlpha (shown ? 1.0f : 0.6f);
+}
+std::pair<float, float> LfoPage::spectrumView (float lowU, float highU) const
+{
+    getBackdrop();   // the settings as they are
+    if (fullSpectrum) return { 20.0f, 20000.0f };
+    lowU = juce::jlimit (0.0f, 1.0f, lowU);
+    highU = juce::jlimit (lowU, 1.0f, highU);
+    constexpr float octave = 0.1f;   // the 10 octaves from 20 Hz to 20 kHz are 0..1
+    if (highU - lowU < octave)
+    {
+        const float c = juce::jlimit (0.5f * octave, 1.0f - 0.5f * octave, 0.5f * (lowU + highU));
+        lowU = c - 0.5f * octave;
+        highU = c + 0.5f * octave;
+    }
+    return { hzOf (lowU), hzOf (highU) };
 }
 void LfoPage::visibilityChanged()
 {
@@ -341,10 +394,13 @@ void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
         const auto yForU = [&] (float u) { return plot.getBottom() - plot.getHeight() * (u - bottomU) / juce::jmax (0.001f, topU - bottomU); };
         juce::Path pass;
         std::vector<juce::Point<float>> lows, highs;
+        float travelLow = 1.0f, travelHigh = 0.0f;   // where the band's edges go over the cycle
         for (float x = plot.getX(); x <= plot.getRight() + 0.5f; x += 3.0f)
         {
             const float v = triad::mod::evaluate (shape, (x - plot.getX()) / plot.getWidth());
             const auto [lo, hi] = m.at (v);
+            travelLow = juce::jmin (travelLow, lo);
+            travelHigh = juce::jmax (travelHigh, hi);
             if (hzScale) { lows.push_back ({ x, juce::jlimit (plot.getY(), plot.getBottom(), yForU (lo)) }); highs.push_back ({ x, juce::jlimit (plot.getY(), plot.getBottom(), yForU (hi)) }); }
             else
             {
@@ -384,17 +440,12 @@ void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
             const float highHz = band < (int) heard.size() ? heard[(size_t) band] : 20000.0f;
             // Lit where the band is right now: it slides as the LFO moves the edges (Thomas: light up the part of the mix
             // being worked on).
-            if (m.locked)
-            {
-                // Locked: the spectrum across is the band's range too (stretched so it fills the grid).
-                juce::Graphics::ScopedSaveState state (g);
-                g.reduceClipRegion (plot.toNearestInt());
-                const float w = plot.getWidth() / juce::jmax (0.01f, m.w());
-                backdrop->spectrum.paint (g, { plot.getX() - w * m.uL, plot.getY(), w, plot.getHeight() }, processor.getSpectrumTap(),
-                                          processor.getSampleRateForDisplay(), lowHz, highHz, colour, lowOrder, highOrder);
-            }
-            else
-                backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), lowHz, highHz, colour, lowOrder, highOrder);
+            // Across: the band's range when locked (stretched so it fills the grid), else where the LFO takes its edges;
+            // FULL SPECTRUM: 20 Hz to 20 kHz (0.21.0).
+            const auto view = spectrumView (m.locked ? m.uL : travelLow, m.locked ? m.uH : travelHigh);
+            backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), lowHz, highHz, colour, lowOrder, highOrder,
+                                      view.first, view.second);
+            paintSpectrumEnds (g, plot, view);
         }
         if (m.locked)
         {
@@ -410,7 +461,7 @@ void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
         }
         return;
     }
-    if (getBackdrop() == TriadSettings::Backdrop::waveform)
+    if (getBackdrop() != TriadSettings::Backdrop::spectrum)
     {
         processor.setTracedLfo (band, lfo);
         processor.readLfoTrace (backdrop->level, backdrop->age);
@@ -419,15 +470,22 @@ void LfoPage::paintBackdrop (juce::Graphics& g, juce::Rectangle<float> plot)
         return;
     }
     processor.setTracedLfo (-1, -1);
-    // The spectrum (as the BANDS tab's): the band's range lit in its colour, the rest faint.
-    float low = 20.0f, high = 20000.0f;
+    // The spectrum (as the BANDS tab's): the band's range lit in its colour, the rest faint; across, the band as set
+    // (0.21.0: as large as the grid, "you see the area you're affecting"), or 20 Hz to 20 kHz with FULL SPECTRUM.
+    float low = 20.0f, high = 20000.0f, viewLow = 0.0f, viewHigh = 1.0f;
     if (! TriadProcessor::isExtraChain (band))
     {
         const auto cuts = processor.heardCrossovers();   // where the band is right now (with its edge LFOs)
         if (band > 0 && band - 1 < (int) cuts.size()) low = cuts[(size_t) band - 1];
         if (band < (int) cuts.size()) high = cuts[(size_t) band];
+        const auto set = processor.effectiveCrossovers();
+        if (band > 0 && band - 1 < (int) set.size()) viewLow = uOf (set[(size_t) band - 1]);
+        if (band < (int) set.size()) viewHigh = uOf (set[(size_t) band]);
     }
-    backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), low, high, colour, lowOrder, highOrder);
+    const auto view = spectrumView (viewLow, viewHigh);
+    backdrop->spectrum.paint (g, plot, processor.getSpectrumTap(), processor.getSampleRateForDisplay(), low, high, colour, lowOrder, highOrder,
+                              view.first, view.second);
+    paintSpectrumEnds (g, plot, view);
 }
 
 // TRIGGER: SONG / AUDIO for the band's LFOs. With AUDIO: a level meter, the threshold on it, and a light that flashes
@@ -581,10 +639,25 @@ LfoPage::LfoPage (TriadProcessor& p) : processor (p)
     spectrumButton.setClickingTogglesState (true);
     spectrumButton.setToggleState (edgeSpectrum, juce::dontSendNotification);
     spectrumButton.setTooltip ("The sound's spectrum behind the grid (on / off)");
-    spectrumButton.onClick = [this] { edgeSpectrum = spectrumButton.getToggleState(); shapes.getEditor().repaint(); };
+    spectrumButton.onClick = [this] { setSpectrumShown (spectrumButton.getToggleState()); };
     spectrumButton.setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.85f));
     spectrumButton.setColour (juce::TextButton::textColourOnId, inkColour);
-    addChildComponent (spectrumButton);
+    addAndMakeVisible (spectrumButton);
+    fullSpectrumButton.setClickingTogglesState (true);
+    fullSpectrumButton.setTooltip ("FULL SPECTRUM: 20 Hz to 20 kHz behind the grid. Off: just the range this LFO works in (its band, or where it takes "
+                                   "the band's edges), as large as the grid");
+    fullSpectrumButton.onClick = [this]
+    {
+        fullSpectrum = fullSpectrumButton.getToggleState();
+        settings->setLfoFullSpectrum (fullSpectrum);
+        if (! spectrumShown()) setSpectrumShown (true);
+        updateSpectrumButtons();
+        shapes.getEditor().repaint();
+    };
+    fullSpectrumButton.setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.85f));
+    fullSpectrumButton.setColour (juce::TextButton::textColourOnId, inkColour);
+    addAndMakeVisible (fullSpectrumButton);
+    fullSpectrum = settings->getLfoFullSpectrum();
     slopeButton.setTooltip ("How soft the edges this LFO moves are: 6 dB/oct blends the bands, 96 dB/oct is a hard wall (the slope of those dividers, as on the BANDS tab)");
     slopeButton.onClick = [this] { showSlopeMenu(); };
     addChildComponent (slopeButton);
@@ -694,6 +767,13 @@ void LfoPage::refresh()
     for (auto& row : routeRows) row->update();
     updateToolbar();
     updateSlopeButton();
+    updateSpectrumButtons();
+    // The wave changed elsewhere (0.21.0: an end of its range dragged on the BANDS tab): shown as it is now.
+    if (auto now = host.getShape(); now != seenShape)
+    {
+        if (now.size() >= 2 && now != shapes.getEditor().getShape()) shapes.getEditor().reload();
+        seenShape = std::move (now);
+    }
 }
 std::vector<int> LfoPage::movedDividers() const
 {
@@ -843,7 +923,7 @@ void LfoPage::rebuild()
     }
     const auto info = processor.getLfoInfo (band, lfo);
     removeLfoButton.setVisible (! info.bandLfo && info.slot < 0);
-    spectrumButton.setVisible (info.edge >= 0);
+    updateSpectrumButtons();
     updateSlopeButton();
     edgeNow->show (band, lfo);
     resized();
@@ -935,10 +1015,11 @@ void LfoPage::resized()
     for (auto& row : routeRows) { row->setBounds (0, y, width, cardHeight); y += cardHeight + cardGap; }
     routeHolder.setSize (width, juce::jmax (y, 1));
     removeLfoButton.setBounds (juce::Rectangle<int> (routingArea.getRight() - 96, routingArea.getY() + 10, 86, 22));
-    // Over the grid's top right corner (band-edge LFOs): SPECTRUM and turn it 90 degrees.
+    // Over the grid's top right corner: SLOPE (band-edge LFOs), SPECTRUM and FULL SPECTRUM.
     {
         const auto grid = shapes.getBounds().withWidth (shapes.getWidth() - routingWidth - 8);
-        spectrumButton.setBounds (grid.getRight() - 88, grid.getY() + 3, 76, 18);
+        fullSpectrumButton.setBounds (grid.getRight() - 132, grid.getY() + 3, 120, 18);
+        spectrumButton.setBounds (fullSpectrumButton.getX() - 84, grid.getY() + 3, 76, 18);
         slopeButton.setBounds (spectrumButton.getX() - 104, grid.getY() + 3, 96, 18);
     }
 }

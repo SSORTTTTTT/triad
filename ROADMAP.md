@@ -1,10 +1,15 @@
 # Triad roadmap
 
 Release names (Thomas, 2026-10-17): every new installer gets the next name, **Triad v5**, then **Triad v6**, **Triad v7**
-and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Each one replaces the earlier ones when
+and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Since v21 (Thomas, 2026-10-29) the v number
+matches the version: Triad vN is 0.N.0. Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
-## Current testing version — 0.21.0 ("Triad v20", delivered 2026-10-29): Triad Time's own window in a band, bands back in place
+## Current testing version — 0.21.0 ("Triad v21", delivered 2026-10-30): Triad Time's own window, bands back in place, range ends to drag, FULL SPECTRUM
+
+Named so the v number matches the version (Thomas, 2026-10-29: "match it ... for the title and installation files"):
+Triad vN is version 0.N.0 from now on. 0.21.0 was first delivered as "Triad v20"; "Triad v21" replaces it, with the
+range lane and FULL SPECTRUM below added.
 
 0.21.0 (2026-10-29), Thomas, testing v19: "when I go to click open window on the post band to work on something in the
 triad time, it just gives me this window ... can you fix it so that it opens the triad time window"; and, adding a band
@@ -16,6 +21,18 @@ then removing an empty one, "it just puts all the placement of the bands ... not
 - **+ BAND then removing an empty band puts the bands back**: removing an empty band straight after + BAND (nothing
   else changed, the added band still empty) removes the added band instead, so the dividers return to where they were.
   A band with effects, LFOs or settings is removed as before, and so is any band once the dividers have moved.
+
+Then (2026-10-29 evening), Thomas: "grab that little end piece of it and be able to drag it left or right ... and it would
+actually manipulate the endpoint in the LFO"; "a spectrum button on every LFO automatically"; "a button next to it that
+just says full spectrum, so that you can actually see a full spectrum while you're even locked".
+- **The range lane's ends drag**: on the BANDS tab, grab either end of a divider's range (632 Hz <-> 8.43 kHz) and drag
+  it left or right; the LFO's wave stretches to match (its highest or lowest point moves there, the other end and the
+  shape stay; locked, it stays inside the band). One undo step. The lane is taller, its line thicker, with grips on
+  its ends (lit under the mouse, the frequency shown while dragging, a tooltip naming the LFO).
+- **SPECTRUM on every LFO's grid**, not just the band-edge ones (for the others it switches the gear menu's LFO TAB:
+  BEHIND THE GRID between the spectrum and what it was; with TRIGGER: SONG the spectrum is now there to start with).
+- **FULL SPECTRUM** beside it: 20 Hz to 20 kHz across the grid; off (to start with), just the range the LFO works in, as
+  large as the grid (its band; locked, the band; on the band edges, where it takes them), its two ends labelled.
 
 ## 0.20.0 ("Triad v19", delivered 2026-10-29): quality-of-life, SOLO alone, softer automated edges
 
