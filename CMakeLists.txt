@@ -134,10 +134,10 @@ endif()
 foreach(format IN ITEMS VST3 AU)
     if(TARGET Triad_${format})
         add_dependencies(Triad_${format} TriadScanner)
-        # <bundle>/Contents/MacOS (or x86_64-linux) -> <bundle>/Contents/Helpers
+        # <bundle>/Contents/MacOS (or x86_64-linux, x86_64-win) -> <bundle>/Contents/Helpers ("Triad Scanner.exe" on Windows)
         add_custom_command(TARGET Triad_${format} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers"
-            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:TriadScanner>" "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers/Triad Scanner"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:TriadScanner>" "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers/$<TARGET_FILE_NAME:TriadScanner>"
             VERBATIM)
     endif()
 endforeach()
@@ -162,6 +162,9 @@ if(TRIAD_BUILD_TESTS)
     if(APPLE)
         set_target_properties(TriadCrashFixture PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION vst3
             LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures>")
+    elseif(WIN32)
+        set_target_properties(TriadCrashFixture PROPERTIES SUFFIX ".vst3"
+            LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures/Triad Crash Fixture.vst3/Contents/x86_64-win>")
     else()
         set_target_properties(TriadCrashFixture PROPERTIES SUFFIX ".so"
             LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures/Triad Crash Fixture.vst3/Contents/${CMAKE_SYSTEM_PROCESSOR}-linux>")
