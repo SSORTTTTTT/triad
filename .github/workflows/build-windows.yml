@@ -55,7 +55,7 @@ jobs:
           iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           if [ ! -x "$iscc" ]; then choco install innosetup -y --no-progress > /dev/null; fi
           make_installer() {   # app id, name, built bundle, installed bundle name, installer name, extra
-            "$iscc" -Q "/DAppId={{$1}" "/DAppName=$2" "/DAppVersion=$VERSION" "/DBundleDir=$(cygpath -w "$3")" \
+            "$iscc" -Q "/DAppId={{$1}" "/DAppName=$2" "/DAppVersion=$VERSION" "/DBundleDir=$(cygpath -w "$PWD/$3")" \
                     "/DBundleName=$4" "/DOutBase=$5" $6 ci/windows/plugin.iss
           }
           make_installer 416A03D1-AA27-4822-B7C8-864958C961FC "$PRODUCT" "build/Triad_artefacts/Release/VST3/$PRODUCT.vst3" \
