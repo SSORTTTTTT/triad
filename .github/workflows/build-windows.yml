@@ -32,6 +32,18 @@ jobs:
             cmake --build build --config Release --parallel --target $t -- -v:minimal 2>&1 | tee -a build-windows.log || fail=1
           done
           ls -R "build/Triad_artefacts/Release/VST3" | head -40
+          # The plug-ins must need nothing beyond Windows itself (no Visual C++ Redistributable).
+          dumpbin="$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -find 'VC/Tools/MSVC/**/bin/Hostx64/x64/dumpbin.exe' | head -1 | tr -d '\r')"
+          for b in "build/Triad_artefacts/Release/VST3/$PRODUCT.vst3/Contents/x86_64-win/$PRODUCT.vst3" \
+                   "build/TriadTime_artefacts/Release/VST3/Triad Time.vst3/Contents/x86_64-win/Triad Time.vst3" \
+                   "build/TriadSplit_artefacts/Release/VST3/Triad Split.vst3/Contents/x86_64-win/Triad Split.vst3" \
+                   "build/TriadScanner_artefacts/Release/Triad Scanner.exe"; do
+            deps=$("$dumpbin" -nologo -dependents "$(cygpath -w "$b")" | tr -d '\r' | grep -i '\.dll' | sed 's/^ *//')
+            echo "$(basename "$b") needs: $(echo $deps)" | tee -a build-windows.log
+            if echo "$deps" | grep -qiE '^(vcruntime|msvcp|concrt|api-ms-win-crt|ucrtbase)'; then
+              echo "  ^ depends on the Visual C++ runtime" | tee -a build-windows.log; fail=1
+            fi
+          done
           exit $fail
 
       - name: Make the installers (Inno Setup)
