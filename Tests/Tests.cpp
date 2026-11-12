@@ -4,6 +4,7 @@
 #include "../Source/Settings.h"
 #include <juce_dsp/juce_dsp.h>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -355,12 +356,24 @@ void onTestCrash (int signal)
     std::signal (signal, SIG_DFL);
     std::raise (signal);
 }
+#else
+extern "C" __declspec (dllimport) void* __stdcall SetUnhandledExceptionFilter (void*);
+long __stdcall onTestCrash (void* pointers)   // EXCEPTION_POINTERS*: its first member points at the EXCEPTION_RECORD
+{
+    const auto code = **(const unsigned long* const*) pointers;
+    std::fprintf (stderr, "\n*** CRASH (exception 0x%08lx) during: %s\n", code, testStage);
+    std::fflush (stderr);
+    return 0;   // EXCEPTION_CONTINUE_SEARCH
+}
 #endif
 
 int main (int argc, char** argv)
 {
    #if ! JUCE_WINDOWS
     for (int signal : { SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE }) std::signal (signal, onTestCrash);
+   #else
+    SetUnhandledExceptionFilter ((void*) &onTestCrash);
+    std::cout << "Triad Tests started" << std::endl;
    #endif
     testStage = "running the tests";
     juce::ScopedJuceInitialiser_GUI gui;
