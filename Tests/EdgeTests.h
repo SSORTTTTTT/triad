@@ -117,7 +117,7 @@ inline void splitterTests()
 
 inline void soloTests()
 {
-    constexpr double rate = 48000.0;
+    static constexpr double rate = 48000.0;
     std::vector<float> signal ((size_t) rate);
     addTone (signal, 0, signal.size(), 100.0, 0.3f);
     addTone (signal, 0, signal.size(), 800.0, 0.3f);
@@ -164,7 +164,7 @@ inline void soloTests()
 
 inline void edgeTests (const juce::File& screenshots)
 {
-    constexpr double rate = 48000.0;
+    static constexpr double rate = 48000.0;
     // Linking: an LFO in the band, a route to its edges, flat where they are (nothing moves until it is drawn).
     TriadProcessor p;
     p.prepareToPlay (rate, 512);
@@ -332,7 +332,7 @@ inline void edgeTests (const juce::File& screenshots)
 // 0.19.0 (Thomas: "lock band travel"): LOCK keeps a band-edge LFO inside the band as set on the BANDS tab.
 inline void lockTests (const juce::File& screenshots)
 {
-    constexpr double rate = 48000.0;
+    static constexpr double rate = 48000.0;
     std::vector<float> silence ((size_t) rate / 2);
     TriadProcessor p;
     p.prepareToPlay (rate, 512);
@@ -421,7 +421,7 @@ inline void lockTests (const juce::File& screenshots)
 // the SLOPE of the edges an LFO moves, and a more detailed spectrum.
 inline void v19Tests (const juce::File& screenshots)
 {
-    constexpr double rate = 48000.0;
+    static constexpr double rate = 48000.0;
     std::vector<float> silence ((size_t) rate / 2);
     TriadProcessor p;
     p.prepareToPlay (rate, 512);
@@ -532,7 +532,7 @@ inline void v19Tests (const juce::File& screenshots)
 // band added then an empty band removed puts the dividers back.
 inline void v191Tests()
 {
-    constexpr double rate = 48000.0;
+    static constexpr double rate = 48000.0;
     TriadProcessor p;
     p.prepareToPlay (rate, 512);
     // Triad Time installed as a VST3 or an AU: the built-in loads, with the same settings.
@@ -599,7 +599,7 @@ inline void v191Tests()
 // wave stretched to match), SPECTRUM on every LFO's grid, and FULL SPECTRUM beside it.
 inline void v21Tests (const juce::File& screenshots)
 {
-    constexpr double rate = 48000.0;
+    static constexpr double rate = 48000.0;
     TriadProcessor p;
     p.prepareToPlay (rate, 512);
     const auto set = p.effectiveCrossovers();   // 250 Hz, 2.5 kHz
@@ -751,7 +751,7 @@ inline void v21Tests (const juce::File& screenshots)
 // one, not the one to the left"): any number of bands added, removed in any order, puts the dividers back.
 inline void v22Tests()
 {
-    constexpr double rate = 48000.0;
+    static constexpr double rate = 48000.0;
     const auto same = [] (const std::vector<float>& a, const std::vector<float>& b)
     {
         if (a.size() != b.size()) return false;

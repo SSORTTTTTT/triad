@@ -92,8 +92,8 @@ inline std::unique_ptr<TriadSplit> make (int group, int play, double rate = 4800
 
 inline void run (const juce::File& screenshotFolder)
 {
-    constexpr double rate = 48000.0;
-    constexpr int block = 512;
+    static constexpr double rate = 48000.0;
+    static constexpr int block = 512;
     // ---- What a new Triad Split is ------------------------------------------------------------------------------
     {
         TriadSplit s;

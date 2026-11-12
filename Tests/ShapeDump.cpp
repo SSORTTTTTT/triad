@@ -86,7 +86,7 @@ void library()
         { "GEN: CHAOS", "Chaos", 16, [] (juce::Random& r) { return mod::Style { 0.5f + 0.5f * r.nextFloat(), r.nextFloat() < 0.5f ? 0.0f : 0.6f * r.nextFloat(), 0.75f + 0.25f * r.nextFloat() }; },
           [] (const Look&) { return true; } },
     };
-    constexpr int perFolder = 44;   // four pages of 11
+    static constexpr int perFolder = 44;   // four pages of 11
     std::vector<std::vector<float>> taken;
     for (int i = 0; i < mod::numPresets(); ++i)
         if (! mod::isGeneratedCategory (mod::presetCategory (i))) taken.push_back (trace (mod::preset (i)));
