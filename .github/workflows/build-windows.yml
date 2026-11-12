@@ -26,7 +26,7 @@ jobs:
           set -o pipefail
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DTRIAD_BUILD_TESTS=ON 2>&1 | tee build-windows.log
           cmake --build build --config Release --parallel --target Triad_VST3 TriadTime_VST3 TriadSplit_VST3 TriadScanner \
-            TriadTests TriadStress TriadCrashFixture TriadTestEffect_VST3 TriadTestSynth_VST3 -- /m /v:minimal 2>&1 | tee -a build-windows.log
+            TriadTests TriadStress TriadCrashFixture TriadTestEffect_VST3 TriadTestSynth_VST3 -- -v:minimal 2>&1 | tee -a build-windows.log
           ls -R "build/Triad_artefacts/Release/VST3" | head -40
 
       - name: Make the installers (Inno Setup)
