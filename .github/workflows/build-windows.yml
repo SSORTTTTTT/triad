@@ -1,0 +1,131 @@
+name: Build Windows installers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # lets the last step publish logs and the installers to the ci-results-windows branch
+
+jobs:
+  build:
+    name: Build, package and test (Windows x64)
+    runs-on: windows-2022
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      PRODUCT: "Triad v22"      # the installed Triad's name (the v number matches the version: vN = 0.N.0)
+      VERSION: "0.22.0"
+      VST3_DIR: "C:/Program Files/Common Files/VST3"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the VST3s, the tests and the helper (Visual Studio 2022, x64)
+        run: |
+          set -o pipefail
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DTRIAD_BUILD_TESTS=ON 2>&1 | tee build-windows.log
+          cmake --build build --config Release --parallel --target Triad_VST3 TriadTime_VST3 TriadSplit_VST3 TriadScanner \
+            TriadTests TriadStress TriadCrashFixture TriadTestEffect_VST3 TriadTestSynth_VST3 -- /m /v:minimal 2>&1 | tee -a build-windows.log
+          ls -R "build/Triad_artefacts/Release/VST3" | head -40
+
+      - name: Make the installers (Inno Setup)
+        run: |
+          set -euo pipefail
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [ ! -x "$iscc" ]; then choco install innosetup -y --no-progress > /dev/null; fi
+          make_installer() {   # app id, name, built bundle, installed bundle name, installer name, extra
+            "$iscc" -Q "/DAppId={{$1}" "/DAppName=$2" "/DAppVersion=$VERSION" "/DBundleDir=$(cygpath -w "$3")" \
+                    "/DBundleName=$4" "/DOutBase=$5" $6 ci/windows/plugin.iss
+          }
+          make_installer 416A03D1-AA27-4822-B7C8-864958C961FC "$PRODUCT" "build/Triad_artefacts/Release/VST3/$PRODUCT.vst3" \
+                         "$PRODUCT.vst3" "Triad-v22-$VERSION-Windows-x64-Setup" /DReplaceOld=1
+          make_installer A483B147-7513-4FDE-AA98-D44D4AB751C8 "Triad Time" "build/TriadTime_artefacts/Release/VST3/Triad Time.vst3" \
+                         "Triad Time.vst3" "Triad-Time-$VERSION-Windows-x64-Setup" ""
+          make_installer 59659C74-1238-44B1-9053-1D91B9F0262B "Triad Split" "build/TriadSplit_artefacts/Release/VST3/Triad Split.vst3" \
+                         "Triad Split.vst3" "Triad-Split-$VERSION-Windows-x64-Setup" ""
+          ls -la ci/windows/Installer
+
+      - name: Install them on the runner (over a simulated earlier Triad)
+        run: |
+          set -euo pipefail
+          mkdir -p "$VST3_DIR/Triad v21.vst3/Contents" && echo old > "$VST3_DIR/Triad v21.vst3/Contents/old.txt"
+          for f in ci/windows/Installer/*.exe; do
+            echo "Installing $f"
+            "$f" //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //LOG="$(cygpath -w "$PWD/install-$(basename "$f" .exe).log")"
+          done
+          ls -R "$VST3_DIR" | head -60
+          test -f "$VST3_DIR/$PRODUCT.vst3/Contents/x86_64-win/$PRODUCT.vst3"
+          test -f "$VST3_DIR/$PRODUCT.vst3/Contents/Helpers/Triad Scanner.exe"
+          test -f "$VST3_DIR/Triad Time.vst3/Contents/x86_64-win/Triad Time.vst3"
+          test -f "$VST3_DIR/Triad Split.vst3/Contents/x86_64-win/Triad Split.vst3"
+          if [ -e "$VST3_DIR/Triad v21.vst3" ]; then echo "The earlier Triad v21 was not removed"; exit 1; fi
+          echo "Installed: $PRODUCT, Triad Time, Triad Split; Triad v21 removed" | tee install-check.txt
+
+      - name: Integration tests
+        run: |
+          set -o pipefail
+          mkdir -p ci-ui
+          exe="build/TriadTests_artefacts/Release/Triad Tests.exe"
+          scanner="build/TriadScanner_artefacts/Release/Triad Scanner.exe"
+          "$exe" "$PWD/build/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
+                 "$PWD/build/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3" \
+                 "$PWD/build/fixtures/Triad Crash Fixture.vst3" \
+                 "$PWD/$scanner" \
+                 "$PWD/ci-ui/Triad-preview-windows.png" \
+                 "$PWD/build/Triad_artefacts/Release/VST3/$PRODUCT.vst3" \
+                 "$VST3_DIR/Triad Split.vst3" 2>&1 | tee test-results-windows.txt
+          status=${PIPESTATUS[0]}
+          echo "Integration tests exit code: $status" | tee -a test-results-windows.txt
+          exit $status
+
+      - name: Stress test (hundreds of effects, random edits while audio plays)
+        run: |
+          set -o pipefail
+          "build/TriadStress_artefacts/Release/Triad Stress.exe" \
+                 "$PWD/build/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
+                 "$PWD/build/fixtures/Triad Crash Fixture.vst3" \
+                 "$PWD/build/TriadScanner_artefacts/Release/Triad Scanner.exe" \
+                 "$PWD/stress-results.txt" 2>&1 | tee stress-log.txt
+          status=${PIPESTATUS[0]}
+          echo "Stress test exit code: $status" | tee -a stress-log.txt
+          exit $status
+
+      - name: pluginval (VST3, strictness 5)
+        run: |
+          set -uo pipefail
+          curl -fsSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip
+          unzip -q -o pluginval.zip
+          fail=0
+          for p in "$PRODUCT" "Triad Time" "Triad Split"; do
+            ./pluginval.exe --strictness-level 5 --skip-gui-tests --validate "$VST3_DIR/$p.vst3" > "pluginval-$p.log" 2>&1
+            status=$?
+            tail -3 "pluginval-$p.log"
+            echo "pluginval $p: exit $status"
+            [ $status -eq 0 ] || fail=1
+          done
+          exit $fail
+
+      - name: Upload installers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Triad-Windows-x64-installers
+          path: ci/windows/Installer/*.exe
+          if-no-files-found: ignore
+
+      - name: Publish logs and installers to the ci-results-windows branch
+        if: always()
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          out="$RUNNER_TEMP/ci-results"; rm -rf "$out"; mkdir -p "$out"
+          cp -f build-windows.log install-*.log install-check.txt test-results-windows.txt stress-results.txt stress-log.txt pluginval-*.log "$out/" 2>/dev/null || true
+          cp -f ci/windows/Installer/*.exe ci-ui/*.png "$out/" 2>/dev/null || true
+          echo "run=${{ github.run_id }} sha=${{ github.sha }} job_status=${{ job.status }}" > "$out/RUN.txt"
+          cd "$out"
+          git init -q -b ci-results-windows
+          git add -A
+          git -c user.name="Triad CI" -c user.email="actions@users.noreply.github.com" commit -q -m "Windows CI results for ${{ github.sha }} (${{ job.status }})"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git" ci-results-windows
