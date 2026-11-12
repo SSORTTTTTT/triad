@@ -1333,12 +1333,23 @@ juce::String samplesAndMs (int samples) { return juce::String (samples) + " samp
 // virtual machine the thread is sometimes paused by the system (wall time far above CPU time): that is
 // counted apart from blocks where Triad's work itself did not fit in the buffer.
 struct Timing { double average = 0.0, worst = 0.0, p999 = 0.0, worstCpu = 0.0; int late = 0, paused = 0, blocks = 0, silenced = 0; bool realtime = false; };
+#if JUCE_WINDOWS
+extern "C" __declspec (dllimport) void* __stdcall GetCurrentThread();
+extern "C" __declspec (dllimport) int __stdcall GetThreadTimes (void*, void*, void*, void*, void*);
+double threadCpuMs()
+{
+    unsigned long long created = 0, exited = 0, kernel = 0, user = 0;   // FILETIMEs, 100 ns units
+    GetThreadTimes (GetCurrentThread(), &created, &exited, &kernel, &user);
+    return (double) (kernel + user) / 1.0e4;
+}
+#else
 double threadCpuMs()
 {
     timespec t {};
     clock_gettime (CLOCK_THREAD_CPUTIME_ID, &t);
     return (double) t.tv_sec * 1000.0 + (double) t.tv_nsec / 1.0e6;
 }
+#endif
 class PacedAudio final : public juce::Thread
 {
 public:
