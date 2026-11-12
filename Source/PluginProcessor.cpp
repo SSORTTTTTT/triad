@@ -3115,10 +3115,10 @@ void TriadProcessor::loadPresetXml (const juce::XmlElement& xml, bool undoable)
 }
 std::unique_ptr<juce::XmlElement> TriadProcessor::createInitXml()
 {
-    TriadProcessor fresh;
-    fresh.startupDecided = true;   // a template: never opens a startup preset itself
-    fresh.setPresetName ("Init");
-    return fresh.createPresetXml();
+    auto fresh = std::make_unique<TriadProcessor>();   // on the heap: a whole Triad is ~150 KB (Windows threads have 1 MB of stack)
+    fresh->startupDecided = true;   // a template: never opens a startup preset itself
+    fresh->setPresetName ("Init");
+    return fresh->createPresetXml();
 }
 void TriadProcessor::initialize()
 {

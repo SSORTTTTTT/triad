@@ -200,5 +200,8 @@ if(TRIAD_BUILD_TESTS)
     if(WIN32)
         set_target_properties(TriadTests PROPERTIES OUTPUT_NAME "Triad Tests")
         set_target_properties(TriadStress PROPERTIES OUTPUT_NAME "Triad Stress")
+        # The tests keep whole Triads (~150 KB each) on the stack; Windows' default 1 MB is too small for main().
+        target_link_options(TriadTests PRIVATE "/STACK:67108864")
+        target_link_options(TriadStress PRIVATE "/STACK:67108864")
     endif()
 endif()
