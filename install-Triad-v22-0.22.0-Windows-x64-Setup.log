@@ -1,0 +1,56 @@
+﻿2026-11-12 23:33:27.140   Log opened. (Time zone: UTC+00:00)
+2026-11-12 23:33:27.140   Setup version: Inno Setup version 6.7.1
+2026-11-12 23:33:27.140   Original Setup EXE: D:\a\triad\triad\ci\windows\Installer\Triad-v22-0.22.0-Windows-x64-Setup.exe
+2026-11-12 23:33:27.140   Setup command line: /SL5="$700C6,3950741,893952,D:\a\triad\triad\ci\windows\Installer\Triad-v22-0.22.0-Windows-x64-Setup.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=D:/a/triad/triad/install-Triad-v22-0.22.0-Windows-x64-Setup.log
+2026-11-12 23:33:27.140   Windows version: 10.0.20348
+2026-11-12 23:33:27.140   Windows architecture: x64 (64-bit)
+2026-11-12 23:33:27.140   Machine types supported by system: x86 x64
+2026-11-12 23:33:27.140   User privileges: Administrative
+2026-11-12 23:33:27.140   Administrative install mode: Yes
+2026-11-12 23:33:27.140   Install mode root key: HKEY_LOCAL_MACHINE
+2026-11-12 23:33:27.140   64-bit install mode: Yes
+2026-11-12 23:33:27.140   RedirectionGuard status for current process: Enabled in enforcing mode
+2026-11-12 23:33:27.140   Created protected temporary directory: C:\Users\RUNNER~1\AppData\Local\Temp\is-A2B8EFLNR5.tmp
+2026-11-12 23:33:27.187   Found 1 files to register with RestartManager.
+2026-11-12 23:33:27.187   Calling RestartManager's RmGetList.
+2026-11-12 23:33:27.187   RmGetList finished successfully.
+2026-11-12 23:33:27.187   RestartManager found no applications using one of our files.
+2026-11-12 23:33:27.187   Starting the installation process.
+2026-11-12 23:33:27.187   Directory for uninstall files: C:\Program Files\Thomas Ross\Triad v22
+2026-11-12 23:33:27.187   Creating directory: C:\Program Files\Thomas Ross\Triad v22
+2026-11-12 23:33:27.187   Creating new uninstall log: C:\Program Files\Thomas Ross\Triad v22\unins000.dat
+2026-11-12 23:33:27.187   -- File entry --
+2026-11-12 23:33:27.187   Dest filename: C:\Program Files\Thomas Ross\Triad v22\unins000.exe
+2026-11-12 23:33:27.187   Non-default bitness: 32-bit
+2026-11-12 23:33:27.187   Time stamp of our file: 2026-11-12 23:33:27.108
+2026-11-12 23:33:27.187   Installing the file.
+2026-11-12 23:33:27.202   Successfully installed the file.
+2026-11-12 23:33:27.202   -- File entry --
+2026-11-12 23:33:27.202   Dest filename: C:\Program Files\Common Files\VST3\Triad v22.vst3\Contents\Helpers\Triad Scanner.exe
+2026-11-12 23:33:27.202   Time stamp of our file: 2026-11-12 23:23:12.000
+2026-11-12 23:33:27.202   Installing the file.
+2026-11-12 23:33:27.202   Creating directory: C:\Program Files\Common Files\VST3\Triad v22.vst3
+2026-11-12 23:33:27.202   Creating directory: C:\Program Files\Common Files\VST3\Triad v22.vst3\Contents
+2026-11-12 23:33:27.202   Creating directory: C:\Program Files\Common Files\VST3\Triad v22.vst3\Contents\Helpers
+2026-11-12 23:33:27.249   Successfully installed the file.
+2026-11-12 23:33:27.249   -- File entry --
+2026-11-12 23:33:27.249   Dest filename: C:\Program Files\Common Files\VST3\Triad v22.vst3\Contents\Resources\moduleinfo.json
+2026-11-12 23:33:27.249   Time stamp of our file: 2026-11-12 23:23:12.000
+2026-11-12 23:33:27.249   Installing the file.
+2026-11-12 23:33:27.249   Creating directory: C:\Program Files\Common Files\VST3\Triad v22.vst3\Contents\Resources
+2026-11-12 23:33:27.249   Successfully installed the file.
+2026-11-12 23:33:27.249   -- File entry --
+2026-11-12 23:33:27.249   Dest filename: C:\Program Files\Common Files\VST3\Triad v22.vst3\Contents\x86_64-win\Triad v22.vst3
+2026-11-12 23:33:27.249   Time stamp of our file: 2026-11-12 23:23:12.000
+2026-11-12 23:33:27.249   Installing the file.
+2026-11-12 23:33:27.249   Creating directory: C:\Program Files\Common Files\VST3\Triad v22.vst3\Contents\x86_64-win
+2026-11-12 23:33:27.468   Successfully installed the file.
+2026-11-12 23:33:27.468   Saving uninstall information.
+2026-11-12 23:33:27.468   Creating new uninstall key: HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\{416A03D1-AA27-4822-B7C8-864958C961FC}_is1
+2026-11-12 23:33:27.468   Writing uninstall key values.
+2026-11-12 23:33:27.468   Detected previous non administrative install? No
+2026-11-12 23:33:27.468   Detected previous administrative 32-bit install? No
+2026-11-12 23:33:27.483   Installation process succeeded.
+2026-11-12 23:33:27.483   Need to restart Windows? No
+2026-11-12 23:33:27.483   Deinitializing Setup.
+2026-11-12 23:33:27.483   Log closed.

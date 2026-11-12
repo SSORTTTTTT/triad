@@ -1,0 +1,48 @@
+﻿2026-11-12 23:33:25.340   Log opened. (Time zone: UTC+00:00)
+2026-11-12 23:33:25.340   Setup version: Inno Setup version 6.7.1
+2026-11-12 23:33:25.340   Original Setup EXE: D:\a\triad\triad\ci\windows\Installer\Triad-Split-0.22.0-Windows-x64-Setup.exe
+2026-11-12 23:33:25.340   Setup command line: /SL5="$500C6,3173274,893952,D:\a\triad\triad\ci\windows\Installer\Triad-Split-0.22.0-Windows-x64-Setup.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=D:/a/triad/triad/install-Triad-Split-0.22.0-Windows-x64-Setup.log
+2026-11-12 23:33:25.340   Windows version: 10.0.20348
+2026-11-12 23:33:25.340   Windows architecture: x64 (64-bit)
+2026-11-12 23:33:25.340   Machine types supported by system: x86 x64
+2026-11-12 23:33:25.340   User privileges: Administrative
+2026-11-12 23:33:25.340   Administrative install mode: Yes
+2026-11-12 23:33:25.340   Install mode root key: HKEY_LOCAL_MACHINE
+2026-11-12 23:33:25.340   64-bit install mode: Yes
+2026-11-12 23:33:25.340   RedirectionGuard status for current process: Enabled in enforcing mode
+2026-11-12 23:33:25.340   Created protected temporary directory: C:\Users\RUNNER~1\AppData\Local\Temp\is-DYH2LSE034.tmp
+2026-11-12 23:33:25.950   Found 0 files to register with RestartManager.
+2026-11-12 23:33:25.966   Starting the installation process.
+2026-11-12 23:33:25.966   Directory for uninstall files: C:\Program Files\Thomas Ross\Triad Split
+2026-11-12 23:33:25.966   Creating directory: C:\Program Files\Thomas Ross
+2026-11-12 23:33:25.966   Creating directory: C:\Program Files\Thomas Ross\Triad Split
+2026-11-12 23:33:25.966   Creating new uninstall log: C:\Program Files\Thomas Ross\Triad Split\unins000.dat
+2026-11-12 23:33:26.060   -- File entry --
+2026-11-12 23:33:26.060   Dest filename: C:\Program Files\Thomas Ross\Triad Split\unins000.exe
+2026-11-12 23:33:26.060   Non-default bitness: 32-bit
+2026-11-12 23:33:26.185   Time stamp of our file: 2026-11-12 23:33:25.043
+2026-11-12 23:33:26.185   Installing the file.
+2026-11-12 23:33:26.185   Successfully installed the file.
+2026-11-12 23:33:26.185   -- File entry --
+2026-11-12 23:33:26.185   Dest filename: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents\Resources\moduleinfo.json
+2026-11-12 23:33:26.185   Time stamp of our file: 2026-11-12 23:26:06.000
+2026-11-12 23:33:26.185   Installing the file.
+2026-11-12 23:33:26.185   Creating directory: C:\Program Files\Common Files\VST3\Triad Split.vst3
+2026-11-12 23:33:26.185   Creating directory: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents
+2026-11-12 23:33:26.185   Creating directory: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents\Resources
+2026-11-12 23:33:26.185   Successfully installed the file.
+2026-11-12 23:33:26.185   -- File entry --
+2026-11-12 23:33:26.185   Dest filename: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents\x86_64-win\Triad Split.vst3
+2026-11-12 23:33:26.200   Time stamp of our file: 2026-11-12 23:26:06.000
+2026-11-12 23:33:26.200   Installing the file.
+2026-11-12 23:33:26.200   Creating directory: C:\Program Files\Common Files\VST3\Triad Split.vst3\Contents\x86_64-win
+2026-11-12 23:33:26.372   Successfully installed the file.
+2026-11-12 23:33:26.372   Saving uninstall information.
+2026-11-12 23:33:26.372   Creating new uninstall key: HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\{59659C74-1238-44B1-9053-1D91B9F0262B}_is1
+2026-11-12 23:33:26.372   Writing uninstall key values.
+2026-11-12 23:33:26.372   Detected previous non administrative install? No
+2026-11-12 23:33:26.372   Detected previous administrative 32-bit install? No
+2026-11-12 23:33:26.388   Installation process succeeded.
+2026-11-12 23:33:26.388   Need to restart Windows? No
+2026-11-12 23:33:26.388   Deinitializing Setup.
+2026-11-12 23:33:26.388   Log closed.
