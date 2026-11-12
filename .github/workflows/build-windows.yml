@@ -35,6 +35,9 @@ jobs:
           exit $fail
 
       - name: Make the installers (Inno Setup)
+        env:
+          MSYS_NO_PATHCONV: "1"        # Git Bash would otherwise rewrite ISCC's /D options as file paths
+          MSYS2_ARG_CONV_EXCL: "*"
         run: |
           set -euo pipefail
           iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
