@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
+# Windows: the C++ runtime is built into each plug-in, so it loads on PCs without the Visual C++ Redistributable.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 project(Triad VERSION 0.22.0 LANGUAGES C CXX)
 # Installed as "Triad v22.vst3" / "Triad v22.component"; the plug-in IDs are unchanged from Triad 0.1,
 # so projects made with the earlier "Triad", "Triad v2" ... "Triad v21" open with Triad v22.
@@ -103,6 +105,9 @@ target_compile_definitions(TriadScanner PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_AU=0 JUCE_PLUGINHOST_VST=0
     JUCE_PLUGINHOST_LADSPA=0 JUCE_PLUGINHOST_LV2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
 target_link_libraries(TriadScanner PRIVATE juce::juce_audio_processors_headless PUBLIC juce::juce_recommended_warning_flags)
+if(WIN32)   # JUCE names console apps after the target on Windows; Triad looks for "Helpers/Triad Scanner.exe"
+    set_target_properties(TriadScanner PROPERTIES OUTPUT_NAME "Triad Scanner")
+endif()
 foreach(target IN ITEMS Triad TriadTime TriadSplit TriadScanner)
     if(TRIAD_SIZE_OPTIMISED AND NOT MSVC)
         # Framework and UI code optimised for size; the audio path (PluginProcessor.cpp,
@@ -134,10 +139,10 @@ endif()
 foreach(format IN ITEMS VST3 AU)
     if(TARGET Triad_${format})
         add_dependencies(Triad_${format} TriadScanner)
-        # <bundle>/Contents/MacOS (or x86_64-linux) -> <bundle>/Contents/Helpers
+        # <bundle>/Contents/MacOS (or x86_64-linux, x86_64-win) -> <bundle>/Contents/Helpers ("Triad Scanner.exe" on Windows)
         add_custom_command(TARGET Triad_${format} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers"
-            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:TriadScanner>" "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers/Triad Scanner"
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:TriadScanner>" "$<TARGET_FILE_DIR:Triad_${format}>/../Helpers/Triad Scanner${CMAKE_EXECUTABLE_SUFFIX}"
             VERBATIM)
     endif()
 endforeach()
@@ -162,6 +167,9 @@ if(TRIAD_BUILD_TESTS)
     if(APPLE)
         set_target_properties(TriadCrashFixture PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION vst3
             LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures>")
+    elseif(WIN32)
+        set_target_properties(TriadCrashFixture PROPERTIES SUFFIX ".vst3"
+            LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures/Triad Crash Fixture.vst3/Contents/x86_64-win>")
     else()
         set_target_properties(TriadCrashFixture PROPERTIES SUFFIX ".so"
             LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/fixtures/Triad Crash Fixture.vst3/Contents/${CMAKE_SYSTEM_PROCESSOR}-linux>")
@@ -189,4 +197,11 @@ if(TRIAD_BUILD_TESTS)
     target_compile_definitions(TriadStress PRIVATE JUCE_MODAL_LOOPS_PERMITTED=1)
     target_link_libraries(TriadStress PRIVATE Triad juce::juce_audio_utils)
     add_dependencies(TriadStress TriadScanner TriadCrashFixture)
+    if(WIN32)
+        set_target_properties(TriadTests PROPERTIES OUTPUT_NAME "Triad Tests")
+        set_target_properties(TriadStress PROPERTIES OUTPUT_NAME "Triad Stress")
+        # The tests keep whole Triads (~150 KB each) on the stack; Windows' default 1 MB is too small for main().
+        target_link_options(TriadTests PRIVATE "/STACK:67108864")
+        target_link_options(TriadStress PRIVATE "/STACK:67108864")
+    endif()
 endif()

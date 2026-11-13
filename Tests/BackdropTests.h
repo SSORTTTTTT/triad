@@ -17,7 +17,7 @@ inline std::vector<float> drums (size_t length, size_t start = 0)
 {
     std::vector<float> s (length, 0.0f);
     juce::Random r (5);
-    constexpr double rate = 48000.0;
+    static constexpr double rate = 48000.0;
     for (size_t eighth = 0;; ++eighth)
     {
         const size_t at = start + eighth * 12000;
@@ -44,8 +44,8 @@ inline std::vector<float> drums (size_t length, size_t start = 0)
 
 inline void run (const juce::File& screenshots)
 {
-    constexpr double rate = 48000.0;
-    constexpr int block = 480;
+    static constexpr double rate = 48000.0;
+    static constexpr int block = 480;
     juce::SharedResourcePointer<TriadSettings> held;   // kept for the whole test (a temporary one would let go of it)
     auto& settings = *held;
     require (settings.getLfoBackdrop (true) == TriadSettings::Backdrop::waveform && settings.getLfoBackdrop (false) == TriadSettings::Backdrop::spectrum

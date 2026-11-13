@@ -1,5 +1,23 @@
 # Validation — Triad
 
+## Triad v22 (0.22.0), Triad Time and Triad Split on Windows — 2026-11-12
+
+Commit `ba4d4ae` (branch windows), run 43327814181 (windows-2022 runner, Visual Studio 2022, x64). The same 0.22.0 as
+on the Mac, as 64-bit VST3s with Inno Setup installers. Mac run 43327817686 on the same commit passed too (the shared
+changes: the Init preset's template Triad made on the heap instead of the stack, test-only fixes).
+
+| Check | Result |
+| --- | --- |
+| Installers `Triad-v22-0.22.0`, `Triad-Time-0.22.0`, `Triad-Split-0.22.0` (`-Windows-x64-Setup.exe`) | All three built and installed silently (over a simulated `Triad v21.vst3`, removed); plug-ins and `Triad Scanner.exe` in place |
+| Dependencies | The three plug-ins and Triad Scanner need only Windows' own DLLs (C++ runtime built in, checked with dumpbin) |
+| Integration tests | PASS: all integration tests (the same suite as the Mac's, the screenshots drawn on Windows) |
+| Stress | 3,000 random edits while audio plays, 60-plug-in list with 20 that crash when loaded (only Triad Scanner went down): PASS, no crashes, no NaN/Inf output |
+| pluginval (strictness 5) | SUCCESS for Triad v22, Triad Time and Triad Split |
+
+Found on the way: the test programs needed more than Windows' 1 MB of stack (64 MB given to them), and one generator
+check's margin was within the difference between the Mac's and Windows' pow/exp rounding (11% vs 6.5%; now 3%).
+Not checked here: a real DAW on Windows (FL Studio, Ableton) and a real screen; the friends' testing will be the first.
+
 ## Triad v22 (0.22.0), Triad Time and Triad Split on macOS — 2026-10-30
 
 Commit `eb4a0ba`, run 41031517398 (macos-15 runner, virtual Apple M1). New in 0.22.0: BAND NOW at the top of the LFO

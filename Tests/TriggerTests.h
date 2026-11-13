@@ -47,10 +47,10 @@ inline float rms (const std::vector<float>& s, size_t from, size_t to)
 
 inline void run()
 {
-    constexpr double rate = 48000.0;
-    constexpr int block = 512;
+    static constexpr double rate = 48000.0;
+    static constexpr int block = 512;
     const int bar = lengthIndex ("1 Bar"), quarter = lengthIndex ("1/4");
-    constexpr double samplesPerBar = rate * 2.0;   // 120 BPM, 4/4 (no playhead: Triad's default tempo)
+    static constexpr double samplesPerBar = rate * 2.0;   // 120 BPM, 4/4 (no playhead: Triad's default tempo)
     {
         // The LFO's position: waits at its start, starts where the sound comes in, restarts after a gap, waits again.
         TriadProcessor p;

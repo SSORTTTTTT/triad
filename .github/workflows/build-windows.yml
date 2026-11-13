@@ -26,16 +26,36 @@ jobs:
           set -o pipefail
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DTRIAD_BUILD_TESTS=ON 2>&1 | tee build-windows.log
           cmake --build build --config Release --parallel --target Triad_VST3 TriadTime_VST3 TriadSplit_VST3 TriadScanner \
-            TriadTests TriadStress TriadCrashFixture TriadTestEffect_VST3 TriadTestSynth_VST3 -- /m /v:minimal 2>&1 | tee -a build-windows.log
+            -- -v:minimal 2>&1 | tee -a build-windows.log
+          fail=0   # each test program on its own, so one failure doesn't hide the others' errors
+          for t in TriadTests TriadStress TriadCrashFixture TriadTestEffect_VST3 TriadTestSynth_VST3; do
+            cmake --build build --config Release --parallel --target $t -- -v:minimal 2>&1 | tee -a build-windows.log || fail=1
+          done
           ls -R "build/Triad_artefacts/Release/VST3" | head -40
+          # The plug-ins must need nothing beyond Windows itself (no Visual C++ Redistributable).
+          dumpbin="$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -find 'VC/Tools/MSVC/**/bin/Hostx64/x64/dumpbin.exe' | head -1 | tr -d '\r')"
+          for b in "build/Triad_artefacts/Release/VST3/$PRODUCT.vst3/Contents/x86_64-win/$PRODUCT.vst3" \
+                   "build/TriadTime_artefacts/Release/VST3/Triad Time.vst3/Contents/x86_64-win/Triad Time.vst3" \
+                   "build/TriadSplit_artefacts/Release/VST3/Triad Split.vst3/Contents/x86_64-win/Triad Split.vst3" \
+                   "build/TriadScanner_artefacts/Release/Triad Scanner.exe"; do
+            deps=$("$dumpbin" -nologo -dependents "$(cygpath -w "$b")" | tr -d '\r' | grep -i '\.dll' | sed 's/^ *//')
+            echo "$(basename "$b") needs: $(echo $deps)" | tee -a build-windows.log
+            if echo "$deps" | grep -qiE '^(vcruntime|msvcp|concrt|api-ms-win-crt|ucrtbase)'; then
+              echo "  ^ depends on the Visual C++ runtime" | tee -a build-windows.log; fail=1
+            fi
+          done
+          exit $fail
 
       - name: Make the installers (Inno Setup)
+        env:
+          MSYS_NO_PATHCONV: "1"        # Git Bash would otherwise rewrite ISCC's /D options as file paths
+          MSYS2_ARG_CONV_EXCL: "*"
         run: |
           set -euo pipefail
           iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           if [ ! -x "$iscc" ]; then choco install innosetup -y --no-progress > /dev/null; fi
           make_installer() {   # app id, name, built bundle, installed bundle name, installer name, extra
-            "$iscc" -Q "/DAppId={{$1}" "/DAppName=$2" "/DAppVersion=$VERSION" "/DBundleDir=$(cygpath -w "$3")" \
+            "$iscc" -Q "/DAppId={{$1}" "/DAppName=$2" "/DAppVersion=$VERSION" "/DBundleDir=$(cygpath -w "$PWD/$3")" \
                     "/DBundleName=$4" "/DOutBase=$5" $6 ci/windows/plugin.iss
           }
           make_installer 416A03D1-AA27-4822-B7C8-864958C961FC "$PRODUCT" "build/Triad_artefacts/Release/VST3/$PRODUCT.vst3" \
@@ -64,24 +84,25 @@ jobs:
 
       - name: Integration tests
         run: |
-          set -o pipefail
+          set +e -o pipefail   # keep going after a failure, to report its exit code
           mkdir -p ci-ui
           exe="build/TriadTests_artefacts/Release/Triad Tests.exe"
           scanner="build/TriadScanner_artefacts/Release/Triad Scanner.exe"
+          bash ci/windows/check-dlls.sh "$exe" "build/TriadStress_artefacts/Release/Triad Stress.exe" | tee test-results-windows.txt
           "$exe" "$PWD/build/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
                  "$PWD/build/TriadTestSynth_artefacts/Release/VST3/Triad Test Synth.vst3" \
                  "$PWD/build/fixtures/Triad Crash Fixture.vst3" \
                  "$PWD/$scanner" \
                  "$PWD/ci-ui/Triad-preview-windows.png" \
                  "$PWD/build/Triad_artefacts/Release/VST3/$PRODUCT.vst3" \
-                 "$VST3_DIR/Triad Split.vst3" 2>&1 | tee test-results-windows.txt
+                 "$VST3_DIR/Triad Split.vst3" 2>&1 | tee -a test-results-windows.txt
           status=${PIPESTATUS[0]}
           echo "Integration tests exit code: $status" | tee -a test-results-windows.txt
           exit $status
 
       - name: Stress test (hundreds of effects, random edits while audio plays)
         run: |
-          set -o pipefail
+          set +e -o pipefail
           "build/TriadStress_artefacts/Release/Triad Stress.exe" \
                  "$PWD/build/TriadTestEffect_artefacts/Release/VST3/Triad Test Effect.vst3" \
                  "$PWD/build/fixtures/Triad Crash Fixture.vst3" \
@@ -93,7 +114,7 @@ jobs:
 
       - name: pluginval (VST3, strictness 5)
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           curl -fsSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip
           unzip -q -o pluginval.zip
           fail=0

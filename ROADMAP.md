@@ -5,6 +5,20 @@ and so on, and the version number goes up with it (0.6.0, 0.7.0, ...). Since v21
 matches the version: Triad vN is 0.N.0. Each one replaces the earlier ones when
 installed; the plug-in ID stays the same, so projects made with any earlier Triad open with the new one.
 
+## Windows installers for 0.22.0 (Thomas, 2026-11-12; delivered the same day)
+
+"can you make windows installers for triad, triad time and triad split as well ... I have some friends that want to
+test the plugin out but they are on windows computers". The same 0.22.0 (Triad v22) as on the Mac, 64-bit VST3 only
+(no AU on Windows). Built and tested by `.github/workflows/build-windows.yml` (Visual Studio 2022, Inno Setup 6).
+- `Triad-v22-0.22.0-Windows-x64-Setup.exe`, `Triad-Time-0.22.0-...`, `Triad-Split-0.22.0-...`: each installs its
+  `.vst3` in `C:\Program Files\Common Files\VST3` (where FL Studio and Ableton look), with an uninstaller in
+  Windows' Apps list; Triad's removes any earlier "Triad vN.vst3". The Triad Scanner helper is inside Triad's bundle
+  (`Contents\Helpers\Triad Scanner.exe`).
+- The C++ runtime is built into each plug-in: nothing else to install (no Visual C++ Redistributable).
+- The installers are not code-signed: Windows SmartScreen shows "Windows protected your PC" the first time (More
+  info, then Run anyway). Signing needs a Windows code-signing certificate (Thomas's, if he wants one later).
+- Next Windows build: with each new version, from the same workflow (PRODUCT / VERSION at its top).
+
 ## Current testing version — 0.22.0 ("Triad v22", delivered 2026-10-30): BAND NOW for every LFO, a thinner ROUTING, every added band undone
 
 0.22.0 (2026-10-30), Thomas, testing v21: "this band metering thing ... even if it's not moving or any LFOs linked to

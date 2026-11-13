@@ -124,7 +124,7 @@ struct PitchStats { double offCents = 0.0, wobbleCents = 0.0, voiced = 0.0; };
 inline PitchStats pitchStats (const juce::AudioBuffer<float>& audio, const std::vector<Note>& notes, int delay, double rate)
 {
     PitchStats result;
-    constexpr int frame = 2048;
+    static constexpr int frame = 2048;
     const int hop = (int) (rate * 0.01);
     double off = 0.0, wobble = 0.0;
     int frames = 0, voicedFrames = 0, notesMeasured = 0;
@@ -194,7 +194,7 @@ inline int heardDelay (const juce::AudioBuffer<float>& in, const juce::AudioBuff
 inline double spectralDistanceDb (const juce::AudioBuffer<float>& a, int delayA, const juce::AudioBuffer<float>& b, int delayB,
                                   const std::vector<Note>& notes, double rate)
 {
-    constexpr int size = 4096;
+    static constexpr int size = 4096;
     auto spectrum = [&rate] (const juce::AudioBuffer<float>& audio, int start)
     {
         std::vector<std::complex<float>> data ((size_t) size);
@@ -672,8 +672,8 @@ void pitchCorrection (const Pool& pool)
         say ("No pitch corrector is installed on this computer (the CI Mac installs Graillon 3 Free for this): skipped");
         return;
     }
-    constexpr double rate = 48000.0;
-    constexpr int block = 128;
+    static constexpr double rate = 48000.0;
+    static constexpr int block = 128;
     const auto take = vocal::sing (rate, 12.0, 11);
     const auto sung = vocal::pitchStats (take.audio, take.notes, 0, rate);
     say ("The sung take: " + juce::String ((int) take.notes.size()) + " held notes from A2 to G3 (110-196 Hz), each up to 40 cents off, with vibrato,"

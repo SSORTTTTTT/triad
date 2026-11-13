@@ -4,6 +4,7 @@
 #include "../Source/Settings.h"
 #include <juce_dsp/juce_dsp.h>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -355,12 +356,24 @@ void onTestCrash (int signal)
     std::signal (signal, SIG_DFL);
     std::raise (signal);
 }
+#else
+extern "C" __declspec (dllimport) void* __stdcall SetUnhandledExceptionFilter (void*);
+long __stdcall onTestCrash (void* pointers)   // EXCEPTION_POINTERS*: its first member points at the EXCEPTION_RECORD
+{
+    const auto code = **(const unsigned long* const*) pointers;
+    std::fprintf (stderr, "\n*** CRASH (exception 0x%08lx) during: %s\n", code, testStage);
+    std::fflush (stderr);
+    return 0;   // EXCEPTION_CONTINUE_SEARCH
+}
 #endif
 
 int main (int argc, char** argv)
 {
    #if ! JUCE_WINDOWS
     for (int signal : { SIGSEGV, SIGBUS, SIGABRT, SIGILL, SIGFPE }) std::signal (signal, onTestCrash);
+   #else
+    SetUnhandledExceptionFilter ((void*) &onTestCrash);
+    std::cout << "Triad Tests started" << std::endl;
    #endif
     testStage = "running the tests";
     juce::ScopedJuceInitialiser_GUI gui;
@@ -470,8 +483,8 @@ int main (int argc, char** argv)
 
         // ---- Crossover slopes, 6 to 96 dB/oct ----------------------------------------------------
         {
-            constexpr int length = 16384;
-            constexpr double sr = 48000.0;
+            static constexpr int length = 16384;
+            static constexpr double sr = 48000.0;
             // Impulse responses of the bands, and their sum, as magnitude spectra.
             auto spectra = [] (int bandCount, const std::vector<float>& cuts, const std::vector<int>& orders)
             {
@@ -916,7 +929,7 @@ int main (int argc, char** argv)
             while (q.addBand()) {}
             require (q.getBandCount() == 10, "Ten bands");
             bandMix (q, 100);
-            constexpr int chainLength = 16;   // more than the old ten-slot limit
+            static constexpr int chainLength = 16;   // more than the old ten-slot limit
             for (int s = 0; s < chainLength; ++s) require (q.loadFile (9, s, effect).isEmpty(), "Keep adding slots to a band");
             require (q.getSlotCount (9) == chainLength, "Sixteen slots in one band");
             const auto ten = q.effectiveCrossovers();
@@ -1499,8 +1512,8 @@ int main (int argc, char** argv)
         // Thomas's chain (Ableton, v4): Auto-Tune Pro + a compressor in each of three bands at 96 dB/oct, his usual
         // dividers at 250 Hz and 2.5 kHz. Measured with stand-ins that delay exactly what they report.
         {
-            constexpr double rate = 48000.0;
-            constexpr int block = 64;
+            static constexpr double rate = 48000.0;
+            static constexpr int block = 64;
             juce::Random noise (3);
             auto setCrossovers = [] (TriadProcessor& t, float low, float high, int order)
             {

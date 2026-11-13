@@ -89,8 +89,8 @@ inline void editorShowEnvelope (juce::Component& editor, int envelope)
 
 inline void run (const juce::File& screenshotFolder)
 {
-    constexpr double rate = 48000.0;
-    constexpr int block = 512;
+    static constexpr double rate = 48000.0;
+    static constexpr int block = 512;
     const size_t samplesPerBeat = 24000;   // 120 bpm
     // ---- Untouched: the sound passes exactly ------------------------------------------------------------------
     {
